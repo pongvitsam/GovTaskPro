@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
+    "build:pages": "vite build && node scripts/sync-docs.mjs",
     "build:gas": "vite build --mode gas && node scripts/build-gas.mjs",
     "preview": "vite preview",
     "push": "clasp push -f",

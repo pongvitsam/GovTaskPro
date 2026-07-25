@@ -14,16 +14,25 @@ Script ID: `1zONm-pkadJXG9_JoV7tb9maJeEfX6WlUW8stHSB18FaWrXQgFCWZdw32`
 
 ## GitHub Pages (frontend)
 
-Push ไป `main` แล้ว GitHub Actions จะ build + deploy ให้อัตโนมัติ
+URL: **https://pongvitsam.github.io/GovTaskPro/**
 
-ตั้งค่าครั้งแรก: **Settings → Pages → Source = GitHub Actions**
+### ตั้งค่าครั้งแรก (สำคัญ)
+
+เปิด https://github.com/pongvitsam/GovTaskPro/settings/pages แล้วเลือก:
+
+1. **Source** = `Deploy from a branch`
+2. **Branch** = `main`
+3. **Folder** = `/docs`
+4. Save
+
+### Deploy frontend
 
 ```bash
-npm install
-npm run build          # ออกที่ dist/ (base /GovTaskPro/)
-npm run preview
+npm run build:pages
+git add docs && git commit -m "Update Pages build" && git push
 ```
 
+มี workflow `.github/workflows/deploy-pages.yml` สำรอง (ถ้าตั้ง Source = GitHub Actions)
 ## Apps Script (backend)
 
 ```bash
