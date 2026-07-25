@@ -10,7 +10,10 @@ var COMMENTS_SHEET = 'Comments';
 var MILESTONES_SHEET = 'Milestones';
 var STICKY_NOTES_SHEET = 'StickyNotes';
 
-var USER_HEADERS = ['id', 'name', 'role', 'department', 'division', 'active'];
+var USER_HEADERS = [
+  'id', 'name', 'role', 'department', 'division', 'active',
+  'email', 'notifyEmail', 'notifyAssign', 'notifyStatus', 'notifyReview', 'notifyLineDefault'
+];
 var PROJECT_HEADERS = ['id', 'name', 'description', 'createdBy', 'createdAt', 'startDate', 'endDate'];
 var TASK_HEADERS = [
   'id', 'projectId', 'title', 'description', 'createdBy', 'assignedTo',
@@ -174,6 +177,7 @@ function dispatchApi_(fn, payload, hasPayload) {
   if (fn === 'createStickyNote') return createStickyNote(payload || {});
   if (fn === 'updateStickyNote') return updateStickyNote(payload || {});
   if (fn === 'deleteStickyNote') return deleteStickyNote(payload || {});
+  if (fn === 'updateUserProfile') return updateUserProfile(payload || {});
 
   throw new Error('Unknown API: ' + fn);
 }
@@ -187,7 +191,7 @@ function include_(filename) {
   return include(filename);
 }
 
-var SCHEMA_VERSION = '4';
+var SCHEMA_VERSION = '5';
 var BOOT_CACHE_KEY = 'gtp_boot_v2';
 var BOOT_CACHE_TTL = 45;
 var _ssCache = null;
@@ -386,6 +390,10 @@ function createTask(payload) {
   appendObject_(TASKS_SHEET, TASK_HEADERS, row);
   var log = addLog_(id, row.createdBy, 'Created', payload.logDetail || 'สร้างงาน');
   if (payload.notifyLine) notifyLine_('งานใหม่: ' + row.title);
+  var assignee = findUserById_(row.assignedTo);
+  if (assignee && assignee.notifyAssign && String(row.assignedTo) !== String(row.createdBy)) {
+    notifyUserEmail_(assignee, 'ได้รับมอบหมายงานใหม่', 'คุณได้รับมอบหมายงาน: "' + row.title + '"');
+  }
   invalidateBootstrapCache_();
   return { task: normalizeTask_(row), log: log };
 }
@@ -419,6 +427,13 @@ function updateTaskStatus(payload) {
   if (!found) throw new Error('ไม่พบงาน');
   var statusLog = addLog_(taskId, userId, 'Status Changed', payload.logDetail || ('เปลี่ยนสถานะเป็น ' + newStatus));
   if (payload.notifyLine) notifyLine_('อัปเดตงาน: ' + found.title + ' → ' + newStatus);
+  var assignee = findUserById_(found.assignedTo);
+  if (assignee && assignee.notifyStatus && String(assignee.id) !== String(userId)) {
+    notifyUserEmail_(assignee, 'สถานะงานเปลี่ยน', 'งาน "' + found.title + '" เปลี่ยนเป็น: ' + newStatus);
+  }
+  if (newStatus === 'Review') {
+    notifyHeadsReview_(found.title);
+  }
   invalidateBootstrapCache_();
   return { task: normalizeTask_(found), log: statusLog };
 }
@@ -449,6 +464,10 @@ function forwardTask(payload) {
   if (!found) throw new Error('ไม่พบงาน');
   var name = findUserName_(newAssigneeId);
   var fwdLog = addLog_(taskId, userId, 'Forwarded', 'โอนงานให้ ' + name);
+  var newAssignee = findUserById_(newAssigneeId);
+  if (newAssignee && newAssignee.notifyAssign) {
+    notifyUserEmail_(newAssignee, 'ได้รับโอนงาน', 'คุณได้รับโอนงาน: "' + (found.title || '') + '"');
+  }
   invalidateBootstrapCache_();
   return { task: normalizeTask_(found), log: fwdLog };
 }
@@ -772,16 +791,91 @@ function rowToObject_(headers, row) {
 }
 
 function listUsersFromSs_(ss) {
-  return listObjectsFromSheet_(ss.getSheetByName(USERS_SHEET)).map(function (u) {
-    return {
-      id: String(u.id),
-      name: String(u.name),
-      role: String(u.role),
-      department: String(u.department),
-      division: String(u.division),
-      active: String(u.active) !== 'FALSE'
-    };
-  }).filter(function (u) { return u.active; });
+  return listObjectsFromSheet_(ss.getSheetByName(USERS_SHEET)).map(normalizeUser_).filter(function (u) {
+    return u.active;
+  });
+}
+
+function normalizeUser_(u) {
+  function flag(v, defVal) {
+    if (v === undefined || v === null || v === '') return defVal;
+    var s = String(v).toUpperCase();
+    if (s === 'FALSE' || s === '0' || s === 'NO') return false;
+    if (s === 'TRUE' || s === '1' || s === 'YES') return true;
+    return defVal;
+  }
+  var role = String(u.role || 'Staff');
+  return {
+    id: String(u.id),
+    name: String(u.name || ''),
+    role: role,
+    department: String(u.department || ''),
+    division: String(u.division || ''),
+    active: String(u.active) !== 'FALSE',
+    email: String(u.email || ''),
+    notifyEmail: flag(u.notifyEmail, false),
+    notifyAssign: flag(u.notifyAssign, true),
+    notifyStatus: flag(u.notifyStatus, true),
+    notifyReview: flag(u.notifyReview, role === 'Head'),
+    notifyLineDefault: flag(u.notifyLineDefault, true)
+  };
+}
+
+function updateUserProfile(payload) {
+  openDatabase_(false);
+  var id = String(payload.id || '');
+  if (!id) throw new Error('ไม่พบผู้ใช้');
+  var updates = {};
+  if (payload.name !== undefined) {
+    var name = String(payload.name || '').trim();
+    if (!name) throw new Error('ชื่อจำเป็น');
+    updates.name = name;
+  }
+  if (payload.email !== undefined) updates.email = String(payload.email || '').trim();
+  if (payload.department !== undefined) updates.department = String(payload.department || '').trim();
+  if (payload.division !== undefined) updates.division = String(payload.division || '').trim();
+  if (payload.notifyEmail !== undefined) updates.notifyEmail = payload.notifyEmail ? 'TRUE' : 'FALSE';
+  if (payload.notifyAssign !== undefined) updates.notifyAssign = payload.notifyAssign ? 'TRUE' : 'FALSE';
+  if (payload.notifyStatus !== undefined) updates.notifyStatus = payload.notifyStatus ? 'TRUE' : 'FALSE';
+  if (payload.notifyReview !== undefined) updates.notifyReview = payload.notifyReview ? 'TRUE' : 'FALSE';
+  if (payload.notifyLineDefault !== undefined) updates.notifyLineDefault = payload.notifyLineDefault ? 'TRUE' : 'FALSE';
+
+  var found = updateRowById_(USERS_SHEET, id, updates);
+  if (!found) throw new Error('ไม่พบผู้ใช้');
+  invalidateBootstrapCache_();
+  return normalizeUser_(found);
+}
+
+function findUserById_(userId) {
+  var users = listUsers_();
+  for (var i = 0; i < users.length; i++) {
+    if (users[i].id === String(userId)) return users[i];
+  }
+  return null;
+}
+
+function notifyUserEmail_(user, subject, body) {
+  if (!user || !user.notifyEmail || !user.email) return false;
+  try {
+    MailApp.sendEmail({
+      to: String(user.email),
+      subject: '[GovTaskPro] ' + subject,
+      body: body + '\n\n— GovTaskPro'
+    });
+    return true;
+  } catch (e) {
+    return false;
+  }
+}
+
+function notifyHeadsReview_(taskTitle) {
+  var users = listUsers_();
+  for (var i = 0; i < users.length; i++) {
+    var u = users[i];
+    if (u.role === 'Head' && u.notifyReview) {
+      notifyUserEmail_(u, 'มีงานรอตรวจ', 'งาน "' + taskTitle + '" เข้าสู่สถานะรอตรวจแล้ว');
+    }
+  }
 }
 
 function listProjectsFromSs_(ss) {
@@ -1020,10 +1114,10 @@ function ensureSeed_() {
   var DAY = 86400000;
 
   var seedUsers = [
-    ['u1', 'คุณบอส (หัวหน้าแผนก IT)', 'Head', 'IT', 'กองเทคโนโลยี', 'TRUE'],
-    ['u2', 'สมชาย (พนักงาน IT)', 'Staff', 'IT', 'กองเทคโนโลยี', 'TRUE'],
-    ['u3', 'สมหญิง (พนักงาน IT)', 'Staff', 'IT', 'กองเทคโนโลยี', 'TRUE'],
-    ['u4', 'สมศักดิ์ (พนักงาน IT)', 'Staff', 'IT', 'กองเทคโนโลยี', 'TRUE']
+    ['u1', 'คุณบอส (หัวหน้าแผนก IT)', 'Head', 'IT', 'กองเทคโนโลยี', 'TRUE', '', 'FALSE', 'TRUE', 'TRUE', 'TRUE', 'TRUE'],
+    ['u2', 'สมชาย (พนักงาน IT)', 'Staff', 'IT', 'กองเทคโนโลยี', 'TRUE', '', 'FALSE', 'TRUE', 'TRUE', 'FALSE', 'TRUE'],
+    ['u3', 'สมหญิง (พนักงาน IT)', 'Staff', 'IT', 'กองเทคโนโลยี', 'TRUE', '', 'FALSE', 'TRUE', 'TRUE', 'FALSE', 'TRUE'],
+    ['u4', 'สมศักดิ์ (พนักงาน IT)', 'Staff', 'IT', 'กองเทคโนโลยี', 'TRUE', '', 'FALSE', 'TRUE', 'TRUE', 'FALSE', 'TRUE']
   ];
   // getRange(row, column, numRows, numColumns) — NOT lastRow/lastColumn
   writeRows_(users, 2, seedUsers);

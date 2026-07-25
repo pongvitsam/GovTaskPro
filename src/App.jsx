@@ -8,6 +8,7 @@ import {
 import { api, isProductionGas, isProductionHost } from './api';
 import ProjectDetail from './ProjectDetail';
 import StickyNotes from './StickyNotes';
+import SettingsPage from './Settings';
 import { formatThaiDate, formatThaiMonthYear } from './formatThaiDate';
 import ProjectTimeBar from './ProjectTimeBar';
 
@@ -381,6 +382,21 @@ export default function App() {
     }
   };
 
+  const handleSaveSettings = async (payload) => {
+    if (busy) return;
+    setBusy(true);
+    try {
+      const row = await api('updateUserProfile', payload);
+      setUsers((prev) => upsertById(prev, row));
+      setCurrentUser(row);
+      showToast('✅ บันทึกการตั้งค่าแล้ว');
+    } catch (err) {
+      showToast('❌ ' + (err?.message || String(err)));
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const detailProject = projects.find((p) => p.id === detailProjectId);
 
   const reportData = useMemo(() => {
@@ -522,6 +538,7 @@ export default function App() {
             { id: 'sticky', icon: StickyNote, label: 'เตือนความจำ (ส่วนตัว)' },
             { id: 'reports', icon: BarChart2, label: 'สถิติ & รายงาน (Reports)' },
             { id: 'create', icon: Plus, label: 'สร้างงาน (Create)' },
+            { id: 'settings', icon: Settings2, label: 'ตั้งค่า (Settings)' },
           ].map((menu) => (
             <button
               key={menu.id}
@@ -879,6 +896,16 @@ export default function App() {
           <StickyNotes currentUser={currentUser} showToast={showToast} />
         )}
 
+        {currentModule === 'settings' && (
+          <SettingsPage
+            currentUser={currentUser}
+            busy={busy}
+            onSave={handleSaveSettings}
+            showToast={showToast}
+            isProductionHost={isProductionHost()}
+          />
+        )}
+
         {currentModule === 'reports' && (
           <div className="p-6 md:p-8 overflow-y-auto h-full">
             <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 space-y-4 md:space-y-0">
@@ -1034,7 +1061,7 @@ export default function App() {
                       </label>
                       {currentUser.role === 'Head' && (
                         <label className="flex items-center space-x-3 cursor-pointer">
-                          <input type="checkbox" name="notifyLine" defaultChecked className="w-5 h-5 text-green-600 rounded-md border-slate-300 accent-green-600" />
+                          <input type="checkbox" name="notifyLine" defaultChecked={!!currentUser.notifyLineDefault} className="w-5 h-5 text-green-600 rounded-md border-slate-300 accent-green-600" />
                           <span className="text-sm font-bold text-slate-700 flex items-center"><Smartphone className="w-4 h-4 mr-1.5 text-green-500" /> แจ้งเตือนเข้า LINE ทันที</span>
                         </label>
                       )}

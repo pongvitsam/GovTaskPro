@@ -6,10 +6,10 @@ const SEED = (() => {
   const DAY = 86400000;
   return {
     users: [
-      { id: 'u1', name: 'คุณบอส (หัวหน้าแผนก IT)', role: 'Head', department: 'IT', division: 'กองเทคโนโลยี' },
-      { id: 'u2', name: 'สมชาย (พนักงาน IT)', role: 'Staff', department: 'IT', division: 'กองเทคโนโลยี' },
-      { id: 'u3', name: 'สมหญิง (พนักงาน IT)', role: 'Staff', department: 'IT', division: 'กองเทคโนโลยี' },
-      { id: 'u4', name: 'สมศักดิ์ (พนักงาน IT)', role: 'Staff', department: 'IT', division: 'กองเทคโนโลยี' },
+      { id: 'u1', name: 'คุณบอส (หัวหน้าแผนก IT)', role: 'Head', department: 'IT', division: 'กองเทคโนโลยี', email: '', notifyEmail: false, notifyAssign: true, notifyStatus: true, notifyReview: true, notifyLineDefault: true },
+      { id: 'u2', name: 'สมชาย (พนักงาน IT)', role: 'Staff', department: 'IT', division: 'กองเทคโนโลยี', email: '', notifyEmail: false, notifyAssign: true, notifyStatus: true, notifyReview: false, notifyLineDefault: true },
+      { id: 'u3', name: 'สมหญิง (พนักงาน IT)', role: 'Staff', department: 'IT', division: 'กองเทคโนโลยี', email: '', notifyEmail: false, notifyAssign: true, notifyStatus: true, notifyReview: false, notifyLineDefault: true },
+      { id: 'u4', name: 'สมศักดิ์ (พนักงาน IT)', role: 'Staff', department: 'IT', division: 'กองเทคโนโลยี', email: '', notifyEmail: false, notifyAssign: true, notifyStatus: true, notifyReview: false, notifyLineDefault: true },
     ],
     projects: [
       { id: 'p1', name: 'พัฒนาระบบ Intranet กอง', description: 'อัปเกรดระบบภายในให้รองรับการทำงานแบบใหม่ (Next-Gen)', createdBy: 'u1', startDate: new Date(NOW - DAY * 14).toISOString().slice(0, 10), endDate: new Date(NOW + DAY * 45).toISOString().slice(0, 10) },
@@ -336,6 +336,28 @@ const localHandlers = {
     db.stickyNotes = db.stickyNotes.filter((n) => !(String(n.id) === id && String(n.userId) === userId));
     if (db.stickyNotes.length === before) throw new Error('ไม่พบโน้ต หรือไม่มีสิทธิ์ลบ');
     return { ok: true, id };
+  },
+  updateUserProfile(payload) {
+    const db = getLocalDb();
+    const id = String(payload.id || '');
+    const idx = db.users.findIndex((u) => String(u.id) === id);
+    if (idx < 0) throw new Error('ไม่พบผู้ใช้');
+    const prev = db.users[idx];
+    const next = {
+      ...prev,
+      name: payload.name !== undefined ? String(payload.name || '').trim() : prev.name,
+      email: payload.email !== undefined ? String(payload.email || '').trim() : (prev.email || ''),
+      department: payload.department !== undefined ? String(payload.department || '').trim() : prev.department,
+      division: payload.division !== undefined ? String(payload.division || '').trim() : prev.division,
+      notifyEmail: payload.notifyEmail !== undefined ? !!payload.notifyEmail : !!prev.notifyEmail,
+      notifyAssign: payload.notifyAssign !== undefined ? !!payload.notifyAssign : (prev.notifyAssign !== false),
+      notifyStatus: payload.notifyStatus !== undefined ? !!payload.notifyStatus : (prev.notifyStatus !== false),
+      notifyReview: payload.notifyReview !== undefined ? !!payload.notifyReview : !!prev.notifyReview,
+      notifyLineDefault: payload.notifyLineDefault !== undefined ? !!payload.notifyLineDefault : (prev.notifyLineDefault !== false),
+    };
+    if (!next.name) throw new Error('ชื่อจำเป็น');
+    db.users = db.users.map((u, i) => (i === idx ? next : u));
+    return next;
   },
 };
 
