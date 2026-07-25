@@ -1,0 +1,9 @@
+node_modules
+dist
+dist-gas
+.DS_Store
+*.log
+.env
+.env.local
+.clasprc.json
+.deploy-state.json

@@ -1,0 +1,57 @@
+@import "tailwindcss";
+
+html, body, #root {
+  height: 100%;
+  margin: 0;
+}
+
+.no-scrollbar::-webkit-scrollbar { display: none; }
+.no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+
+.custom-scrollbar::-webkit-scrollbar { width: 6px; height: 6px; }
+.custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 999px; }
+
+/* Personal sticky notes board */
+.cork-board {
+  background-color: #5c4030;
+  background-image:
+    radial-gradient(ellipse at 20% 20%, rgba(255, 220, 160, 0.12), transparent 45%),
+    radial-gradient(ellipse at 80% 70%, rgba(0, 0, 0, 0.18), transparent 50%),
+    repeating-linear-gradient(
+      0deg,
+      transparent,
+      transparent 2px,
+      rgba(0, 0, 0, 0.03) 2px,
+      rgba(0, 0, 0, 0.03) 4px
+    ),
+    repeating-linear-gradient(
+      90deg,
+      transparent,
+      transparent 2px,
+      rgba(255, 255, 255, 0.02) 2px,
+      rgba(255, 255, 255, 0.02) 4px
+    ),
+    linear-gradient(145deg, #6b4a32 0%, #4a3423 45%, #3d2b1f 100%);
+}
+
+.sticky-note {
+  border-radius: 2px 2px 4px 4px;
+  cursor: grab;
+  transition: box-shadow 0.15s ease, filter 0.15s ease;
+  font-family: "Segoe Print", "Comic Sans MS", "Chalkboard SE", "Marker Felt", cursive, system-ui;
+}
+
+.sticky-note:active,
+.sticky-note-dragging {
+  cursor: grabbing;
+  filter: brightness(1.03);
+}
+
+.sticky-note textarea,
+.sticky-note input {
+  font-family: inherit;
+}
+
+.sticky-note-selected {
+  filter: brightness(1.04);
+}

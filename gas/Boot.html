@@ -1,0 +1,25 @@
+<script>
+(function(){
+  function bootFail(err){
+    var el=document.getElementById('root');
+    if(el) el.innerHTML='<div style="font-family:sans-serif;padding:2rem;text-align:center;color:#b91c1c">โหลดแอพไม่สำเร็จ<br><small>'+String(err&&err.message||err)+'</small></div>';
+    console.error(err);
+  }
+  try {
+    var b64=window.__GTP_B64||'';
+    delete window.__GTP_B64;
+    var bin=atob(b64);
+    var bytes=new Uint8Array(bin.length);
+    for (var i=0;i<bin.length;i++) bytes[i]=bin.charCodeAt(i);
+    if (typeof DecompressionStream === 'undefined') {
+      bootFail(new Error('เบราว์เซอร์ไม่รองรับ DecompressionStream'));
+      return;
+    }
+    var stream=new Blob([bytes]).stream().pipeThrough(new DecompressionStream('gzip'));
+    new Response(stream).arrayBuffer().then(function(buf){
+      var js=new TextDecoder('utf-8').decode(buf);
+      (0,eval)(js);
+    }).catch(bootFail);
+  } catch (err) { bootFail(err); }
+})();
+</script>

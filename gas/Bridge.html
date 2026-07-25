@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="th">
+  <head>
+    <base target="_top">
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>GovTaskPro API Bridge</title>
+  </head>
+  <body>
+    <script>
+      (function () {
+        var ALLOW_ORIGIN_RE = /^(https:\/\/pongvitsam\.github\.io|https:\/\/[a-z0-9-]+\.github\.io|http:\/\/localhost(?::\d+)?|http:\/\/127\.0\.0\.1(?::\d+)?)$/i;
+
+        function allowed(origin) {
+          return !!(origin && ALLOW_ORIGIN_RE.test(origin));
+        }
+
+        window.addEventListener('message', function (ev) {
+          if (!allowed(ev.origin)) return;
+          var msg = ev.data;
+          if (!msg || msg.type !== 'gtp-call' || !msg.fn) return;
+
+          var replyOrigin = ev.origin;
+          var runner = google.script.run
+            .withSuccessHandler(function (result) {
+              ev.source.postMessage({ type: 'gtp-result', id: msg.id, ok: true, result: result }, replyOrigin);
+            })
+            .withFailureHandler(function (err) {
+              var text = err && err.message ? err.message : String(err || 'API error');
+              ev.source.postMessage({ type: 'gtp-result', id: msg.id, ok: false, error: text }, replyOrigin);
+            });
+
+          try {
+            if (msg.hasPayload) runner[msg.fn](msg.payload);
+            else runner[msg.fn]();
+          } catch (e) {
+            ev.source.postMessage({
+              type: 'gtp-result',
+              id: msg.id,
+              ok: false,
+              error: e && e.message ? e.message : String(e)
+            }, replyOrigin);
+          }
+        });
+
+        function announce() {
+          try {
+            if (window.parent && window.parent !== window) {
+              window.parent.postMessage({ type: 'gtp-ready' }, '*');
+            }
+          } catch (e) {}
+        }
+        announce();
+        setTimeout(announce, 200);
+      })();
+    </script>
+  </body>
+</html>
