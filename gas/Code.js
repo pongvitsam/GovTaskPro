@@ -33,12 +33,9 @@ function doGet(e) {
   e = e || {};
   var p = e.parameter || {};
 
-  // Hidden iframe bridge for GitHub Pages frontend (google.script.run)
-  if (String(p.bridge || '') === '1') {
-    return HtmlService.createHtmlOutputFromFile('Bridge')
-      .setTitle('GovTaskPro Bridge')
-      .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL)
-      .addMetaTag('viewport', 'width=device-width, initial-scale=1');
+  // JSONP / JSON HTTP API for GitHub Pages (ContentService — no HtmlService iframe)
+  if (String(p.api || '') === '1' || (p.fn && String(p.callback || '') !== '')) {
+    return handleHttpApi_(p);
   }
 
   // Legacy in-GAS UI (optional)
@@ -48,6 +45,13 @@ function doGet(e) {
       .setTitle('GovTaskPro')
       .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL)
       .addMetaTag('viewport', 'width=device-width, initial-scale=1');
+  }
+
+  // Hidden legacy bridge page (kept for debugging)
+  if (String(p.bridge || '') === '1') {
+    return HtmlService.createHtmlOutputFromFile('Bridge')
+      .setTitle('GovTaskPro Bridge')
+      .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
   }
 
   // Default: send users to GitHub Pages frontend
@@ -64,6 +68,114 @@ function doGet(e) {
   return HtmlService.createHtmlOutput(html)
     .setTitle('GovTaskPro')
     .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
+}
+
+/**
+ * Form POST from GitHub Pages → run API server-side → postMessage to window.top
+ * (Works around HtmlService nested-iframe postMessage limits)
+ */
+function doPost(e) {
+  e = e || {};
+  var p = e.parameter || {};
+
+  // Prefer form fields; also accept JSON body
+  if ((!p.fn || p.fn === '') && e.postData && e.postData.contents) {
+    try {
+      var body = JSON.parse(e.postData.contents);
+      p.fn = body.fn || p.fn;
+      p.id = body.id || p.id;
+      p.replyOrigin = body.replyOrigin || p.replyOrigin;
+      if (body.payload !== undefined) {
+        p.payload = typeof body.payload === 'string' ? body.payload : JSON.stringify(body.payload);
+        p.hasPayload = '1';
+      }
+    } catch (parseErr) { /* keep form params */ }
+  }
+
+  var id = String(p.id || '');
+  var replyOrigin = String(p.replyOrigin || FRONTEND_URL);
+  var out;
+  try {
+    var payload = undefined;
+    var hasPayload = String(p.hasPayload || '') === '1' || (p.payload !== undefined && p.payload !== null && String(p.payload) !== '');
+    if (hasPayload) {
+      payload = p.payload === '' || p.payload == null ? null : JSON.parse(String(p.payload));
+    }
+    var result = dispatchApi_(String(p.fn || ''), payload, hasPayload);
+    out = { type: 'gtp-result', id: id, ok: true, result: result };
+  } catch (err) {
+    out = {
+      type: 'gtp-result',
+      id: id,
+      ok: false,
+      error: err && err.message ? err.message : String(err)
+    };
+  }
+
+  var html =
+    '<!DOCTYPE html><html><head><meta charset="UTF-8"></head><body>' +
+    '<script>(function(){try{window.top.postMessage(' +
+    JSON.stringify(out) +
+    ',' +
+    JSON.stringify(replyOrigin) +
+    ');}catch(e){try{window.top.postMessage(' +
+    JSON.stringify(out) +
+    ',\"*\");}catch(e2){}}})();</script>' +
+    '</body></html>';
+
+  return HtmlService.createHtmlOutput(html)
+    .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
+}
+
+function handleHttpApi_(p) {
+  var out;
+  try {
+    var payload = undefined;
+    var hasPayload = String(p.hasPayload || '') === '1' || (p.payload !== undefined && p.payload !== null && String(p.payload) !== '');
+    if (hasPayload) {
+      payload = p.payload === '' || p.payload == null ? null : JSON.parse(String(p.payload));
+    }
+    var result = dispatchApi_(String(p.fn || ''), payload, hasPayload);
+    out = { ok: true, result: result };
+  } catch (err) {
+    out = { ok: false, error: err && err.message ? err.message : String(err) };
+  }
+
+  var json = JSON.stringify(out);
+  var cb = String(p.callback || '');
+  if (cb && /^[A-Za-z_$][\w$]*$/.test(cb)) {
+    return ContentService.createTextOutput(cb + '(' + json + ')')
+      .setMimeType(ContentService.MimeType.JAVASCRIPT);
+  }
+  return ContentService.createTextOutput(json)
+    .setMimeType(ContentService.MimeType.JSON);
+}
+
+function dispatchApi_(fn, payload, hasPayload) {
+  if (!fn) throw new Error('ไม่ได้ระบุฟังก์ชัน API');
+
+  // no-arg
+  if (fn === 'ping') return ping();
+  if (fn === 'getBootstrap') return getBootstrap();
+
+  // payload optional / required
+  if (fn === 'getTaskActivity') return getTaskActivity(payload || {});
+  if (fn === 'createProject') return createProject(payload || {});
+  if (fn === 'updateProject') return updateProject(payload || {});
+  if (fn === 'createMilestone') return createMilestone(payload || {});
+  if (fn === 'updateMilestone') return updateMilestone(payload || {});
+  if (fn === 'deleteMilestone') return deleteMilestone(payload || {});
+  if (fn === 'createTask') return createTask(payload || {});
+  if (fn === 'updateTaskStatus') return updateTaskStatus(payload || {});
+  if (fn === 'forwardTask') return forwardTask(payload || {});
+  if (fn === 'takeoverTask') return takeoverTask(payload || {});
+  if (fn === 'addComment') return addComment(payload || {});
+  if (fn === 'listStickyNotes') return listStickyNotes(payload || {});
+  if (fn === 'createStickyNote') return createStickyNote(payload || {});
+  if (fn === 'updateStickyNote') return updateStickyNote(payload || {});
+  if (fn === 'deleteStickyNote') return deleteStickyNote(payload || {});
+
+  throw new Error('Unknown API: ' + fn);
 }
 
 /** Inject HTML/JS/CSS partials into Index template (<?!= include('AppJs1'); ?>). */

@@ -1,6 +1,6 @@
-/** google.script.run (GAS embed) · bridge (GitHub Pages) · mock (Vite DEV) */
+/** google.script.run (GAS embed) · HTTP form bridge (GitHub Pages) · mock (Vite DEV) */
 
-import { bridgeRun } from './gasBridge';
+import { httpRun } from './gasHttp';
 
 function isGas() {
   return typeof google !== 'undefined' && google?.script?.run;
@@ -49,7 +49,7 @@ export async function api(fnName, payload) {
 
   // Production GitHub Pages (and optional DEV against live GAS)
   if (import.meta.env.PROD || import.meta.env.VITE_USE_GAS === '1') {
-    return bridgeRun(fnName, payload);
+    return httpRun(fnName, payload);
   }
 
   const { runLocal } = await import('./mockDb.js');
