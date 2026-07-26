@@ -301,6 +301,7 @@ export default function StickyNotes({ currentUser, showToast }) {
     if (!board) return;
     const rect = board.getBoundingClientRect();
     dragRef.current = {
+      mode: 'move',
       id: note.id,
       startX: e.clientX,
       startY: e.clientY,
@@ -314,9 +315,42 @@ export default function StickyNotes({ currentUser, showToast }) {
     e.currentTarget.setPointerCapture?.(e.pointerId);
   };
 
+  const onResizePointerDown = (e, note) => {
+    if (e.button !== 0 || note.trashed) return;
+    e.stopPropagation();
+    e.preventDefault();
+    bringToFront(note.id);
+    const board = boardRef.current;
+    if (!board) return;
+    const rect = board.getBoundingClientRect();
+    dragRef.current = {
+      mode: 'resize',
+      id: note.id,
+      startX: e.clientX,
+      startY: e.clientY,
+      origW: note.width,
+      origH: note.height,
+      origX: note.x,
+      origY: note.y,
+      boardW: rect.width,
+      boardH: Math.max(rect.height, board.scrollHeight || 0),
+    };
+    e.currentTarget.setPointerCapture?.(e.pointerId);
+  };
+
   const onPointerMove = (e) => {
     const d = dragRef.current;
     if (!d) return;
+    if (d.mode === 'resize') {
+      const maxW = Math.max(160, d.boardW - d.origX - 8);
+      const maxH = Math.max(140, 720);
+      const width = Math.max(160, Math.min(d.origW + (e.clientX - d.startX), maxW));
+      const height = Math.max(140, Math.min(d.origH + (e.clientY - d.startY), maxH));
+      d.lastW = Math.round(width);
+      d.lastH = Math.round(height);
+      patchNote(d.id, { width: d.lastW, height: d.lastH }, { persist: false });
+      return;
+    }
     const dx = e.clientX - d.startX;
     const dy = e.clientY - d.startY;
     const x = Math.max(8, Math.min(d.origX + dx, Math.max(8, d.boardW - d.noteW - 8)));
@@ -330,10 +364,21 @@ export default function StickyNotes({ currentUser, showToast }) {
     const d = dragRef.current;
     if (!d) return;
     dragRef.current = null;
+    if (d.mode === 'resize') {
+      if (d.lastW !== undefined && d.lastH !== undefined) {
+        queueSave(d.id, { width: d.lastW, height: d.lastH });
+      }
+      return;
+    }
     if (d.lastX !== undefined && d.lastY !== undefined) {
       queueSave(d.id, { x: d.lastX, y: d.lastY });
     }
   }, [queueSave]);
+
+  const onBoardBackgroundDown = (e) => {
+    if (e.target.closest('.sticky-note')) return;
+    setSelectedId(null);
+  };
 
   useEffect(() => {
     window.addEventListener('pointerup', finishDrag);
@@ -492,6 +537,7 @@ export default function StickyNotes({ currentUser, showToast }) {
         ref={boardRef}
         className="relative flex-1 overflow-auto cork-board custom-scrollbar"
         onPointerMove={onPointerMove}
+        onPointerDown={onBoardBackgroundDown}
       >
         <div
           className="relative min-h-full min-w-full"
@@ -524,7 +570,7 @@ export default function StickyNotes({ currentUser, showToast }) {
                 role="article"
                 onPointerDown={(e) => onPointerDown(e, note)}
                 onClick={() => setSelectedId(note.id)}
-                className={`absolute select-none sticky-note ${selected ? 'sticky-note-selected' : ''} ${dragRef.current?.id === note.id ? 'sticky-note-dragging' : ''}`}
+                className={`absolute select-none sticky-note ${selected ? 'sticky-note-selected' : ''} ${dragRef.current?.id === note.id ? (dragRef.current?.mode === 'resize' ? 'sticky-note-resizing' : 'sticky-note-dragging') : ''}`}
                 style={{
                   left: note.x,
                   top: note.y,
@@ -797,6 +843,16 @@ export default function StickyNotes({ currentUser, showToast }) {
                     </div>
                   )}
                 </div>
+                {!note.trashed && (
+                  <button
+                    type="button"
+                    data-no-drag
+                    title="ลากเพื่อขยายโน้ต"
+                    aria-label="ขยายโน้ต"
+                    className={`sticky-note-resize ${selected ? 'sticky-note-resize--active' : ''}`}
+                    onPointerDown={(e) => onResizePointerDown(e, note)}
+                  />
+                )}
               </div>
             );
           })}

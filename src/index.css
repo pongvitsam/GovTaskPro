@@ -302,3 +302,31 @@ h1, h2, h3, h4, .gtp-display {
 .sticky-note-selected {
   filter: brightness(1.04);
 }
+
+.sticky-note-resize {
+  position: absolute;
+  right: 4px;
+  bottom: 4px;
+  width: 14px;
+  height: 14px;
+  padding: 0;
+  border: 0;
+  border-radius: 3px;
+  cursor: se-resize;
+  background:
+    linear-gradient(135deg, transparent 55%, rgba(0, 0, 0, 0.22) 55%, rgba(0, 0, 0, 0.22) 62%, transparent 62%),
+    linear-gradient(135deg, transparent 70%, rgba(0, 0, 0, 0.22) 70%, rgba(0, 0, 0, 0.22) 77%, transparent 77%);
+  opacity: 0.45;
+  z-index: 2;
+}
+
+.sticky-note-resize:hover,
+.sticky-note-resize--active {
+  opacity: 0.9;
+  background-color: rgba(0, 0, 0, 0.06);
+}
+
+.sticky-note-resizing {
+  cursor: se-resize !important;
+  transition: none !important;
+}
