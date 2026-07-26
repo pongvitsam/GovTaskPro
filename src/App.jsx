@@ -1153,7 +1153,10 @@ export default function App() {
                                   {projects.find((p) => p.id === task.projectId)?.name}
                                 </span>
                               )}
-                              <h4 className={`font-bold text-[#1e3a4c] text-sm mb-4 leading-relaxed pr-6 ${status === 'Completed' ? 'line-through decoration-slate-300' : ''}`}>{task.title}</h4>
+                              <h4 className={`font-bold text-[#1e3a4c] text-sm mb-2 leading-relaxed pr-6 ${status === 'Completed' ? 'line-through decoration-slate-300' : ''}`}>{task.title}</h4>
+                              {isMyTask && status !== 'Completed' && (
+                                <p className="text-[10px] font-extrabold text-teal-600 mb-3">แตะการ์ด → อัปเดตสถานะ</p>
+                              )}
                               <div className="flex justify-between items-end pt-3 border-t border-slate-100/80">
                                 <div className="flex items-center space-x-2">
                                   <div className={`w-7 h-7 rounded-full flex items-center justify-center text-[10px] font-extrabold ${isMyTask ? 'bg-teal-500 text-white' : 'bg-[#f3f9fc] text-[#5b7a8a]'}`}>
@@ -1546,7 +1549,7 @@ export default function App() {
             </div>
 
             <div className="flex border-b border-slate-200 bg-slate-50 px-4 md:px-8 shrink-0">
-              <button onClick={() => setTaskModalTab('details')} className={`py-4 px-2 md:px-4 font-extrabold text-sm border-b-4 flex-1 md:flex-none ${taskModalTab === 'details' ? 'border-blue-600 text-blue-700' : 'border-transparent text-slate-500'}`}>รายละเอียด & จัดการ</button>
+              <button onClick={() => setTaskModalTab('details')} className={`py-4 px-2 md:px-4 font-extrabold text-sm border-b-4 flex-1 md:flex-none ${taskModalTab === 'details' ? 'border-teal-500 text-teal-700' : 'border-transparent text-slate-500'}`}>อัปเดตสถานะ & รายละเอียด</button>
               <button onClick={() => setTaskModalTab('comments')} className={`py-4 px-2 md:px-4 font-extrabold text-sm border-b-4 flex items-center justify-center flex-1 md:flex-none ${taskModalTab === 'comments' ? 'border-blue-600 text-blue-700' : 'border-transparent text-slate-500'}`}>
                 แชท & แนบไฟล์
                 <span className={`ml-2 text-[10px] px-2 py-0.5 rounded-full ${taskModalTab === 'comments' ? 'bg-teal-100 text-teal-800' : 'bg-slate-200 text-slate-700'}`}>
@@ -1558,7 +1561,82 @@ export default function App() {
             <div className="flex-1 overflow-hidden flex flex-col lg:flex-row bg-slate-50/50">
               <div className="flex-1 overflow-y-auto p-5 md:p-8 lg:border-r border-slate-200 bg-white flex flex-col relative">
                 {taskModalTab === 'details' ? (
-                  <div className="space-y-8">
+                  <div className="space-y-6 pb-4">
+                    {/* สถานะ + ปุ่มอัปเดต — อยู่บนสุดให้ง่ายต่อการหา */}
+                    <div className="rounded-[1.35rem] border-2 border-teal-200 bg-gradient-to-br from-teal-50 to-white p-4 md:p-5 shadow-sm">
+                      <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
+                        <h4 className="text-sm font-extrabold text-[#1e3a4c] flex items-center gap-2">
+                          <Settings2 className="w-4 h-4 text-teal-600" /> อัปเดตสถานะงาน
+                        </h4>
+                        <span className={`text-[11px] font-black px-3 py-1 rounded-full border ${getStatusColor(selectedTask.status)}`}>
+                          ตอนนี้: {getStatusText(selectedTask.status)}
+                        </span>
+                      </div>
+
+                      {(currentUser.id === selectedTask.assignedTo || currentUser.role === 'Admin') && (
+                        <div className="space-y-3">
+                          {selectedTask.status === 'Pending' && (
+                            <button disabled={busy} onClick={() => handleUpdateStatus(selectedTask.id, 'In Progress')} className="w-full bg-teal-500 hover:bg-teal-600 text-white py-3.5 rounded-2xl font-extrabold text-sm shadow-lg disabled:opacity-60">
+                              ① กดรับงาน (เริ่มดำเนินการ)
+                            </button>
+                          )}
+                          {selectedTask.status === 'In Progress' && (
+                            <div className="space-y-3">
+                              {isStaff && currentUser.id === selectedTask.assignedTo && (
+                                <label className="flex items-center space-x-3 cursor-pointer p-3 bg-emerald-50 rounded-xl border border-emerald-200">
+                                  <input type="checkbox" id="notifyHeadToggle" defaultChecked className="accent-emerald-600 w-5 h-5" />
+                                  <span className="font-bold text-emerald-800 text-sm flex items-center"><Smartphone className="w-4 h-4 mr-1.5 text-emerald-600" /> แจ้งเตือนหัวหน้าผ่าน LINE</span>
+                                </label>
+                              )}
+                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                {(isStaff || currentUser.role === 'Admin') && (
+                                  <button disabled={busy} onClick={() => handleUpdateStatus(selectedTask.id, 'Review', document.getElementById('notifyHeadToggle')?.checked)} className="bg-sky-600 hover:bg-sky-700 text-white py-3.5 rounded-2xl font-extrabold text-sm shadow-lg disabled:opacity-60">
+                                    ② ส่งงาน (รอตรวจ)
+                                  </button>
+                                )}
+                                <button disabled={busy} onClick={() => handleUpdateStatus(selectedTask.id, 'Completed')} className="bg-emerald-500 hover:bg-emerald-600 text-white py-3.5 rounded-2xl font-extrabold text-sm shadow-lg disabled:opacity-60">
+                                  {isManager ? 'เสร็จสิ้น (ปิดงาน)' : 'เสร็จสิ้น (ปิดจบเอง)'}
+                                </button>
+                              </div>
+                            </div>
+                          )}
+                          {selectedTask.status === 'Review' && currentUser.role === 'Admin' && currentUser.id === selectedTask.assignedTo && (
+                            <button disabled={busy} onClick={() => handleUpdateStatus(selectedTask.id, 'Completed')} className="w-full bg-emerald-500 text-white py-3.5 rounded-2xl font-extrabold text-sm shadow-lg disabled:opacity-60">
+                              ตรวจผ่าน / ปิดงาน
+                            </button>
+                          )}
+                          {selectedTask.status === 'Completed' && (
+                            <p className="text-sm font-bold text-emerald-700 bg-emerald-50 border border-emerald-100 rounded-2xl px-4 py-3">
+                              งานนี้เสร็จสิ้นแล้ว
+                            </p>
+                          )}
+                        </div>
+                      )}
+
+                      {isManager && currentUser.id !== selectedTask.assignedTo && selectedTask.status === 'Review' && (
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                          <button disabled={busy} onClick={() => handleUpdateStatus(selectedTask.id, 'Completed')} className="bg-emerald-500 text-white py-3.5 rounded-2xl font-extrabold text-sm shadow-lg flex justify-center items-center disabled:opacity-60">
+                            <CheckCircle className="w-4 h-4 mr-2" /> ตรวจผ่าน (ปิดงาน)
+                          </button>
+                          <button disabled={busy} onClick={() => handleUpdateStatus(selectedTask.id, 'In Progress', true)} className="bg-white text-rose-600 border-2 border-rose-200 py-3.5 rounded-2xl font-extrabold text-sm shadow-sm flex justify-center items-center disabled:opacity-60">
+                            <ArrowRightLeft className="w-4 h-4 mr-2" /> ตีกลับให้แก้
+                          </button>
+                        </div>
+                      )}
+
+                      {currentUser.id !== selectedTask.assignedTo && currentUser.role !== 'Admin' && !(isManager && selectedTask.status === 'Review') && (
+                        <div className="rounded-2xl border border-dashed border-slate-200 bg-white px-4 py-3 text-sm font-bold text-[#5b7a8a]">
+                          {isStaff && selectedTask.status !== 'Completed' ? (
+                            <span>งานนี้อยู่กับ <strong>{users.find((u) => u.id === selectedTask.assignedTo)?.name}</strong> — ใช้ปุ่ม &quot;ดึงงานมาทำ&quot; ด้านล่าง หรือให้ผู้รับผิดชอบอัปเดตสถานะ</span>
+                          ) : isManager ? (
+                            <span>หัวหน้าตรวจได้เมื่อสถานะเป็น &quot;รอตรวจ&quot; — ตอนนี้ยังเป็น {getStatusText(selectedTask.status)}</span>
+                          ) : (
+                            <span>เฉพาะผู้รับผิดชอบงานนี้ถึงจะเปลี่ยนสถานะได้</span>
+                          )}
+                        </div>
+                      )}
+                    </div>
+
                     <div>
                       <h4 className="text-xs font-black text-slate-400 uppercase tracking-widest mb-3 flex items-center"><FileText className="w-4 h-4 mr-1.5" /> รายละเอียดงาน</h4>
                       <p className="text-slate-700 whitespace-pre-wrap text-sm leading-relaxed bg-slate-50 p-5 rounded-2xl border border-slate-100 font-medium">{selectedTask.description || 'ไม่มีรายละเอียดเพิ่มเติม'}</p>
@@ -1574,46 +1652,17 @@ export default function App() {
                       </div>
                     </div>
 
-                    <div className="pt-6 border-t border-slate-100">
-                      <h4 className="text-xs font-black text-slate-400 uppercase tracking-widest mb-4 flex items-center"><Settings2 className="w-4 h-4 mr-1.5" /> จัดการสถานะงาน</h4>
-
-                      {currentUser.id === selectedTask.assignedTo && (
-                        <div className="space-y-4">
-                          {selectedTask.status === 'Pending' && (
-                            <button disabled={busy} onClick={() => handleUpdateStatus(selectedTask.id, 'In Progress')} className="w-full bg-teal-500 text-white py-3.5 rounded-2xl font-black text-sm shadow-lg disabled:opacity-60">
-                              กดรับงาน (เริ่มดำเนินการ)
-                            </button>
-                          )}
-                          {selectedTask.status === 'In Progress' && (
-                            <div className="space-y-4 p-5 bg-slate-50 rounded-3xl border border-slate-200">
-                              {isStaff && (
-                                <label className="flex items-center space-x-3 cursor-pointer p-3 bg-green-50 rounded-xl border border-green-200">
-                                  <input type="checkbox" id="notifyHeadToggle" defaultChecked className="accent-green-600 w-5 h-5" />
-                                  <span className="font-bold text-green-800 text-sm flex items-center"><Smartphone className="w-4 h-4 mr-1.5 text-green-600" /> แจ้งเตือนหัวหน้าผ่าน LINE</span>
-                                </label>
-                              )}
-                              <div className="flex flex-col sm:flex-row space-y-3 sm:space-y-0 sm:space-x-4">
-                                {isStaff && (
-                                  <button disabled={busy} onClick={() => handleUpdateStatus(selectedTask.id, 'Review', document.getElementById('notifyHeadToggle')?.checked)} className="flex-1 bg-teal-600 text-white py-3.5 rounded-xl font-black text-sm shadow-lg disabled:opacity-60">ส่งงาน (รอตรวจ)</button>
-                                )}
-                                <button disabled={busy} onClick={() => handleUpdateStatus(selectedTask.id, 'Completed')} className="flex-1 bg-emerald-500 text-white py-3.5 rounded-xl font-black text-sm shadow-lg disabled:opacity-60">
-                                  {isManager ? 'เสร็จสิ้น (ปิดงาน)' : 'เสร็จสิ้น (ปิดจบเอง)'}
-                                </button>
-                              </div>
-                            </div>
-                          )}
-                          {(selectedTask.status === 'Pending' || selectedTask.status === 'In Progress') && (
-                            <div className="mt-6 p-5 bg-white border-2 border-dashed border-slate-200 rounded-3xl">
-                              <p className="text-xs font-bold text-slate-500 mb-3 uppercase tracking-wider">โอนงานให้เพื่อนร่วมทีม</p>
-                              <div className="flex space-x-3">
-                                <select id="forwardSelect" className="flex-1 border border-slate-100 rounded-xl p-2.5 text-sm font-bold outline-none bg-slate-50">
-                                  <option value="">-- เลือกผู้รับงาน --</option>
-                                  {deptUsers.filter((u) => u.id !== currentUser.id && (u.role === 'Staff' || u.role === 'Head')).map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
-                                </select>
-                                <button disabled={busy} onClick={() => { const s = document.getElementById('forwardSelect').value; if (s) handleForward(selectedTask.id, s); }} className="bg-slate-800 text-white px-5 py-2.5 rounded-xl text-sm font-bold disabled:opacity-60">ส่งต่อ</button>
-                              </div>
-                            </div>
-                          )}
+                    <div className="pt-4 border-t border-slate-100 space-y-4">
+                      {(currentUser.id === selectedTask.assignedTo || currentUser.role === 'Admin') && (selectedTask.status === 'Pending' || selectedTask.status === 'In Progress') && (
+                        <div className="p-5 bg-white border-2 border-dashed border-slate-200 rounded-3xl">
+                          <p className="text-xs font-bold text-slate-500 mb-3 uppercase tracking-wider">โอนงานให้เพื่อนร่วมทีม</p>
+                          <div className="flex space-x-3">
+                            <select id="forwardSelect" className="flex-1 border border-slate-100 rounded-xl p-2.5 text-sm font-bold outline-none bg-slate-50">
+                              <option value="">-- เลือกผู้รับงาน --</option>
+                              {deptUsers.filter((u) => u.id !== currentUser.id && (u.role === 'Staff' || u.role === 'Head')).map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
+                            </select>
+                            <button disabled={busy} onClick={() => { const s = document.getElementById('forwardSelect').value; if (s) handleForward(selectedTask.id, s); }} className="bg-slate-800 text-white px-5 py-2.5 rounded-xl text-sm font-bold disabled:opacity-60">ส่งต่อ</button>
+                          </div>
                         </div>
                       )}
 
@@ -1623,28 +1672,10 @@ export default function App() {
                             <div className="bg-teal-100 p-3 rounded-2xl mr-4 shrink-0"><Grab className="w-6 h-6 text-teal-700" /></div>
                             <div className="flex-1 pr-4">
                               <h5 className="font-extrabold text-teal-900 text-base mb-1">ดึงงานนี้มาทำแทน (Takeover)</h5>
-                              <p className="text-xs text-teal-700/80 font-medium leading-relaxed">งานนี้อยู่กับ <strong>{users.find((u) => u.id === selectedTask.assignedTo)?.name}</strong> คุณสามารถดึงมาทำเองได้กรณีฉุกเฉิน ระบบจะบันทึก Log ให้อัตโนมัติ</p>
+                              <p className="text-xs text-teal-700/80 font-medium leading-relaxed">งานนี้อยู่กับ <strong>{users.find((u) => u.id === selectedTask.assignedTo)?.name}</strong> คุณสามารถดึงมาทำเองได้กรณีฉุกเฉิน</p>
                             </div>
                             <button disabled={busy} onClick={() => handleTakeover(selectedTask.id)} className="bg-teal-600 hover:bg-teal-700 text-white px-6 py-3 rounded-xl text-sm font-black shadow-lg shrink-0 w-full sm:w-auto disabled:opacity-60">ดึงงานมาทำ</button>
                           </div>
-                        </div>
-                      )}
-
-                      {isManager && currentUser.id !== selectedTask.assignedTo && selectedTask.status === 'Review' && (
-                        <div className="flex flex-col sm:flex-row space-y-3 sm:space-y-0 sm:space-x-4 mt-2 p-5 bg-teal-50 rounded-3xl border border-teal-100">
-                          <button disabled={busy} onClick={() => handleUpdateStatus(selectedTask.id, 'Completed')} className="flex-1 bg-emerald-500 text-white py-3.5 rounded-xl font-black text-sm shadow-lg flex justify-center items-center disabled:opacity-60">
-                            <CheckCircle className="w-4 h-4 mr-2" /> ตรวจผ่าน (ปิดงาน)
-                          </button>
-                          <button disabled={busy} onClick={() => handleUpdateStatus(selectedTask.id, 'In Progress', true)} className="flex-1 bg-white text-rose-600 border-2 border-rose-200 py-3.5 rounded-xl font-black text-sm shadow-sm flex justify-center items-center disabled:opacity-60">
-                            <ArrowRightLeft className="w-4 h-4 mr-2" /> ตีกลับให้แก้ (แจ้ง LINE)
-                          </button>
-                        </div>
-                      )}
-                      {isManager && currentUser.id !== selectedTask.assignedTo && selectedTask.status !== 'Review' && selectedTask.status !== 'Completed' && (
-                        <div className="p-6 bg-slate-50 rounded-3xl border border-slate-200 border-dashed text-center">
-                          <Clock className="w-6 h-6 mx-auto mb-2 text-slate-300" />
-                          <p className="text-sm font-bold text-slate-500">รอรับการส่งงาน</p>
-                          <p className="text-xs text-slate-400 mt-1">หัวหน้าจะตรวจได้เมื่อสถานะเป็น &quot;รอตรวจ&quot;</p>
                         </div>
                       )}
                     </div>
