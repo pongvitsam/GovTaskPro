@@ -143,7 +143,7 @@ export default function AdminUsers({
   const saveEdit = async () => {
     if (!editDraft || !editingId) return;
     if (!editDraft.username.trim()) {
-      showToast('❌ ต้องตั้ง Username สำหรับเข้าแผนก');
+      showToast('❌ ต้องตั้ง Username (อ้างอิงในระบบ)');
       return;
     }
     if (!editDraft.department.trim() && editDraft.role !== 'Admin') {
