@@ -775,7 +775,7 @@ export default function App() {
             { id: 'sticky', icon: StickyNote, label: 'เตือนความจำ (ส่วนตัว)' },
             { id: 'reports', icon: BarChart2, label: 'สถิติ & รายงาน (Reports)' },
             { id: 'create', icon: Plus, label: 'สร้างงาน (Create)' },
-            ...(currentUser.role === 'Admin' ? [{ id: 'adminUsers', icon: ShieldCheck, label: 'จัดการผู้ใช้ (Admin)' }] : []),
+            ...(currentUser.role === 'Admin' ? [{ id: 'adminUsers', icon: ShieldCheck, label: 'สิทธิ์ตามแผนก (Admin)' }] : []),
             { id: 'settings', icon: Settings2, label: 'ตั้งค่า (Settings)' },
           ].map((menu) => (
             <button
@@ -842,7 +842,7 @@ export default function App() {
                 { id: 'sticky', icon: StickyNote, label: 'เตือนความจำ' },
                 { id: 'reports', icon: BarChart2, label: 'สถิติ & รายงาน' },
                 { id: 'create', icon: Plus, label: 'สร้างงาน' },
-                ...(currentUser.role === 'Admin' ? [{ id: 'adminUsers', icon: ShieldCheck, label: 'จัดการผู้ใช้' }] : []),
+                ...(currentUser.role === 'Admin' ? [{ id: 'adminUsers', icon: ShieldCheck, label: 'สิทธิ์แผนก' }] : []),
                 { id: 'settings', icon: Settings2, label: 'ตั้งค่า' },
               ].map((menu) => (
                 <button
