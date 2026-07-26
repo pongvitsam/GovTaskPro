@@ -1,0 +1,19 @@
+{
+  "name": "GovTaskPro",
+  "short_name": "GovTaskPro",
+  "description": "ระบบติดตามงานหน่วยงาน — ใช้ได้หลายเครื่อง",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#eef6fa",
+  "theme_color": "#163542",
+  "lang": "th",
+  "icons": [
+    {
+      "src": "favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}

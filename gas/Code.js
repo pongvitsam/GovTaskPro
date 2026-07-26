@@ -9,10 +9,12 @@ var LOGS_SHEET = 'TaskLogs';
 var COMMENTS_SHEET = 'Comments';
 var MILESTONES_SHEET = 'Milestones';
 var STICKY_NOTES_SHEET = 'StickyNotes';
+var ORG_UNITS_SHEET = 'OrgUnits';
 
 var USER_HEADERS = [
   'id', 'name', 'role', 'department', 'division', 'active',
-  'email', 'notifyEmail', 'notifyAssign', 'notifyStatus', 'notifyReview', 'notifyLineDefault'
+  'email', 'notifyEmail', 'notifyAssign', 'notifyStatus', 'notifyReview', 'notifyLineDefault',
+  'username', 'password'
 ];
 var PROJECT_HEADERS = ['id', 'name', 'description', 'createdBy', 'createdAt', 'startDate', 'endDate'];
 var TASK_HEADERS = [
@@ -29,6 +31,7 @@ var STICKY_NOTE_HEADERS = [
   'id', 'userId', 'title', 'body', 'color', 'emoji',
   'x', 'y', 'width', 'height', 'zIndex', 'createdAt', 'updatedAt'
 ];
+var ORG_HEADERS = ['id', 'type', 'name', 'parent', 'active', 'code'];
 
 var FRONTEND_URL = 'https://pongvitsam.github.io/GovTaskPro/';
 
@@ -159,7 +162,7 @@ function dispatchApi_(fn, payload, hasPayload) {
 
   // no-arg
   if (fn === 'ping') return ping();
-  if (fn === 'getBootstrap') return getBootstrap();
+  if (fn === 'getBootstrap') return getBootstrap(payload || {});
 
   // payload optional / required
   if (fn === 'getTaskActivity') return getTaskActivity(payload || {});
@@ -178,6 +181,18 @@ function dispatchApi_(fn, payload, hasPayload) {
   if (fn === 'updateStickyNote') return updateStickyNote(payload || {});
   if (fn === 'deleteStickyNote') return deleteStickyNote(payload || {});
   if (fn === 'updateUserProfile') return updateUserProfile(payload || {});
+  if (fn === 'login') return login(payload || {});
+  if (fn === 'loginDept') return loginDept(payload || {});
+  if (fn === 'loginStaff') return loginStaff(payload || {});
+  if (fn === 'loginAdmin') return loginAdmin(payload || {});
+  if (fn === 'changePassword') return changePassword(payload || {});
+  if (fn === 'adminCreateUser') return adminCreateUser(payload || {});
+  if (fn === 'adminResetPassword') return adminResetPassword(payload || {});
+  if (fn === 'adminSetUserActive') return adminSetUserActive(payload || {});
+  if (fn === 'adminGetUsers') return adminGetUsers(payload || {});
+  if (fn === 'adminUpdateUser') return adminUpdateUser(payload || {});
+  if (fn === 'adminCreateOrgUnit') return adminCreateOrgUnit(payload || {});
+  if (fn === 'adminDeleteOrgUnit') return adminDeleteOrgUnit(payload || {});
 
   throw new Error('Unknown API: ' + fn);
 }
@@ -191,9 +206,9 @@ function include_(filename) {
   return include(filename);
 }
 
-var SCHEMA_VERSION = '5';
-var BOOT_CACHE_KEY = 'gtp_boot_v2';
-var BOOT_CACHE_TTL = 45;
+var SCHEMA_VERSION = '8';
+var BOOT_CACHE_KEY = 'gtp_boot_v5';
+var BOOT_CACHE_TTL = 20;
 var _ssCache = null;
 var STICKY_COLORS = ['yellow', 'pink', 'mint', 'blue', 'lavender'];
 
@@ -204,14 +219,18 @@ function invalidateBootstrapCache_() {
 }
 
 /** Client bootstrap: core sheets only (logs/comments lazy via getTaskActivity) */
-function getBootstrap() {
+function getBootstrap(opt) {
   try {
+    opt = opt || {};
+    var forceFresh = !!(opt.force || opt.fresh || opt.nocache);
     var cache = CacheService.getScriptCache();
-    var hit = cache.get(BOOT_CACHE_KEY);
-    if (hit) {
-      try {
-        return JSON.parse(hit);
-      } catch (parseErr) { /* rebuild */ }
+    if (!forceFresh) {
+      var hit = cache.get(BOOT_CACHE_KEY);
+      if (hit) {
+        try {
+          return JSON.parse(hit);
+        } catch (parseErr) { /* rebuild */ }
+      }
     }
 
     var ss = openDatabase_(false);
@@ -243,6 +262,7 @@ function getBootstrap() {
       comments: [],
       commentCounts: commentCounts,
       milestones: listMilestonesFromSs_(ss),
+      orgUnits: listOrgUnitsFromSs_(ss),
       serverTime: new Date().toISOString()
     };
 
@@ -660,12 +680,19 @@ function ensureDatabase_() {
 function maybeMigrateAndSeed_(ss) {
   var props = PropertiesService.getScriptProperties();
   var version = props.getProperty('SCHEMA_VERSION') || '';
-  if (version === SCHEMA_VERSION) return;
+  if (version === SCHEMA_VERSION) {
+    ensureAdminUser_();
+    try { ensureOrgUnitsSeed_(); } catch (orgWarm) { /* non-fatal */ }
+    return;
+  }
 
   ensureSheets_(ss);
   ensureSeed_();
   try { ensureMilestoneDemo_(); } catch (msErr) { /* non-fatal */ }
   try { ensureProjectDates_(); } catch (pdErr) { /* non-fatal */ }
+  try { ensureUserAuthDefaults_(); } catch (uaErr) { /* non-fatal */ }
+  try { ensureOrgUnitsSeed_(); } catch (orgErr) { /* non-fatal */ }
+  ensureAdminUser_();
   props.setProperty('SCHEMA_VERSION', SCHEMA_VERSION);
 }
 
@@ -677,9 +704,10 @@ function ensureSheets_(ss) {
   ensureSheetWithHeaders_(ss, COMMENTS_SHEET, COMMENT_HEADERS);
   ensureSheetWithHeaders_(ss, MILESTONES_SHEET, MILESTONE_HEADERS);
   ensureSheetWithHeaders_(ss, STICKY_NOTES_SHEET, STICKY_NOTE_HEADERS);
+  ensureSheetWithHeaders_(ss, ORG_UNITS_SHEET, ORG_HEADERS);
 
   var sheets = ss.getSheets();
-  if (sheets.length > 7) {
+  if (sheets.length > 8) {
     for (var i = 0; i < sheets.length; i++) {
       var n = sheets[i].getName();
       if (n === 'Sheet1' && ss.getSheets().length > 1) {
@@ -791,9 +819,11 @@ function rowToObject_(headers, row) {
 }
 
 function listUsersFromSs_(ss) {
-  return listObjectsFromSheet_(ss.getSheetByName(USERS_SHEET)).map(normalizeUser_).filter(function (u) {
-    return u.active;
-  });
+  return listObjectsFromSheet_(ss.getSheetByName(USERS_SHEET)).map(normalizeUser_);
+}
+
+function listUsersRaw_() {
+  return listObjects_(USERS_SHEET);
 }
 
 function normalizeUser_(u) {
@@ -817,8 +847,493 @@ function normalizeUser_(u) {
     notifyAssign: flag(u.notifyAssign, true),
     notifyStatus: flag(u.notifyStatus, true),
     notifyReview: flag(u.notifyReview, role === 'Head'),
-    notifyLineDefault: flag(u.notifyLineDefault, true)
+    notifyLineDefault: flag(u.notifyLineDefault, true),
+    username: String(u.username || '').trim()
+    // password never returned to client (except adminGetUsers / adminUpdate*)
   };
+}
+
+function normalizeUserAdmin_(u) {
+  var base = normalizeUser_(u);
+  base.password = String(u.password || '');
+  return base;
+}
+
+function normalizeOrgUnit_(o) {
+  var name = String(o.name || '').trim();
+  var code = String(o.code || '').trim();
+  if (!code && name) code = name.replace(/\s+/g, '').toUpperCase();
+  return {
+    id: String(o.id),
+    type: String(o.type || 'department') === 'division' ? 'division' : 'department',
+    name: name,
+    parent: String(o.parent || '').trim(),
+    active: String(o.active) !== 'FALSE',
+    code: code
+  };
+}
+
+function listOrgUnitsFromSs_(ss) {
+  var sheet = ss.getSheetByName(ORG_UNITS_SHEET);
+  if (!sheet) return [];
+  return listObjectsFromSheet_(sheet).map(normalizeOrgUnit_).filter(function (o) {
+    return o.active && o.name;
+  });
+}
+
+function listOrgUnitsRaw_() {
+  return listObjects_(ORG_UNITS_SHEET);
+}
+
+function requireAdmin_(adminId) {
+  var admin = findUserById_(adminId);
+  if (!admin || admin.role !== 'Admin' || !admin.active) {
+    throw new Error('ไม่มีสิทธิ์แอดมิน');
+  }
+  return admin;
+}
+
+function findDeptByCode_(code) {
+  var needle = String(code || '').trim().toLowerCase();
+  if (!needle) return null;
+  var raw = listOrgUnitsRaw_();
+  for (var i = 0; i < raw.length; i++) {
+    var o = raw[i];
+    if (String(o.type) !== 'department') continue;
+    if (String(o.active).toUpperCase() === 'FALSE') continue;
+    var c = String(o.code || '').trim().toLowerCase();
+    var n = String(o.name || '').trim().toLowerCase();
+    if (!c) c = n.replace(/\s+/g, '');
+    if (c === needle || n === needle || n.replace(/\s+/g, '') === needle) {
+      return normalizeOrgUnit_(o);
+    }
+  }
+  return null;
+}
+
+/** Staff/Head: รหัสแผนก + username (legacy) */
+function loginDept(payload) {
+  openDatabase_(false);
+  ensureAdminUser_();
+  try { ensureOrgUnitsSeed_(); } catch (e) {}
+  var departmentCode = String(payload.departmentCode || '').trim();
+  var username = String(payload.username || '').trim().toLowerCase();
+  if (!departmentCode) throw new Error('กรอกรหัสแผนก');
+  if (!username) throw new Error('กรอกชื่อผู้ใช้');
+
+  var dept = findDeptByCode_(departmentCode);
+  if (!dept) throw new Error('รหัสแผนกไม่ถูกต้อง');
+
+  var raw = listUsersRaw_();
+  for (var i = 0; i < raw.length; i++) {
+    var u = raw[i];
+    var uname = String(u.username || '').trim().toLowerCase();
+    if (!uname) uname = String(u.id || '').trim().toLowerCase();
+    if (uname !== username) continue;
+    if (String(u.active).toUpperCase() === 'FALSE') throw new Error('บัญชีถูกปิดการใช้งาน');
+    if (String(u.role) === 'Admin') {
+      throw new Error('บัญชีแอดมินต้องเข้าสู่ระบบด้วย Username และรหัสผ่าน');
+    }
+    var userDept = String(u.department || '').trim().toLowerCase();
+    if (userDept !== String(dept.name).trim().toLowerCase()) {
+      throw new Error('Username นี้ไม่อยู่ในแผนกที่ระบุ');
+    }
+    return normalizeUser_(u);
+  }
+  throw new Error('ไม่พบชื่อผู้ใช้ในแผนกนี้');
+}
+
+/** Staff/Head: กรอกแค่ username */
+function loginStaff(payload) {
+  openDatabase_(false);
+  ensureAdminUser_();
+  var username = String(payload.username || '').trim().toLowerCase();
+  if (!username) throw new Error('กรอกชื่อผู้ใช้');
+
+  var raw = listUsersRaw_();
+  for (var i = 0; i < raw.length; i++) {
+    var u = raw[i];
+    var uname = String(u.username || '').trim().toLowerCase();
+    if (!uname) uname = String(u.id || '').trim().toLowerCase();
+    if (uname !== username) continue;
+    if (String(u.active).toUpperCase() === 'FALSE') throw new Error('บัญชีถูกปิดการใช้งาน');
+    if (String(u.role) === 'Admin') {
+      throw new Error('บัญชีแอดมินกดปุ่ม "แอดมิน" มุมบนขวา แล้วใส่รหัสผ่าน');
+    }
+    return normalizeUser_(u);
+  }
+  throw new Error('ไม่พบชื่อผู้ใช้นี้');
+}
+
+/** แอดมิน: username + password */
+function loginAdmin(payload) {
+  openDatabase_(false);
+  ensureAdminUser_();
+  var username = String(payload.username || '').trim().toLowerCase();
+  var password = String(payload.password || '');
+  if (!username || !password) throw new Error('กรอกชื่อผู้ใช้และรหัสผ่าน');
+
+  var raw = listUsersRaw_();
+  for (var i = 0; i < raw.length; i++) {
+    var u = raw[i];
+    var uname = String(u.username || '').trim().toLowerCase();
+    if (!uname) uname = String(u.id || '').trim().toLowerCase();
+    if (uname !== username) continue;
+    if (String(u.active).toUpperCase() === 'FALSE') throw new Error('บัญชีถูกปิดการใช้งาน');
+    if (String(u.role) !== 'Admin') {
+      throw new Error('โหมดนี้สำหรับแอดมินเท่านั้น — พนักงานใช้รหัสแผนกเข้าสู่ระบบ');
+    }
+    if (String(u.password || '') !== password) throw new Error('ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง');
+    return normalizeUser_(u);
+  }
+  throw new Error('ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง');
+}
+
+function login(payload) {
+  // backward compatible: route by role after password match
+  openDatabase_(false);
+  ensureAdminUser_();
+  var username = String(payload.username || '').trim().toLowerCase();
+  var password = String(payload.password || '');
+  if (!username || !password) throw new Error('กรอกชื่อผู้ใช้และรหัสผ่าน');
+
+  var raw = listUsersRaw_();
+  for (var i = 0; i < raw.length; i++) {
+    var u = raw[i];
+    var uname = String(u.username || '').trim().toLowerCase();
+    if (!uname) uname = String(u.id || '').trim().toLowerCase();
+    if (uname !== username) continue;
+    if (String(u.active).toUpperCase() === 'FALSE') throw new Error('บัญชีถูกปิดการใช้งาน');
+    if (String(u.password || '') !== password) throw new Error('ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง');
+    return normalizeUser_(u);
+  }
+  throw new Error('ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง');
+}
+
+function changePassword(payload) {
+  openDatabase_(false);
+  var userId = String(payload.userId || '');
+  var currentPassword = String(payload.currentPassword || '');
+  var newPassword = String(payload.newPassword || '');
+  if (!userId) throw new Error('ไม่พบผู้ใช้');
+  if (!newPassword || newPassword.length < 4) throw new Error('รหัสผ่านใหม่ต้องมีอย่างน้อย 4 ตัวอักษร');
+
+  var raw = listUsersRaw_();
+  for (var i = 0; i < raw.length; i++) {
+    if (String(raw[i].id) !== userId) continue;
+    if (String(raw[i].password || '') !== currentPassword) {
+      throw new Error('รหัสผ่านปัจจุบันไม่ถูกต้อง');
+    }
+    var found = updateRowById_(USERS_SHEET, userId, { password: newPassword });
+    if (!found) throw new Error('ไม่พบผู้ใช้');
+    invalidateBootstrapCache_();
+    return { ok: true };
+  }
+  throw new Error('ไม่พบผู้ใช้');
+}
+
+function adminGetUsers(payload) {
+  openDatabase_(false);
+  requireAdmin_(payload.adminId);
+  ensureAdminUser_();
+  return listUsersRaw_().map(normalizeUserAdmin_);
+}
+
+function adminCreateUser(payload) {
+  openDatabase_(false);
+  requireAdmin_(payload.adminId);
+  var username = String(payload.username || '').trim();
+  var password = String(payload.password || '');
+  var name = String(payload.name || '').trim();
+  var role = String(payload.role || 'Staff');
+  if (!username || !password || !name) throw new Error('กรอกชื่อผู้ใช้ รหัสผ่าน และชื่อแสดง');
+  if (['Staff', 'Head', 'Admin'].indexOf(role) < 0) throw new Error('บทบาทไม่ถูกต้อง');
+  if (password.length < 4) throw new Error('รหัสผ่านต้องมีอย่างน้อย 4 ตัวอักษร');
+
+  var raw = listUsersRaw_();
+  var lower = username.toLowerCase();
+  for (var i = 0; i < raw.length; i++) {
+    var existing = String(raw[i].username || raw[i].id || '').trim().toLowerCase();
+    if (existing === lower) throw new Error('Username นี้ถูกใช้แล้ว');
+  }
+
+  var row = {
+    id: 'u_' + Date.now(),
+    name: name,
+    role: role,
+    department: String(payload.department || '').trim() || 'IT',
+    division: String(payload.division || '').trim(),
+    active: 'TRUE',
+    email: '',
+    notifyEmail: 'FALSE',
+    notifyAssign: 'TRUE',
+    notifyStatus: 'TRUE',
+    notifyReview: role === 'Head' || role === 'Admin' ? 'TRUE' : 'FALSE',
+    notifyLineDefault: 'TRUE',
+    username: username,
+    password: password
+  };
+  appendObject_(USERS_SHEET, USER_HEADERS, row);
+  try { upsertOrgFromUserFields_(row.department, row.division); } catch (e) {}
+  invalidateBootstrapCache_();
+  return normalizeUserAdmin_(row);
+}
+
+function adminUpdateUser(payload) {
+  openDatabase_(false);
+  requireAdmin_(payload.adminId);
+  var userId = String(payload.userId || '');
+  if (!userId) throw new Error('ไม่พบผู้ใช้');
+
+  var updates = {};
+  if (payload.name !== undefined) {
+    var name = String(payload.name || '').trim();
+    if (!name) throw new Error('ชื่อจำเป็น');
+    updates.name = name;
+  }
+  if (payload.role !== undefined) {
+    var role = String(payload.role || '');
+    if (['Staff', 'Head', 'Admin'].indexOf(role) < 0) throw new Error('บทบาทไม่ถูกต้อง');
+    if (String(userId) === String(payload.adminId) && role !== 'Admin') {
+      throw new Error('ลดสิทธิ์แอดมินของตัวเองไม่ได้');
+    }
+    updates.role = role;
+    if (role === 'Head' || role === 'Admin') updates.notifyReview = 'TRUE';
+  }
+  if (payload.department !== undefined) updates.department = String(payload.department || '').trim();
+  if (payload.division !== undefined) updates.division = String(payload.division || '').trim();
+  if (payload.username !== undefined) {
+    var username = String(payload.username || '').trim();
+    if (!username) throw new Error('Username จำเป็น');
+    var rawUsers = listUsersRaw_();
+    var lower = username.toLowerCase();
+    for (var i = 0; i < rawUsers.length; i++) {
+      if (String(rawUsers[i].id) === userId) continue;
+      var existing = String(rawUsers[i].username || rawUsers[i].id || '').trim().toLowerCase();
+      if (existing === lower) throw new Error('Username นี้ถูกใช้แล้ว');
+    }
+    updates.username = username;
+  }
+  if (payload.password !== undefined && String(payload.password) !== '') {
+    if (String(payload.password).length < 4) throw new Error('รหัสผ่านต้องมีอย่างน้อย 4 ตัวอักษร');
+    updates.password = String(payload.password);
+  }
+  if (payload.active !== undefined) {
+    if (String(userId) === String(payload.adminId) && !payload.active) {
+      throw new Error('ปิดบัญชีตัวเองไม่ได้');
+    }
+    updates.active = payload.active ? 'TRUE' : 'FALSE';
+  }
+
+  var keys = Object.keys(updates);
+  if (!keys.length) throw new Error('ไม่มีข้อมูลที่ต้องอัปเดต');
+
+  var found = updateRowById_(USERS_SHEET, userId, updates);
+  if (!found) throw new Error('ไม่พบผู้ใช้');
+  try {
+    upsertOrgFromUserFields_(
+      updates.department !== undefined ? updates.department : found.department,
+      updates.division !== undefined ? updates.division : found.division
+    );
+  } catch (e2) {}
+  invalidateBootstrapCache_();
+  return normalizeUserAdmin_(found);
+}
+
+function adminResetPassword(payload) {
+  openDatabase_(false);
+  requireAdmin_(payload.adminId);
+  var userId = String(payload.userId || '');
+  var newPassword = String(payload.newPassword || '');
+  if (!userId) throw new Error('ไม่พบผู้ใช้');
+  if (!newPassword || newPassword.length < 4) throw new Error('รหัสผ่านใหม่ต้องมีอย่างน้อย 4 ตัวอักษร');
+  var found = updateRowById_(USERS_SHEET, userId, { password: newPassword });
+  if (!found) throw new Error('ไม่พบผู้ใช้');
+  invalidateBootstrapCache_();
+  return normalizeUserAdmin_(found);
+}
+
+function adminSetUserActive(payload) {
+  openDatabase_(false);
+  requireAdmin_(payload.adminId);
+  var userId = String(payload.userId || '');
+  if (!userId) throw new Error('ไม่พบผู้ใช้');
+  if (String(userId) === String(payload.adminId)) throw new Error('ปิดบัญชีตัวเองไม่ได้');
+  var found = updateRowById_(USERS_SHEET, userId, {
+    active: payload.active ? 'TRUE' : 'FALSE'
+  });
+  if (!found) throw new Error('ไม่พบผู้ใช้');
+  invalidateBootstrapCache_();
+  return normalizeUserAdmin_(found);
+}
+
+function upsertOrgFromUserFields_(department, division) {
+  var dept = String(department || '').trim();
+  var div = String(division || '').trim();
+  if (dept) ensureOrgUnitExists_('department', dept, '');
+  if (div) ensureOrgUnitExists_('division', div, dept);
+}
+
+function ensureOrgUnitExists_(type, name, parent, codeOpt) {
+  name = String(name || '').trim();
+  if (!name) return null;
+  parent = String(parent || '').trim();
+  var code = String(codeOpt || '').trim();
+  if (!code && type === 'department') code = name.replace(/\s+/g, '').toUpperCase();
+  var raw = listOrgUnitsRaw_();
+  for (var i = 0; i < raw.length; i++) {
+    var o = raw[i];
+    if (String(o.type) === type && String(o.name || '').trim().toLowerCase() === name.toLowerCase()) {
+      var patch = {};
+      if (type === 'division' && parent && String(o.parent || '').trim() !== parent) patch.parent = parent;
+      if (String(o.active).toUpperCase() === 'FALSE') patch.active = 'TRUE';
+      if (type === 'department' && code && !String(o.code || '').trim()) patch.code = code;
+      if (Object.keys(patch).length) updateRowById_(ORG_UNITS_SHEET, String(o.id), patch);
+      return String(o.id);
+    }
+  }
+  var row = {
+    id: 'org_' + Date.now() + '_' + Math.floor(Math.random() * 1000),
+    type: type,
+    name: name,
+    parent: type === 'division' ? parent : '',
+    active: 'TRUE',
+    code: type === 'department' ? code : ''
+  };
+  appendObject_(ORG_UNITS_SHEET, ORG_HEADERS, row);
+  return row.id;
+}
+
+function ensureOrgUnitsSeed_() {
+  ensureSheets_(openDatabase_(false));
+  var raw = listOrgUnitsRaw_();
+  if (raw.length === 0) {
+    ensureOrgUnitExists_('department', 'IT', '', 'IT');
+    ensureOrgUnitExists_('department', 'SYSTEM', '', 'SYSTEM');
+    ensureOrgUnitExists_('division', 'กองเทคโนโลยี', 'IT');
+    ensureOrgUnitExists_('division', 'ผู้ดูแลระบบ', 'SYSTEM');
+  }
+  raw = listOrgUnitsRaw_();
+  for (var r = 0; r < raw.length; r++) {
+    if (String(raw[r].type) !== 'department') continue;
+    if (String(raw[r].code || '').trim()) continue;
+    var autoCode = String(raw[r].name || '').replace(/\s+/g, '').toUpperCase();
+    if (autoCode) updateRowById_(ORG_UNITS_SHEET, String(raw[r].id), { code: autoCode });
+  }
+  var users = listUsersRaw_();
+  for (var i = 0; i < users.length; i++) {
+    upsertOrgFromUserFields_(users[i].department, users[i].division);
+  }
+}
+
+function adminCreateOrgUnit(payload) {
+  openDatabase_(false);
+  requireAdmin_(payload.adminId);
+  var type = String(payload.type || 'department') === 'division' ? 'division' : 'department';
+  var name = String(payload.name || '').trim();
+  var parent = String(payload.parent || '').trim();
+  var code = String(payload.code || '').trim();
+  if (!name) throw new Error('กรอกชื่อ' + (type === 'division' ? 'กอง' : 'แผนก'));
+  if (type === 'division' && !parent) throw new Error('เลือกแผนกแม่ของกอง');
+  if (type === 'department' && !code) code = name.replace(/\s+/g, '').toUpperCase();
+
+  var raw = listOrgUnitsRaw_();
+  for (var i = 0; i < raw.length; i++) {
+    if (String(raw[i].type) === type && String(raw[i].name || '').trim().toLowerCase() === name.toLowerCase()
+      && String(raw[i].active).toUpperCase() !== 'FALSE') {
+      throw new Error((type === 'division' ? 'กอง' : 'แผนก') + 'นี้มีอยู่แล้ว');
+    }
+    if (type === 'department' && code) {
+      var existingCode = String(raw[i].code || raw[i].name || '').replace(/\s+/g, '').toLowerCase();
+      if (String(raw[i].type) === 'department' && existingCode === code.toLowerCase()
+        && String(raw[i].active).toUpperCase() !== 'FALSE') {
+        throw new Error('รหัสแผนกนี้ถูกใช้แล้ว');
+      }
+    }
+  }
+  if (type === 'division') {
+    var parentOk = false;
+    for (var j = 0; j < raw.length; j++) {
+      if (String(raw[j].type) === 'department' && String(raw[j].name || '').trim() === parent
+        && String(raw[j].active).toUpperCase() !== 'FALSE') {
+        parentOk = true;
+        break;
+      }
+    }
+    if (!parentOk) {
+      ensureOrgUnitExists_('department', parent, '');
+    }
+  }
+
+  var row = {
+    id: 'org_' + Date.now(),
+    type: type,
+    name: name,
+    parent: type === 'division' ? parent : '',
+    active: 'TRUE',
+    code: type === 'department' ? code : ''
+  };
+  appendObject_(ORG_UNITS_SHEET, ORG_HEADERS, row);
+  invalidateBootstrapCache_();
+  return normalizeOrgUnit_(row);
+}
+
+function adminDeleteOrgUnit(payload) {
+  openDatabase_(false);
+  requireAdmin_(payload.adminId);
+  var id = String(payload.id || '');
+  if (!id) throw new Error('ไม่พบรายการ');
+  var found = updateRowById_(ORG_UNITS_SHEET, id, { active: 'FALSE' });
+  if (!found) throw new Error('ไม่พบรายการ');
+  invalidateBootstrapCache_();
+  return { ok: true, id: id };
+}
+
+function ensureAdminUser_() {
+  var raw = listUsersRaw_();
+  for (var i = 0; i < raw.length; i++) {
+    if (String(raw[i].role) === 'Admin' || String(raw[i].username || '').toLowerCase() === 'admin') {
+      return;
+    }
+  }
+  appendObject_(USERS_SHEET, USER_HEADERS, {
+    id: 'admin',
+    name: 'ผู้ดูแลระบบ',
+    role: 'Admin',
+    department: 'SYSTEM',
+    division: 'ผู้ดูแลระบบ',
+    active: 'TRUE',
+    email: '',
+    notifyEmail: 'FALSE',
+    notifyAssign: 'TRUE',
+    notifyStatus: 'TRUE',
+    notifyReview: 'TRUE',
+    notifyLineDefault: 'TRUE',
+    username: 'admin',
+    password: '1234'
+  });
+  invalidateBootstrapCache_();
+}
+
+function ensureUserAuthDefaults_() {
+  var sheet = getSheet_(USERS_SHEET);
+  var data = sheet.getDataRange().getValues();
+  if (data.length < 2) return;
+  var headers = data[0].map(function (h) { return String(h || ''); });
+  var idIdx = headers.indexOf('id');
+  var userIdx = headers.indexOf('username');
+  var passIdx = headers.indexOf('password');
+  if (idIdx < 0 || userIdx < 0 || passIdx < 0) return;
+  for (var r = 1; r < data.length; r++) {
+    var id = String(data[r][idIdx] || '');
+    if (!id) continue;
+    if (!String(data[r][userIdx] || '').trim()) {
+      sheet.getRange(r + 1, userIdx + 1).setValue(id);
+    }
+    if (!String(data[r][passIdx] || '').trim()) {
+      sheet.getRange(r + 1, passIdx + 1).setValue('1234');
+    }
+  }
 }
 
 function updateUserProfile(payload) {
@@ -1114,10 +1629,11 @@ function ensureSeed_() {
   var DAY = 86400000;
 
   var seedUsers = [
-    ['u1', 'คุณบอส (หัวหน้าแผนก IT)', 'Head', 'IT', 'กองเทคโนโลยี', 'TRUE', '', 'FALSE', 'TRUE', 'TRUE', 'TRUE', 'TRUE'],
-    ['u2', 'สมชาย (พนักงาน IT)', 'Staff', 'IT', 'กองเทคโนโลยี', 'TRUE', '', 'FALSE', 'TRUE', 'TRUE', 'FALSE', 'TRUE'],
-    ['u3', 'สมหญิง (พนักงาน IT)', 'Staff', 'IT', 'กองเทคโนโลยี', 'TRUE', '', 'FALSE', 'TRUE', 'TRUE', 'FALSE', 'TRUE'],
-    ['u4', 'สมศักดิ์ (พนักงาน IT)', 'Staff', 'IT', 'กองเทคโนโลยี', 'TRUE', '', 'FALSE', 'TRUE', 'TRUE', 'FALSE', 'TRUE']
+    ['admin', 'ผู้ดูแลระบบ', 'Admin', 'SYSTEM', 'ผู้ดูแลระบบ', 'TRUE', '', 'FALSE', 'TRUE', 'TRUE', 'TRUE', 'TRUE', 'admin', '1234'],
+    ['u1', 'คุณบอส (หัวหน้าแผนก IT)', 'Head', 'IT', 'กองเทคโนโลยี', 'TRUE', '', 'FALSE', 'TRUE', 'TRUE', 'TRUE', 'TRUE', 'boss', '1234'],
+    ['u2', 'สมชาย (พนักงาน IT)', 'Staff', 'IT', 'กองเทคโนโลยี', 'TRUE', '', 'FALSE', 'TRUE', 'TRUE', 'FALSE', 'TRUE', 'somchai', '1234'],
+    ['u3', 'สมหญิง (พนักงาน IT)', 'Staff', 'IT', 'กองเทคโนโลยี', 'TRUE', '', 'FALSE', 'TRUE', 'TRUE', 'FALSE', 'TRUE', 'somying', '1234'],
+    ['u4', 'สมศักดิ์ (พนักงาน IT)', 'Staff', 'IT', 'กองเทคโนโลยี', 'TRUE', '', 'FALSE', 'TRUE', 'TRUE', 'FALSE', 'TRUE', 'somsak', '1234']
   ];
   // getRange(row, column, numRows, numColumns) — NOT lastRow/lastColumn
   writeRows_(users, 2, seedUsers);

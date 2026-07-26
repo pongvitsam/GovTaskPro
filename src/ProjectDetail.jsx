@@ -96,13 +96,13 @@ function MilestoneEditor({ m, idx, busy, onUpdate, onDelete }) {
           disabled={busy}
           onChange={(e) => setField('title', e.target.value)}
           placeholder="ชื่องาน/ขั้นตอน"
-          className="flex-1 min-w-[180px] border-2 border-slate-200 rounded-xl px-3 py-2 text-sm font-bold outline-none focus:border-blue-500 disabled:bg-slate-50"
+          className="flex-1 min-w-[180px] border border-slate-100 rounded-2xl px-3 py-2 text-sm font-bold outline-none focus:border-teal-400 disabled:bg-slate-50"
         />
         <button
           type="button"
           disabled={busy}
           onClick={() => onDelete(m.id)}
-          className="text-rose-500 hover:bg-rose-50 p-2 rounded-xl disabled:opacity-50"
+          className="text-rose-500 hover:bg-rose-50 p-2 rounded-2xl disabled:opacity-50"
           title="ลบ"
         >
           <Trash2 className="w-4 h-4" />
@@ -114,7 +114,7 @@ function MilestoneEditor({ m, idx, busy, onUpdate, onDelete }) {
         disabled={busy}
         onChange={(e) => setField('description', e.target.value)}
         placeholder="รายละเอียด"
-        className="w-full border-2 border-slate-200 rounded-xl px-3 py-2 text-sm font-medium outline-none focus:border-blue-500 disabled:bg-slate-50"
+        className="w-full border border-slate-100 rounded-2xl px-3 py-2 text-sm font-medium outline-none focus:border-teal-400 disabled:bg-slate-50"
       />
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         <div>
@@ -124,7 +124,7 @@ function MilestoneEditor({ m, idx, busy, onUpdate, onDelete }) {
             value={draft.plannedStart}
             disabled={busy}
             onChange={(e) => setField('plannedStart', e.target.value)}
-            className="w-full border-2 border-slate-200 rounded-xl px-2 py-2 text-xs font-bold outline-none focus:border-blue-500"
+            className="w-full border border-slate-100 rounded-2xl px-2 py-2 text-xs font-bold outline-none focus:border-teal-400"
           />
         </div>
         <div>
@@ -134,7 +134,7 @@ function MilestoneEditor({ m, idx, busy, onUpdate, onDelete }) {
             value={draft.plannedEnd}
             disabled={busy}
             onChange={(e) => setField('plannedEnd', e.target.value)}
-            className="w-full border-2 border-slate-200 rounded-xl px-2 py-2 text-xs font-bold outline-none focus:border-blue-500"
+            className="w-full border border-slate-100 rounded-2xl px-2 py-2 text-xs font-bold outline-none focus:border-teal-400"
           />
         </div>
         <div>
@@ -146,7 +146,7 @@ function MilestoneEditor({ m, idx, busy, onUpdate, onDelete }) {
             value={draft.weight}
             disabled={busy}
             onChange={(e) => setField('weight', e.target.value)}
-            className="w-full border-2 border-slate-200 rounded-xl px-2 py-2 text-xs font-bold outline-none focus:border-blue-500"
+            className="w-full border border-slate-100 rounded-2xl px-2 py-2 text-xs font-bold outline-none focus:border-teal-400"
           />
         </div>
         <div>
@@ -156,7 +156,7 @@ function MilestoneEditor({ m, idx, busy, onUpdate, onDelete }) {
             value={draft.completedAt}
             disabled={busy || !draft.completed}
             onChange={(e) => setField('completedAt', e.target.value)}
-            className="w-full border-2 border-slate-200 rounded-xl px-2 py-2 text-xs font-bold outline-none focus:border-blue-500 disabled:bg-slate-50"
+            className="w-full border border-slate-100 rounded-2xl px-2 py-2 text-xs font-bold outline-none focus:border-teal-400 disabled:bg-slate-50"
           />
         </div>
       </div>
@@ -165,7 +165,7 @@ function MilestoneEditor({ m, idx, busy, onUpdate, onDelete }) {
           type="button"
           disabled={busy || !draft.title.trim()}
           onClick={handleSave}
-          className="bg-blue-600 text-white px-4 py-2 rounded-xl text-xs font-extrabold flex items-center disabled:opacity-60"
+          className="bg-blue-600 text-white px-4 py-2 rounded-2xl text-xs font-extrabold flex items-center disabled:opacity-60"
         >
           {busy ? <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" /> : <Save className="w-3.5 h-3.5 mr-1.5" />}
           บันทึกขั้นตอนนี้
@@ -308,7 +308,7 @@ export default function ProjectDetail({
             <span className="text-[11px] font-bold px-3 py-1.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
               ขั้นตอนเสร็จ {doneCount}/{projectMilestones.length}
             </span>
-            <span className="text-[11px] font-bold px-3 py-1.5 rounded-full bg-indigo-50 text-indigo-700 border border-indigo-200">
+            <span className="text-[11px] font-bold px-3 py-1.5 rounded-full bg-teal-50 text-teal-700 border border-teal-200">
               จริง {progress.actualPct}% · แผน {progress.plannedPct}%
             </span>
             <span className="text-[11px] font-bold px-3 py-1.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200">
@@ -321,7 +321,7 @@ export default function ProjectDetail({
         </div>
         <button
           onClick={onOpenBoard}
-          className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2.5 rounded-xl text-sm font-bold flex items-center shadow-md shrink-0"
+          className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2.5 rounded-2xl text-sm font-bold flex items-center shadow-md shrink-0"
         >
           <KanbanSquare className="w-4 h-4 mr-2" /> เปิดกระดานงาน
         </button>
@@ -332,7 +332,7 @@ export default function ProjectDetail({
           <button
             key={t.id}
             onClick={() => setTab(t.id)}
-            className={`flex items-center px-4 py-2.5 rounded-xl text-sm font-extrabold whitespace-nowrap transition-all ${
+            className={`flex items-center px-4 py-2.5 rounded-2xl text-sm font-extrabold whitespace-nowrap transition-all ${
               tab === t.id ? 'bg-white text-blue-700 shadow-sm' : 'text-slate-500 hover:text-slate-800'
             }`}
           >
@@ -351,7 +351,7 @@ export default function ProjectDetail({
               disabled={!canEdit || busy}
               value={settings.name}
               onChange={(e) => setSettings({ ...settings, name: e.target.value })}
-              className="w-full border-2 border-slate-200 rounded-2xl p-3.5 font-medium outline-none focus:border-blue-500 disabled:bg-slate-50"
+              className="w-full border border-slate-100 rounded-2xl p-3.5 font-medium outline-none focus:border-teal-400 disabled:bg-slate-50"
             />
           </div>
           <div>
@@ -361,7 +361,7 @@ export default function ProjectDetail({
               rows={3}
               value={settings.description}
               onChange={(e) => setSettings({ ...settings, description: e.target.value })}
-              className="w-full border-2 border-slate-200 rounded-2xl p-3.5 font-medium outline-none focus:border-blue-500 disabled:bg-slate-50"
+              className="w-full border border-slate-100 rounded-2xl p-3.5 font-medium outline-none focus:border-teal-400 disabled:bg-slate-50"
             />
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
@@ -372,7 +372,7 @@ export default function ProjectDetail({
                 disabled={!canEdit || busy}
                 value={settings.startDate}
                 onChange={(e) => setSettings({ ...settings, startDate: e.target.value })}
-                className="w-full border-2 border-slate-200 rounded-2xl p-3.5 font-bold outline-none focus:border-blue-500 disabled:bg-slate-50"
+                className="w-full border border-slate-100 rounded-2xl p-3.5 font-bold outline-none focus:border-teal-400 disabled:bg-slate-50"
               />
             </div>
             <div>
@@ -382,7 +382,7 @@ export default function ProjectDetail({
                 disabled={!canEdit || busy}
                 value={settings.endDate}
                 onChange={(e) => setSettings({ ...settings, endDate: e.target.value })}
-                className="w-full border-2 border-slate-200 rounded-2xl p-3.5 font-bold outline-none focus:border-blue-500 disabled:bg-slate-50"
+                className="w-full border border-slate-100 rounded-2xl p-3.5 font-bold outline-none focus:border-teal-400 disabled:bg-slate-50"
               />
             </div>
           </div>
@@ -403,28 +403,28 @@ export default function ProjectDetail({
                 placeholder="ชื่องาน/ขั้นตอน *"
                 value={newMs.title}
                 onChange={(e) => setNewMs({ ...newMs, title: e.target.value })}
-                className="border-2 border-slate-200 rounded-xl p-3 font-medium outline-none focus:border-blue-500 md:col-span-2"
+                className="border border-slate-100 rounded-2xl p-3 font-medium outline-none focus:border-teal-400 md:col-span-2"
               />
               <input
                 placeholder="รายละเอียด"
                 value={newMs.description}
                 onChange={(e) => setNewMs({ ...newMs, description: e.target.value })}
-                className="border-2 border-slate-200 rounded-xl p-3 font-medium outline-none focus:border-blue-500 md:col-span-2"
+                className="border border-slate-100 rounded-2xl p-3 font-medium outline-none focus:border-teal-400 md:col-span-2"
               />
               <div>
                 <label className="text-xs font-bold text-slate-500 mb-1 block">วันเริ่ม (แผน)</label>
-                <input type="date" value={newMs.plannedStart} onChange={(e) => setNewMs({ ...newMs, plannedStart: e.target.value })} className="w-full border-2 border-slate-200 rounded-xl p-3 font-bold outline-none focus:border-blue-500" />
+                <input type="date" value={newMs.plannedStart} onChange={(e) => setNewMs({ ...newMs, plannedStart: e.target.value })} className="w-full border border-slate-100 rounded-2xl p-3 font-bold outline-none focus:border-teal-400" />
               </div>
               <div>
                 <label className="text-xs font-bold text-slate-500 mb-1 block">วันสิ้นสุด (แผน)</label>
-                <input type="date" value={newMs.plannedEnd} onChange={(e) => setNewMs({ ...newMs, plannedEnd: e.target.value })} className="w-full border-2 border-slate-200 rounded-xl p-3 font-bold outline-none focus:border-blue-500" />
+                <input type="date" value={newMs.plannedEnd} onChange={(e) => setNewMs({ ...newMs, plannedEnd: e.target.value })} className="w-full border border-slate-100 rounded-2xl p-3 font-bold outline-none focus:border-teal-400" />
               </div>
               <div>
                 <label className="text-xs font-bold text-slate-500 mb-1 block">น้ำหนัก (%) สำหรับ S-Curve</label>
-                <input type="number" min="1" max="100" value={newMs.weight} onChange={(e) => setNewMs({ ...newMs, weight: e.target.value })} className="w-full border-2 border-slate-200 rounded-xl p-3 font-bold outline-none focus:border-blue-500" />
+                <input type="number" min="1" max="100" value={newMs.weight} onChange={(e) => setNewMs({ ...newMs, weight: e.target.value })} className="w-full border border-slate-100 rounded-2xl p-3 font-bold outline-none focus:border-teal-400" />
               </div>
             </div>
-            <button type="submit" disabled={busy} className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2.5 rounded-xl text-sm font-bold flex items-center disabled:opacity-60">
+            <button type="submit" disabled={busy} className="bg-teal-600 hover:bg-teal-700 text-white px-4 py-2.5 rounded-2xl text-sm font-bold flex items-center disabled:opacity-60">
               <Plus className="w-4 h-4 mr-1.5" /> เพิ่มขั้นตอน
             </button>
           </form>
@@ -482,7 +482,7 @@ export default function ProjectDetail({
               <div className="flex flex-wrap gap-3 text-[11px] font-bold">
                 <span className="flex items-center text-blue-700"><span className="w-5 h-2.5 rounded-sm bg-blue-500 mr-1.5" />ระยะแผน</span>
                 <span className="flex items-center text-rose-600"><span className="w-5 h-0.5 bg-rose-500 mr-1.5" />สะสมจริง</span>
-                <span className="flex items-center text-slate-500"><span className="w-5 border-t border-dashed border-indigo-400 mr-1.5" />สะสมแผน</span>
+                <span className="flex items-center text-slate-500"><span className="w-5 border-t border-dashed border-teal-400 mr-1.5" />สะสมแผน</span>
               </div>
             </div>
 
@@ -518,7 +518,7 @@ export default function ProjectDetail({
                             แผน: {row.planStatus} · จริง: {row.actualStatus}
                           </p>
                         </div>
-                        <div className="flex items-center justify-end px-1 font-extrabold text-indigo-700">{row.weightPct}%</div>
+                        <div className="flex items-center justify-end px-1 font-extrabold text-teal-700">{row.weightPct}%</div>
                         <div className="flex items-center px-1 font-bold text-slate-600 leading-tight">
                           {formatThaiDate(row.plannedStart, { localeOptions: { day: 'numeric', month: 'short', year: '2-digit' } })}
                         </div>
@@ -536,7 +536,7 @@ export default function ProjectDetail({
                     >
                       <div />
                       <div className="flex items-center px-2 text-slate-700">รวม / สะสมจริง</div>
-                      <div className="flex items-center justify-end px-1 text-indigo-700">100%</div>
+                      <div className="flex items-center justify-end px-1 text-teal-700">100%</div>
                       <div />
                       <div />
                       <div className="flex items-center justify-end px-2 text-rose-600">{sheet.actualPct}</div>

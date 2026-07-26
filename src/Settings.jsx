@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import {
-  Settings2, User, Mail, Bell, Save, Loader2, Smartphone, Info, ShieldCheck
+  Settings2, User, Mail, Bell, Save, Loader2, Smartphone, Info, ShieldCheck, KeyRound
 } from 'lucide-react';
 
 function boolish(v, fallback = true) {
@@ -12,10 +12,17 @@ function boolish(v, fallback = true) {
   return fallback;
 }
 
+function roleLabel(role) {
+  if (role === 'Admin') return 'แอดมินระบบ';
+  if (role === 'Head') return 'หัวหน้าแผนก';
+  return 'พนักงาน';
+}
+
 export default function Settings({
   currentUser,
   busy,
   onSave,
+  onChangePassword,
   showToast,
   isProductionHost,
 }) {
@@ -31,6 +38,7 @@ export default function Settings({
     notifyLineDefault: true,
   });
   const [dirty, setDirty] = useState(false);
+  const [pw, setPw] = useState({ currentPassword: '', newPassword: '', confirmPassword: '' });
 
   useEffect(() => {
     if (!currentUser) return;
@@ -42,10 +50,11 @@ export default function Settings({
       notifyEmail: boolish(currentUser.notifyEmail, true),
       notifyAssign: boolish(currentUser.notifyAssign, true),
       notifyStatus: boolish(currentUser.notifyStatus, true),
-      notifyReview: boolish(currentUser.notifyReview, currentUser.role === 'Head'),
+      notifyReview: boolish(currentUser.notifyReview, currentUser.role === 'Head' || currentUser.role === 'Admin'),
       notifyLineDefault: boolish(currentUser.notifyLineDefault, true),
     });
     setDirty(false);
+    setPw({ currentPassword: '', newPassword: '', confirmPassword: '' });
   }, [currentUser]);
 
   const setField = (key, value) => {
@@ -82,23 +91,44 @@ export default function Settings({
     setDirty(false);
   };
 
+  const handlePassword = async (e) => {
+    e.preventDefault();
+    if (!pw.currentPassword || !pw.newPassword) {
+      showToast('❌ กรอกรหัสผ่านปัจจุบันและรหัสใหม่');
+      return;
+    }
+    if (pw.newPassword.length < 4) {
+      showToast('❌ รหัสผ่านใหม่ต้องมีอย่างน้อย 4 ตัวอักษร');
+      return;
+    }
+    if (pw.newPassword !== pw.confirmPassword) {
+      showToast('❌ ยืนยันรหัสผ่านใหม่ไม่ตรงกัน');
+      return;
+    }
+    await onChangePassword({
+      currentPassword: pw.currentPassword,
+      newPassword: pw.newPassword,
+    });
+    setPw({ currentPassword: '', newPassword: '', confirmPassword: '' });
+  };
+
   return (
     <div className="p-6 md:p-8 overflow-y-auto h-full">
       <div className="max-w-3xl mx-auto space-y-6">
         <div>
-          <h2 className="text-2xl font-extrabold text-slate-800 tracking-tight flex items-center">
-            <Settings2 className="w-7 h-7 mr-3 text-blue-600" /> ตั้งค่า
+          <h2 className="gtp-display text-2xl font-extrabold text-[#1e3a4c] flex items-center">
+            <Settings2 className="w-7 h-7 mr-3 text-teal-500" /> ตั้งค่า
           </h2>
-          <p className="text-slate-500 text-sm mt-1 font-medium">
-            โปรไฟล์และการแจ้งเตือนสถานะงานของบัญชีนี้
+          <p className="text-[#5b7a8a] text-sm mt-1 font-medium">
+            โปรไฟล์ รหัสผ่าน และการแจ้งเตือนสถานะงานของบัญชีนี้
           </p>
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-6">
-          <section className="bg-white border border-slate-200 rounded-3xl p-6 md:p-8 shadow-sm space-y-5">
+          <section className="gtp-card p-6 md:p-8 space-y-5">
             <div className="flex items-center gap-2 mb-1">
-              <User className="w-5 h-5 text-indigo-600" />
-              <h3 className="font-extrabold text-slate-800">โปรไฟล์</h3>
+              <User className="w-5 h-5 text-teal-500" />
+              <h3 className="gtp-display font-extrabold text-[#1e3a4c]">โปรไฟล์</h3>
             </div>
             <div>
               <label className="block text-sm font-extrabold text-slate-700 mb-2">ชื่อที่แสดง <span className="text-rose-500">*</span></label>
@@ -107,7 +137,7 @@ export default function Settings({
                 value={form.name}
                 disabled={busy}
                 onChange={(e) => setField('name', e.target.value)}
-                className="w-full border-2 border-slate-200 rounded-2xl p-3.5 font-medium outline-none focus:border-blue-500 disabled:bg-slate-50"
+                className="w-full border border-slate-100 rounded-2xl p-3.5 font-medium outline-none focus:border-teal-400 disabled:bg-slate-50"
                 placeholder="เช่น สมชาย ใจดี"
               />
             </div>
@@ -120,7 +150,7 @@ export default function Settings({
                   value={form.email}
                   disabled={busy}
                   onChange={(e) => setField('email', e.target.value)}
-                  className="w-full border-2 border-slate-200 rounded-2xl pl-10 pr-3.5 py-3.5 font-medium outline-none focus:border-blue-500 disabled:bg-slate-50"
+                  className="w-full border border-slate-100 rounded-2xl pl-10 pr-3.5 py-3.5 font-medium outline-none focus:border-teal-400 disabled:bg-slate-50"
                   placeholder="name@agency.go.th"
                 />
               </div>
@@ -133,28 +163,31 @@ export default function Settings({
                 <label className="block text-sm font-extrabold text-slate-700 mb-2">แผนก / ฝ่าย</label>
                 <input
                   value={form.department}
-                  disabled={busy}
+                  disabled={busy || currentUser.role !== 'Admin'}
                   onChange={(e) => setField('department', e.target.value)}
-                  className="w-full border-2 border-slate-200 rounded-2xl p-3.5 font-bold outline-none focus:border-blue-500 disabled:bg-slate-50"
+                  className="w-full border border-slate-100 rounded-2xl p-3.5 font-bold outline-none focus:border-teal-400 disabled:bg-slate-50"
                 />
+                {currentUser.role !== 'Admin' && (
+                  <p className="text-[11px] text-slate-400 font-medium mt-1">เปลี่ยนแผนกได้เฉพาะแอดมิน</p>
+                )}
               </div>
               <div>
                 <label className="block text-sm font-extrabold text-slate-700 mb-2">กอง / หน่วยงาน</label>
                 <input
                   value={form.division}
-                  disabled={busy}
+                  disabled={busy || currentUser.role !== 'Admin'}
                   onChange={(e) => setField('division', e.target.value)}
-                  className="w-full border-2 border-slate-200 rounded-2xl p-3.5 font-bold outline-none focus:border-blue-500 disabled:bg-slate-50"
+                  className="w-full border border-slate-100 rounded-2xl p-3.5 font-bold outline-none focus:border-teal-400 disabled:bg-slate-50"
                 />
               </div>
             </div>
-            <div className="flex items-center gap-2 text-[11px] font-bold text-slate-500 bg-slate-50 border border-slate-100 rounded-xl px-3 py-2">
+            <div className="flex items-center gap-2 text-[11px] font-bold text-slate-500 bg-slate-50 border border-slate-100 rounded-2xl px-3 py-2">
               <ShieldCheck className="w-3.5 h-3.5 text-slate-400" />
-              บทบาท: {currentUser.role === 'Head' ? 'หัวหน้าแผนก' : 'พนักงาน'} (เปลี่ยนบทบาทได้เฉพาะผู้ดูแลระบบ)
+              Username: {currentUser.username || currentUser.id} · บทบาท: {roleLabel(currentUser.role)} (เปลี่ยนบทบาทได้เฉพาะแอดมิน)
             </div>
           </section>
 
-          <section className="bg-white border border-slate-200 rounded-3xl p-6 md:p-8 shadow-sm space-y-4">
+          <section className="gtp-card p-6 md:p-8 shadow-sm space-y-4">
             <div className="flex items-center gap-2 mb-1">
               <Bell className="w-5 h-5 text-amber-600" />
               <h3 className="font-extrabold text-slate-800">การแจ้งเตือน</h3>
@@ -183,7 +216,7 @@ export default function Settings({
                 <input type="checkbox" checked={form.notifyStatus} disabled={busy || !form.notifyEmail} onChange={(e) => setField('notifyStatus', e.target.checked)} className="w-4 h-4 accent-blue-600" />
                 เมื่อสถานะงานของฉันเปลี่ยน
               </label>
-              {currentUser.role === 'Head' && (
+              {(currentUser.role === 'Head' || currentUser.role === 'Admin') && (
                 <label className="flex items-center gap-3 text-sm font-bold text-slate-700">
                   <input type="checkbox" checked={form.notifyReview} disabled={busy || !form.notifyEmail} onChange={(e) => setField('notifyReview', e.target.checked)} className="w-4 h-4 accent-blue-600" />
                   เมื่อมีงานเข้าสถานะ &quot;รอตรวจ&quot;
@@ -210,7 +243,7 @@ export default function Settings({
             </label>
           </section>
 
-          <section className="bg-slate-50 border border-slate-200 rounded-3xl p-5 text-[11px] text-slate-500 font-medium space-y-1">
+          <section className="gtp-card bg-[#f3f9fc] p-5 text-[11px] text-slate-500 font-medium space-y-1">
             <p className="flex items-center gap-1.5 font-extrabold text-slate-600"><Info className="w-3.5 h-3.5" /> หมายเหตุ</p>
             <p>• อีเมลส่งจากบัญชี Google ของเจ้าของ Apps Script (โควต้า MailApp ของ Google)</p>
             <p>• โหมด: {isProductionHost ? 'Production (Sheets)' : 'พัฒนา local'}</p>
@@ -219,10 +252,35 @@ export default function Settings({
           <button
             type="submit"
             disabled={busy || !dirty}
-            className="w-full md:w-auto bg-blue-600 text-white px-6 py-3.5 rounded-2xl font-extrabold flex items-center justify-center disabled:opacity-50 shadow-lg shadow-blue-500/20"
+            className="w-full md:w-auto gtp-btn-primary text-white px-6 py-3.5 rounded-2xl font-extrabold flex items-center justify-center disabled:opacity-50 "
           >
             {busy ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Save className="w-4 h-4 mr-2" />}
             บันทึกการตั้งค่า
+          </button>
+        </form>
+
+        <form onSubmit={handlePassword} className="gtp-card p-6 md:p-8 shadow-sm space-y-4">
+          <div className="flex items-center gap-2 mb-1">
+            <KeyRound className="w-5 h-5 text-slate-700" />
+            <h3 className="font-extrabold text-slate-800">เปลี่ยนรหัสผ่าน</h3>
+          </div>
+          <div>
+            <label className="block text-xs font-bold text-slate-500 mb-1">รหัสผ่านปัจจุบัน</label>
+            <input type="password" value={pw.currentPassword} disabled={busy} onChange={(e) => setPw({ ...pw, currentPassword: e.target.value })} className="w-full border border-slate-100 rounded-2xl p-3 font-bold outline-none focus:border-teal-400" autoComplete="current-password" />
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-xs font-bold text-slate-500 mb-1">รหัสผ่านใหม่</label>
+              <input type="password" value={pw.newPassword} disabled={busy} onChange={(e) => setPw({ ...pw, newPassword: e.target.value })} className="w-full border border-slate-100 rounded-2xl p-3 font-bold outline-none focus:border-teal-400" autoComplete="new-password" />
+            </div>
+            <div>
+              <label className="block text-xs font-bold text-slate-500 mb-1">ยืนยันรหัสใหม่</label>
+              <input type="password" value={pw.confirmPassword} disabled={busy} onChange={(e) => setPw({ ...pw, confirmPassword: e.target.value })} className="w-full border border-slate-100 rounded-2xl p-3 font-bold outline-none focus:border-teal-400" autoComplete="new-password" />
+            </div>
+          </div>
+          <button type="submit" disabled={busy} className="bg-slate-800 text-white px-5 py-3 rounded-2xl font-extrabold disabled:opacity-50">
+            {busy ? <Loader2 className="w-4 h-4 inline animate-spin mr-2" /> : null}
+            เปลี่ยนรหัสผ่าน
           </button>
         </form>
       </div>

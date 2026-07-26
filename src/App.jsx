@@ -1,16 +1,20 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   User, CheckCircle, Clock, Plus, LayoutDashboard, LogOut, Send,
   ArrowRightLeft, History, FolderKanban, Briefcase, KanbanSquare, Bell, Calendar as CalendarIcon,
   BarChart2, MessageSquare, Paperclip, Repeat, Download, FileText, Smartphone, Search,
-  Users, CalendarDays, Grab, ShieldCheck, Loader2, Settings2, StickyNote
+  Users, CalendarDays, Grab, ShieldCheck, Loader2, Settings2, StickyNote, KeyRound,
+  Menu, X, MoreHorizontal, RefreshCw
 } from 'lucide-react';
 import { api, isProductionGas, isProductionHost } from './api';
 import ProjectDetail from './ProjectDetail';
 import StickyNotes from './StickyNotes';
 import SettingsPage from './Settings';
+import AdminUsers from './AdminUsers';
+import LoginScreen from './LoginScreen';
 import { formatThaiDate, formatThaiMonthYear } from './formatThaiDate';
 import ProjectTimeBar from './ProjectTimeBar';
+import { readSession, saveSession, clearSession } from './session';
 
 const DAY = 86400000;
 
@@ -28,6 +32,7 @@ export default function App() {
   const [bootLoading, setBootLoading] = useState(true);
   const [bootError, setBootError] = useState(null);
   const [users, setUsers] = useState([]);
+  const [orgUnits, setOrgUnits] = useState([]);
   const [currentUser, setCurrentUser] = useState(null);
   const [projects, setProjects] = useState([]);
   const [tasks, setTasks] = useState([]);
@@ -52,6 +57,12 @@ export default function App() {
   /** Completed column grows forever — preview recent only unless expanded */
   const [showAllCompleted, setShowAllCompleted] = useState(false);
   const COMPLETED_PREVIEW = 8;
+  const [loginError, setLoginError] = useState(null);
+  const [loginBusy, setLoginBusy] = useState(false);
+  const [mobileMoreOpen, setMobileMoreOpen] = useState(false);
+  const [syncing, setSyncing] = useState(false);
+  const softRefreshingRef = useRef(false);
+  const lastSyncAtRef = useRef(0);
 
   const showToast = (msg, duration = 3000) => {
     setToastMsg(msg);
@@ -59,11 +70,11 @@ export default function App() {
   };
 
   const getStatusColor = (status) => ({
-    Pending: 'bg-amber-100 text-amber-800 border-amber-200',
-    'In Progress': 'bg-blue-100 text-blue-800 border-blue-200',
-    Review: 'bg-purple-100 text-purple-800 border-purple-200',
-    Completed: 'bg-emerald-100 text-emerald-800 border-emerald-200',
-  }[status] || 'bg-slate-100 text-slate-800');
+    Pending: 'bg-amber-50 text-amber-800 border-amber-100',
+    'In Progress': 'bg-sky-50 text-sky-800 border-sky-100',
+    Review: 'bg-teal-50 text-teal-800 border-teal-100',
+    Completed: 'bg-emerald-50 text-emerald-800 border-emerald-100',
+  }[status] || 'bg-slate-50 text-slate-700 border-slate-100');
 
   const getStatusText = (status) => ({
     Pending: 'รอรับงาน',
@@ -75,14 +86,54 @@ export default function App() {
   const formatDate = (iso) => formatThaiDate(iso);
   const isOverdue = (dueDate, status) => dueDate && status !== 'Completed' && new Date(dueDate).setHours(0, 0, 0, 0) < new Date().setHours(0, 0, 0, 0);
 
-  const applyBootstrap = (data) => {
+  const applyBootstrap = (data, { restoreSession = true } = {}) => {
     setUsers(data.users || []);
+    setOrgUnits(data.orgUnits || []);
     setProjects(data.projects || []);
     setTasks(data.tasks || []);
     setTaskLogs(data.taskLogs || []);
     setComments(data.comments || []);
     setCommentCounts(data.commentCounts || {});
     setMilestones(data.milestones || []);
+
+    if (restoreSession) {
+      const session = readSession();
+      if (session?.userId) {
+        const u = (data.users || []).find((x) => String(x.id) === String(session.userId) && x.active !== false);
+        if (u) setCurrentUser(u);
+        else clearSession();
+      }
+    } else {
+      setCurrentUser((prev) => {
+        if (!prev) return prev;
+        const u = (data.users || []).find((x) => String(x.id) === String(prev.id) && x.active !== false);
+        if (!u) {
+          clearSession();
+          return null;
+        }
+        return { ...prev, ...u };
+      });
+    }
+  };
+
+  const softRefresh = async ({ silent = true } = {}) => {
+    if (softRefreshingRef.current || bootLoading) return;
+    const now = Date.now();
+    if (silent && now - lastSyncAtRef.current < 8000) return;
+    softRefreshingRef.current = true;
+    if (!silent) setSyncing(true);
+    try {
+      const data = await api('getBootstrap', { force: true });
+      if (!data || !Array.isArray(data.users)) return;
+      applyBootstrap(data, { restoreSession: false });
+      lastSyncAtRef.current = Date.now();
+      if (!silent) showToast('🔄 ซิงก์ข้อมูลล่าสุดแล้ว');
+    } catch (err) {
+      if (!silent) showToast('❌ ซิงก์ไม่สำเร็จ: ' + (err?.message || String(err)));
+    } finally {
+      softRefreshingRef.current = false;
+      setSyncing(false);
+    }
   };
 
   const patchTask = (task, log) => {
@@ -96,11 +147,12 @@ export default function App() {
     setBootLoading(true);
     setBootError(null);
     try {
-      const data = await api('getBootstrap');
+      const data = await api('getBootstrap', { force: true });
       if (!data || !Array.isArray(data.users)) {
         throw new Error('รูปแบบข้อมูลจากเซิร์ฟเวอร์ไม่ถูกต้อง');
       }
-      applyBootstrap(data);
+      applyBootstrap(data, { restoreSession: true });
+      lastSyncAtRef.current = Date.now();
     } catch (err) {
       setBootError(err?.message || String(err));
     } finally {
@@ -114,12 +166,13 @@ export default function App() {
       setBootLoading(true);
       setBootError(null);
       try {
-        const data = await api('getBootstrap');
+        const data = await api('getBootstrap', { force: true });
         if (cancelled) return;
         if (!data || !Array.isArray(data.users)) {
           throw new Error('รูปแบบข้อมูลจากเซิร์ฟเวอร์ไม่ถูกต้อง');
         }
-        applyBootstrap(data);
+        applyBootstrap(data, { restoreSession: true });
+        lastSyncAtRef.current = Date.now();
       } catch (err) {
         if (!cancelled) setBootError(err?.message || String(err));
       } finally {
@@ -128,6 +181,31 @@ export default function App() {
     })();
     return () => { cancelled = true; };
   }, []);
+
+  useEffect(() => {
+    if (!currentUser || bootLoading) return undefined;
+
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') softRefresh({ silent: true });
+    };
+    const onFocus = () => softRefresh({ silent: true });
+    const onOnline = () => softRefresh({ silent: false });
+
+    document.addEventListener('visibilitychange', onVisible);
+    window.addEventListener('focus', onFocus);
+    window.addEventListener('online', onOnline);
+
+    const timer = setInterval(() => {
+      if (document.visibilityState === 'visible') softRefresh({ silent: true });
+    }, 45000);
+
+    return () => {
+      document.removeEventListener('visibilitychange', onVisible);
+      window.removeEventListener('focus', onFocus);
+      window.removeEventListener('online', onOnline);
+      clearInterval(timer);
+    };
+  }, [currentUser?.id, bootLoading]);
 
   useEffect(() => {
     if (!selectedTask) return undefined;
@@ -161,16 +239,213 @@ export default function App() {
     return m;
   }, [users]);
 
-  const visibleTasks = useMemo(() => tasks.filter((task) => {
-    const assignee = usersById.get(task.assignedTo);
-    const isMyDepartment = assignee?.department === currentUser?.department;
-    const matchesProject = activeProjectId ? task.projectId === activeProjectId : true;
-    return isMyDepartment && matchesProject;
-  }), [tasks, usersById, currentUser?.department, activeProjectId]);
+  const visibleTasks = useMemo(() => {
+    if (!currentUser) return [];
+    if (currentUser.role === 'Admin') {
+      return tasks.filter((task) => (activeProjectId ? task.projectId === activeProjectId : true));
+    }
+    return tasks.filter((task) => {
+      const assignee = usersById.get(task.assignedTo);
+      const isMyDepartment = assignee?.department === currentUser.department;
+      const matchesProject = activeProjectId ? task.projectId === activeProjectId : true;
+      return isMyDepartment && matchesProject;
+    });
+  }, [tasks, usersById, currentUser, activeProjectId]);
+
+  const activeUsers = useMemo(() => users.filter((u) => u.active !== false), [users]);
+  const deptUsers = useMemo(() => {
+    if (!currentUser) return [];
+    if (currentUser.role === 'Admin') return activeUsers;
+    return activeUsers.filter((u) => u.department === currentUser.department);
+  }, [activeUsers, currentUser]);
+  const isManager = currentUser?.role === 'Head' || currentUser?.role === 'Admin';
+  const isStaff = currentUser?.role === 'Staff';
+
+  const finishLogin = (user) => {
+    if (!user?.id) throw new Error('เข้าสู่ระบบไม่สำเร็จ');
+    saveSession(user);
+    setCurrentUser(user);
+    setUsers((prev) => upsertById(prev, user));
+    setCreateType('task');
+    setCurrentModule('dashboard');
+    setLoginError(null);
+  };
+
+  const handleLoginStaff = async ({ username }) => {
+    if (loginBusy) return;
+    setLoginBusy(true);
+    setLoginError(null);
+    try {
+      const user = await api('loginStaff', { username });
+      finishLogin(user);
+    } catch (err) {
+      setLoginError(err?.message || String(err));
+    } finally {
+      setLoginBusy(false);
+    }
+  };
+
+  const handleLoginAdmin = async ({ username, password }) => {
+    if (loginBusy) return;
+    setLoginBusy(true);
+    setLoginError(null);
+    try {
+      const user = await api('loginAdmin', { username, password });
+      finishLogin(user);
+    } catch (err) {
+      setLoginError(err?.message || String(err));
+    } finally {
+      setLoginBusy(false);
+    }
+  };
+
+  const handleLogout = () => {
+    clearSession();
+    setCurrentUser(null);
+    setSelectedTask(null);
+    setDetailProjectId(null);
+    setCurrentModule('dashboard');
+  };
+
+  const handleSaveSettings = async (payload) => {
+    if (busy) return;
+    setBusy(true);
+    try {
+      const row = await api('updateUserProfile', payload);
+      setUsers((prev) => upsertById(prev, row));
+      setCurrentUser(row);
+      saveSession(row);
+      showToast('✅ บันทึกการตั้งค่าแล้ว');
+    } catch (err) {
+      showToast('❌ ' + (err?.message || String(err)));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleChangePassword = async ({ currentPassword, newPassword }) => {
+    if (busy || !currentUser) return;
+    setBusy(true);
+    try {
+      await api('changePassword', {
+        userId: currentUser.id,
+        currentPassword,
+        newPassword,
+      });
+      showToast('✅ เปลี่ยนรหัสผ่านแล้ว');
+    } catch (err) {
+      showToast('❌ ' + (err?.message || String(err)));
+      throw err;
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleAdminCreateUser = async (payload) => {
+    if (busy) return null;
+    setBusy(true);
+    try {
+      const row = await api('adminCreateUser', payload);
+      setUsers((prev) => upsertById(prev, row));
+      showToast('✅ สร้างผู้ใช้แล้ว');
+      return row;
+    } catch (err) {
+      showToast('❌ ' + (err?.message || String(err)));
+      return null;
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleAdminLoadUsers = async (payload) => api('adminGetUsers', payload);
+
+  const handleAdminUpdateUser = async (payload) => {
+    if (busy) return null;
+    setBusy(true);
+    try {
+      const row = await api('adminUpdateUser', payload);
+      setUsers((prev) => upsertById(prev, row));
+      if (String(row.id) === String(currentUser?.id)) {
+        setCurrentUser(row);
+        saveSession(row);
+      }
+      showToast('✅ อัปเดตผู้ใช้แล้ว');
+      return row;
+    } catch (err) {
+      showToast('❌ ' + (err?.message || String(err)));
+      return null;
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleAdminResetPassword = async (payload) => {
+    if (busy) return null;
+    setBusy(true);
+    try {
+      const row = await api('adminResetPassword', payload);
+      showToast('✅ รีเซ็ตรหัสผ่านแล้ว');
+      return row;
+    } catch (err) {
+      showToast('❌ ' + (err?.message || String(err)));
+      return null;
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleAdminToggleActive = async (payload) => {
+    if (busy) return null;
+    setBusy(true);
+    try {
+      const row = await api('adminSetUserActive', payload);
+      setUsers((prev) => upsertById(prev, row));
+      showToast(row.active ? '✅ เปิดใช้งานบัญชีแล้ว' : 'บัญชีถูกปิดใช้งานแล้ว');
+      return row;
+    } catch (err) {
+      showToast('❌ ' + (err?.message || String(err)));
+      return null;
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleAdminCreateOrg = async (payload) => {
+    if (busy) return null;
+    setBusy(true);
+    try {
+      const row = await api('adminCreateOrgUnit', payload);
+      setOrgUnits((prev) => {
+        const without = prev.filter((o) => String(o.id) !== String(row.id));
+        return [...without, row].sort((a, b) => String(a.name).localeCompare(String(b.name)));
+      });
+      showToast(payload.type === 'division' ? '✅ เพิ่มกองแล้ว' : '✅ เพิ่มแผนกแล้ว');
+      return row;
+    } catch (err) {
+      showToast('❌ ' + (err?.message || String(err)));
+      return null;
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleAdminDeleteOrg = async (payload) => {
+    if (busy) return;
+    setBusy(true);
+    try {
+      await api('adminDeleteOrgUnit', payload);
+      setOrgUnits((prev) => prev.filter((o) => String(o.id) !== String(payload.id)));
+      showToast('ลบรายการแล้ว');
+    } catch (err) {
+      showToast('❌ ' + (err?.message || String(err)));
+    } finally {
+      setBusy(false);
+    }
+  };
 
   const myNotifications = useMemo(() => visibleTasks.filter(
-    (t) => (t.assignedTo === currentUser?.id && t.status === 'Pending') || (currentUser?.role === 'Head' && t.status === 'Review')
-  ).length, [visibleTasks, currentUser?.id, currentUser?.role]);
+    (t) => (t.assignedTo === currentUser?.id && t.status === 'Pending') || (isManager && t.status === 'Review')
+  ).length, [visibleTasks, currentUser?.id, isManager]);
 
   const statusCounts = useMemo(() => ({
     all: visibleTasks.length,
@@ -220,7 +495,7 @@ export default function App() {
         setCurrentModule('projects');
         showToast('✅ สร้างโปรเจกต์สำเร็จ');
       } else {
-        const rawAssignee = currentUser.role === 'Head' ? String(formData.get('assignedTo') || '') : currentUser.id;
+        const rawAssignee = isManager ? String(formData.get('assignedTo') || '') : currentUser.id;
         const selfAssign = !rawAssignee || rawAssignee === currentUser.id;
         const assignedTo = selfAssign ? currentUser.id : rawAssignee;
         const notifyLine = !selfAssign && formData.get('notifyLine') === 'on';
@@ -236,7 +511,7 @@ export default function App() {
           isRecurring: formData.get('isRecurring') === 'on',
           notifyLine,
           logDetail: selfAssign
-            ? (currentUser.role === 'Head' ? 'หัวหน้าสร้างงานและรับทำเอง' : 'สร้างงานด้วยตัวเอง')
+            ? (isManager ? 'หัวหน้าสร้างงานและรับทำเอง' : 'สร้างงานด้วยตัวเอง')
             : `มอบหมายงานให้ ${usersById.get(assignedTo)?.name}`,
         });
         patchTask(result?.task || result, result?.log);
@@ -382,21 +657,6 @@ export default function App() {
     }
   };
 
-  const handleSaveSettings = async (payload) => {
-    if (busy) return;
-    setBusy(true);
-    try {
-      const row = await api('updateUserProfile', payload);
-      setUsers((prev) => upsertById(prev, row));
-      setCurrentUser(row);
-      showToast('✅ บันทึกการตั้งค่าแล้ว');
-    } catch (err) {
-      showToast('❌ ' + (err?.message || String(err)));
-    } finally {
-      setBusy(false);
-    }
-  };
-
   const detailProject = projects.find((p) => p.id === detailProjectId);
 
   const reportData = useMemo(() => {
@@ -421,11 +681,13 @@ export default function App() {
 
   if (bootLoading) {
     return (
-      <div className="min-h-screen bg-slate-100 flex items-center justify-center">
-        <div className="flex flex-col items-center text-slate-600">
-          <Loader2 className="w-10 h-10 animate-spin text-blue-600 mb-3" />
-          <p className="font-bold">กำลังโหลด GovTaskPro...</p>
-          <p className="text-xs mt-1 text-slate-400">{isProductionHost() ? 'เชื่อมต่อ Google Sheets' : 'โหมดพัฒนา (local)'}</p>
+      <div className="min-h-screen gtp-login-bg flex items-center justify-center">
+        <div className="flex flex-col items-center gtp-fade-in">
+          <div className="w-16 h-16 rounded-3xl bg-gradient-to-br from-teal-400 to-cyan-600 shadow-lg shadow-teal-400/30 flex items-center justify-center mb-4">
+            <Loader2 className="w-8 h-8 animate-spin text-white" />
+          </div>
+          <p className="gtp-display font-extrabold text-lg text-[#1e3a4c]">กำลังโหลด GovTaskPro...</p>
+          <p className="text-sm mt-1.5 text-[#5b7a8a] font-medium">{isProductionHost() ? 'เชื่อมต่อ Google Sheets' : 'โหมดพัฒนา (local)'}</p>
         </div>
       </div>
     );
@@ -433,11 +695,11 @@ export default function App() {
 
   if (bootError) {
     return (
-      <div className="min-h-screen bg-slate-100 flex items-center justify-center p-4">
-        <div className="bg-white p-8 rounded-2xl shadow-xl max-w-md w-full text-center border border-rose-100">
-          <p className="font-extrabold text-rose-600 mb-2">โหลดข้อมูลไม่สำเร็จ</p>
-          <p className="text-sm text-slate-600 mb-6">{bootError}</p>
-          <button onClick={loadBootstrap} className="bg-blue-600 text-white px-5 py-2.5 rounded-xl font-bold">ลองใหม่</button>
+      <div className="min-h-screen gtp-login-bg flex items-center justify-center p-4">
+        <div className="gtp-login-card p-8 max-w-md w-full text-center gtp-fade-in">
+          <p className="gtp-display font-extrabold text-rose-500 mb-2 text-lg">โหลดข้อมูลไม่สำเร็จ</p>
+          <p className="text-sm text-[#5b7a8a] mb-6 font-medium leading-relaxed">{bootError}</p>
+          <button onClick={loadBootstrap} className="gtp-btn-primary px-6 py-3">ลองใหม่</button>
         </div>
       </div>
     );
@@ -445,91 +707,65 @@ export default function App() {
 
   if (!currentUser) {
     return (
-      <div className="min-h-screen bg-slate-100 flex items-center justify-center p-4 bg-[radial-gradient(#cbd5e1_1px,transparent_1px)] [background-size:16px_16px]">
-        <div className="bg-white/95 backdrop-blur-sm p-8 rounded-2xl shadow-2xl max-w-md w-full border border-white">
-          <div className="flex justify-center mb-6">
-            <div className="bg-blue-600 p-4 rounded-2xl shadow-lg shadow-blue-500/30">
-              <Briefcase className="w-10 h-10 text-white" />
-            </div>
-          </div>
-          <h1 className="text-3xl font-extrabold text-center text-slate-800 mb-2 tracking-tight">
-            GovTask<span className="text-blue-600">Pro</span>
-          </h1>
-          <p className="text-center text-slate-500 mb-2 font-medium">Ultimate Task & Project Management</p>
-          <p className="text-center text-[11px] text-emerald-600 font-bold mb-8">
-            {isProductionHost()
-              ? (isProductionGas() ? '● Production · Apps Script UI' : '● Production · GitHub Pages + Sheets')
-              : '○ Dev mode · local store'}
-          </p>
-          <div className="space-y-3">
-            {users.map((user) => (
-              <button
-                key={user.id}
-                onClick={() => setCurrentUser(user)}
-                className={`w-full flex items-center justify-between p-4 rounded-xl border-2 transition-all group ${
-                  user.role === 'Head'
-                    ? 'border-blue-200 hover:border-blue-500 hover:bg-blue-50'
-                    : 'border-slate-200 hover:border-slate-400 hover:bg-slate-50'
-                }`}
-              >
-                <div className="flex items-center space-x-3">
-                  <div className={`p-2 rounded-full transition-colors ${
-                    user.role === 'Head'
-                      ? 'bg-blue-100 text-blue-600 group-hover:bg-blue-600 group-hover:text-white'
-                      : 'bg-slate-100 text-slate-600 group-hover:bg-slate-600 group-hover:text-white'
-                  }`}>
-                    <User className="w-5 h-5" />
-                  </div>
-                  <div className="text-left">
-                    <p className="font-bold text-slate-800">{user.name}</p>
-                    <p className="text-xs text-slate-500 font-medium">{user.role} | {user.department}</p>
-                  </div>
-                </div>
-                <ArrowRightLeft className="text-slate-300 group-hover:text-slate-500 w-5 h-5" />
-              </button>
-            ))}
-          </div>
-        </div>
-      </div>
+      <LoginScreen
+        busy={loginBusy}
+        error={loginError}
+        onLoginStaff={handleLoginStaff}
+        onLoginAdmin={handleLoginAdmin}
+      />
     );
   }
 
   return (
-    <div className="min-h-screen bg-slate-50 flex flex-col md:flex-row font-sans text-slate-800">
+    <div className="gtp-app min-h-dvh flex flex-col md:flex-row md:p-3 md:gap-3">
       {toastMsg && (
-        <div className="fixed top-5 left-1/2 transform -translate-x-1/2 z-[100] bg-slate-900 text-white px-6 py-3 rounded-full shadow-2xl flex items-center border border-slate-700">
+        <div className="fixed top-[max(1.25rem,env(safe-area-inset-top))] left-1/2 -translate-x-1/2 z-[100] gtp-toast px-6 py-3 flex items-center gtp-fade-in max-w-[92vw]">
           <span className="font-semibold text-sm">{toastMsg}</span>
         </div>
       )}
 
-      <nav className="bg-[#0f172a] text-slate-300 w-full md:w-64 flex-shrink-0 flex flex-col shadow-2xl z-20">
-        <div className="p-5 border-b border-slate-800/60 flex justify-between items-center bg-slate-900">
+      <nav className="gtp-nav hidden md:flex w-64 flex-shrink-0 flex-col z-20 rounded-[1.75rem] overflow-hidden">
+        <div className="p-5 border-b border-white/10 flex justify-between items-center">
           <div className="flex items-center space-x-3">
-            <div className="bg-gradient-to-br from-blue-500 to-indigo-600 p-2 rounded-lg shadow-lg">
+            <div className="bg-gradient-to-br from-teal-400 to-cyan-600 p-2.5 rounded-2xl shadow-lg shadow-teal-500/25">
               <Briefcase className="w-5 h-5 text-white" />
             </div>
             <div>
-              <h2 className="font-extrabold text-lg leading-tight text-white tracking-wide">GovTask</h2>
-              <p className="text-[10px] text-blue-300 font-semibold tracking-wider uppercase">{currentUser.division}</p>
+              <h2 className="gtp-display font-extrabold text-lg leading-tight text-white">GovTask</h2>
+              <p className="text-[10px] text-teal-200/90 font-semibold tracking-wider">{currentUser.division}</p>
             </div>
           </div>
-          <div className="relative">
-            <Bell className="w-5 h-5 text-slate-400 cursor-pointer hover:text-white" onClick={() => showToast('🔔 ไม่มีแจ้งเตือนใหม่')} />
-            {myNotifications > 0 && <span className="absolute -top-1 -right-1 bg-rose-500 w-2.5 h-2.5 rounded-full ring-2 ring-slate-900 animate-pulse" />}
+          <div className="flex items-center gap-1">
+            <button type="button" title="ซิงก์ข้อมูล" className="p-2 rounded-xl hover:bg-white/10 transition-colors" onClick={() => softRefresh({ silent: false })}>
+              <RefreshCw className={`w-5 h-5 text-teal-100/80 ${syncing ? 'animate-spin' : ''}`} />
+            </button>
+            <div className="relative">
+              <button type="button" className="p-2 rounded-xl hover:bg-white/10 transition-colors" onClick={() => showToast(myNotifications > 0 ? `🔔 มี ${myNotifications} รายการที่ต้องสนใจ` : '🔔 ไม่มีแจ้งเตือนใหม่')}>
+                <Bell className="w-5 h-5 text-teal-100/80" />
+              </button>
+              {myNotifications > 0 && <span className="absolute top-1 right-1 bg-rose-400 w-2.5 h-2.5 rounded-full ring-2 ring-[#163542] gtp-soft-pulse" />}
+            </div>
           </div>
         </div>
 
-        <div className="p-4 bg-slate-800/30 flex items-center space-x-3 border-b border-slate-800/60">
-          <div className={`p-2 rounded-xl ${currentUser.role === 'Head' ? 'bg-blue-500/20 text-blue-400' : 'bg-emerald-500/20 text-emerald-400'}`}>
+        <div className="p-4 mx-3 mt-3 rounded-2xl bg-white/10 border border-white/10 flex items-center space-x-3">
+          <div className={`p-2.5 rounded-2xl ${
+            currentUser.role === 'Admin' ? 'bg-amber-400/20 text-amber-200'
+              : currentUser.role === 'Head' ? 'bg-sky-400/20 text-sky-200'
+                : 'bg-emerald-400/20 text-emerald-200'
+          }`}>
             <User className="w-5 h-5" />
           </div>
-          <div>
-            <p className="font-bold text-sm text-white">{currentUser.name}</p>
-            <p className="text-[11px] text-slate-400">{currentUser.role === 'Head' ? 'หัวหน้าแผนก' : 'พนักงานปฏิบัติการ'}</p>
+          <div className="min-w-0">
+            <p className="font-bold text-sm text-white truncate">{currentUser.name}</p>
+            <p className="text-[11px] text-teal-100/70 truncate">
+              {currentUser.role === 'Admin' ? 'แอดมินระบบ' : currentUser.role === 'Head' ? 'หัวหน้าแผนก' : 'พนักงานปฏิบัติการ'}
+              {currentUser.username ? ` · @${currentUser.username}` : ''}
+            </p>
           </div>
         </div>
 
-        <div className="flex-1 py-4 px-3 space-y-1.5 flex flex-row md:flex-col overflow-x-auto md:overflow-visible no-scrollbar">
+        <div className="flex-1 py-4 px-3 space-y-1 overflow-y-auto custom-scrollbar">
           {[
             { id: 'dashboard', icon: LayoutDashboard, label: 'ภาพรวม (Dashboard)' },
             { id: 'projects', icon: FolderKanban, label: 'โปรเจกต์ (Projects)' },
@@ -538,15 +774,14 @@ export default function App() {
             { id: 'sticky', icon: StickyNote, label: 'เตือนความจำ (ส่วนตัว)' },
             { id: 'reports', icon: BarChart2, label: 'สถิติ & รายงาน (Reports)' },
             { id: 'create', icon: Plus, label: 'สร้างงาน (Create)' },
+            ...(currentUser.role === 'Admin' ? [{ id: 'adminUsers', icon: ShieldCheck, label: 'จัดการผู้ใช้ (Admin)' }] : []),
             { id: 'settings', icon: Settings2, label: 'ตั้งค่า (Settings)' },
           ].map((menu) => (
             <button
               key={menu.id}
               onClick={() => { setCurrentModule(menu.id); if (menu.id === 'projects') setDetailProjectId(null); if (menu.action) menu.action(); }}
-              className={`flex items-center space-x-3 px-4 py-3 rounded-xl w-full whitespace-nowrap transition-all ${
-                currentModule === menu.id
-                  ? 'bg-blue-600 text-white shadow-lg shadow-blue-900/50 font-bold'
-                  : 'text-slate-400 hover:bg-slate-800 hover:text-slate-100 font-medium'
+              className={`gtp-nav-item flex items-center space-x-3 px-4 py-3 rounded-2xl w-full whitespace-nowrap ${
+                currentModule === menu.id ? 'gtp-nav-item-active' : 'text-teal-100/70 font-medium'
               }`}
             >
               <menu.icon className={`w-5 h-5 ${currentModule === menu.id ? 'opacity-100' : 'opacity-70'}`} />
@@ -555,36 +790,118 @@ export default function App() {
           ))}
         </div>
 
-        <div className="p-4 border-t border-slate-800/60">
-          <button onClick={() => setCurrentUser(null)} className="flex items-center space-x-3 px-4 py-3 rounded-xl w-full text-slate-400 hover:bg-rose-500/10 hover:text-rose-400 font-medium">
+        <div className="p-4 border-t border-white/10">
+          <button onClick={handleLogout} className="gtp-nav-item flex items-center space-x-3 px-4 py-3 rounded-2xl w-full text-teal-100/60 hover:text-rose-200 hover:bg-rose-500/15 font-medium">
             <LogOut className="w-5 h-5 opacity-70" />
             <span className="text-sm">ออกจากระบบ</span>
           </button>
         </div>
       </nav>
 
-      <main className="flex-1 flex flex-col h-screen overflow-hidden relative">
+      <header className="md:hidden sticky top-0 z-30 gtp-nav gtp-safe-top px-4 py-3 flex items-center justify-between border-b border-white/10">
+        <div className="flex items-center gap-2.5 min-w-0">
+          <div className="bg-gradient-to-br from-teal-400 to-cyan-600 p-2 rounded-xl shrink-0">
+            <Briefcase className="w-4 h-4 text-white" />
+          </div>
+          <div className="min-w-0">
+            <p className="gtp-display font-extrabold text-white text-sm leading-tight truncate">GovTaskPro</p>
+            <p className="text-[10px] text-teal-200/80 font-semibold truncate">{currentUser.name}</p>
+          </div>
+        </div>
+        <div className="flex items-center gap-1 shrink-0">
+          <button type="button" className="p-2.5 rounded-xl hover:bg-white/10" onClick={() => softRefresh({ silent: false })} aria-label="ซิงก์">
+            <RefreshCw className={`w-5 h-5 text-teal-100 ${syncing ? 'animate-spin' : ''}`} />
+          </button>
+          <button type="button" className="p-2.5 rounded-xl hover:bg-white/10 relative" onClick={() => showToast(myNotifications > 0 ? `🔔 มี ${myNotifications} รายการที่ต้องสนใจ` : '🔔 ไม่มีแจ้งเตือนใหม่')}>
+            <Bell className="w-5 h-5 text-teal-100" />
+            {myNotifications > 0 && <span className="absolute top-1.5 right-1.5 bg-rose-400 w-2 h-2 rounded-full" />}
+          </button>
+          <button type="button" className="p-2.5 rounded-xl hover:bg-white/10" onClick={() => setMobileMoreOpen(true)} aria-label="เมนู">
+            <Menu className="w-5 h-5 text-teal-100" />
+          </button>
+        </div>
+      </header>
+
+      {mobileMoreOpen && (
+        <div className="md:hidden fixed inset-0 z-[60]">
+          <button type="button" className="absolute inset-0 bg-slate-900/50 backdrop-blur-sm" aria-label="ปิดเมนู" onClick={() => setMobileMoreOpen(false)} />
+          <div className="absolute right-0 top-0 h-full w-[min(20rem,88vw)] gtp-nav shadow-2xl flex flex-col gtp-safe-top gtp-safe-bottom">
+            <div className="p-4 flex items-center justify-between border-b border-white/10">
+              <p className="gtp-display font-extrabold text-white">เมนูทั้งหมด</p>
+              <button type="button" className="p-2 rounded-xl hover:bg-white/10" onClick={() => setMobileMoreOpen(false)}>
+                <X className="w-5 h-5 text-white" />
+              </button>
+            </div>
+            <div className="p-3 space-y-1 flex-1 overflow-y-auto">
+              {[
+                { id: 'dashboard', icon: LayoutDashboard, label: 'ภาพรวม' },
+                { id: 'projects', icon: FolderKanban, label: 'โปรเจกต์' },
+                { id: 'board', icon: KanbanSquare, label: 'กระดานงาน', action: () => setActiveProjectId(null) },
+                { id: 'calendar', icon: CalendarDays, label: 'ปฏิทินงาน' },
+                { id: 'sticky', icon: StickyNote, label: 'เตือนความจำ' },
+                { id: 'reports', icon: BarChart2, label: 'สถิติ & รายงาน' },
+                { id: 'create', icon: Plus, label: 'สร้างงาน' },
+                ...(currentUser.role === 'Admin' ? [{ id: 'adminUsers', icon: ShieldCheck, label: 'จัดการผู้ใช้' }] : []),
+                { id: 'settings', icon: Settings2, label: 'ตั้งค่า' },
+              ].map((menu) => (
+                <button
+                  key={menu.id}
+                  onClick={() => {
+                    setCurrentModule(menu.id);
+                    if (menu.id === 'projects') setDetailProjectId(null);
+                    if (menu.action) menu.action();
+                    setMobileMoreOpen(false);
+                  }}
+                  className={`gtp-nav-item flex items-center gap-3 px-4 py-3.5 rounded-2xl w-full ${
+                    currentModule === menu.id ? 'gtp-nav-item-active' : 'text-teal-100/80'
+                  }`}
+                >
+                  <menu.icon className="w-5 h-5" />
+                  <span className="text-sm font-bold">{menu.label}</span>
+                </button>
+              ))}
+            </div>
+            <div className="p-3 border-t border-white/10">
+              <button
+                type="button"
+                onClick={() => { setMobileMoreOpen(false); softRefresh({ silent: false }); }}
+                className="gtp-nav-item flex items-center gap-3 px-4 py-3 rounded-2xl w-full text-teal-100/80 mb-1"
+              >
+                <RefreshCw className="w-5 h-5" />
+                <span className="text-sm font-bold">ซิงก์ข้อมูลทุกเครื่อง</span>
+              </button>
+              <button onClick={() => { setMobileMoreOpen(false); handleLogout(); }} className="gtp-nav-item flex items-center gap-3 px-4 py-3 rounded-2xl w-full text-rose-200 hover:bg-rose-500/15">
+                <LogOut className="w-5 h-5" />
+                <span className="text-sm font-bold">ออกจากระบบ</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <main className="flex-1 flex flex-col min-h-0 overflow-hidden relative gtp-main md:rounded-[1.75rem] gtp-main-mobile md:h-[calc(100dvh-1.5rem)] md:pb-0">
+
         {currentModule === 'dashboard' && (
-          <div className="p-6 md:p-8 overflow-y-auto h-full">
-            <h2 className="text-2xl font-extrabold text-slate-800 mb-6 tracking-tight">ภาพรวมการทำงานของแผนก</h2>
+          <div className="p-6 md:p-8 overflow-y-auto h-full gtp-fade-in">
+            <h2 className="gtp-display text-2xl md:text-[1.7rem] font-extrabold text-[#1e3a4c] mb-6">ภาพรวมการทำงานของแผนก</h2>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
               {[
-                { label: 'งานทั้งหมด', val: statusCounts.all, c: 'text-slate-800', b: 'border-slate-200' },
-                { label: 'รอรับงาน (Pending)', val: statusCounts.Pending, c: 'text-amber-600', b: 'border-amber-200 border-b-4 border-b-amber-500' },
-                { label: 'กำลังทำ (Active)', val: statusCounts['In Progress'], c: 'text-blue-600', b: 'border-blue-200 border-b-4 border-b-blue-600' },
-                { label: 'เสร็จสิ้น (Done)', val: statusCounts.Completed, c: 'text-emerald-600', b: 'border-emerald-200 border-b-4 border-b-emerald-500' },
+                { label: 'งานทั้งหมด', val: statusCounts.all, c: 'text-[#1e3a4c]', accent: 'from-slate-100 to-white' },
+                { label: 'รอรับงาน (Pending)', val: statusCounts.Pending, c: 'text-amber-600', accent: 'from-amber-50 to-white' },
+                { label: 'กำลังทำ (Active)', val: statusCounts['In Progress'], c: 'text-sky-600', accent: 'from-sky-50 to-white' },
+                { label: 'เสร็จสิ้น (Done)', val: statusCounts.Completed, c: 'text-emerald-600', accent: 'from-emerald-50 to-white' },
               ].map((stat, i) => (
-                <div key={i} className={`bg-white p-5 rounded-2xl shadow-sm border ${stat.b}`}>
-                  <p className="text-slate-500 text-xs font-bold uppercase tracking-wider mb-2">{stat.label}</p>
-                  <p className={`text-4xl font-black ${stat.c}`}>{stat.val}</p>
+                <div key={i} className={`gtp-card gtp-stat p-5 bg-gradient-to-br ${stat.accent}`}>
+                  <p className="text-[#5b7a8a] text-xs font-bold tracking-wide mb-2">{stat.label}</p>
+                  <p className={`gtp-display text-4xl font-extrabold ${stat.c}`}>{stat.val}</p>
                 </div>
               ))}
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 flex flex-col">
-                <h3 className="font-bold text-slate-800 mb-5 flex items-center">
-                  <CalendarIcon className="w-5 h-5 mr-2 text-rose-500" /> งานที่ใกล้ถึงกำหนด / ล่าช้า
+              <div className="gtp-card p-6 flex flex-col">
+                <h3 className="gtp-display font-bold text-[#1e3a4c] mb-5 flex items-center">
+                  <CalendarIcon className="w-5 h-5 mr-2 text-rose-400" /> งานที่ใกล้ถึงกำหนด / ล่าช้า
                 </h3>
                 <div className="space-y-3 flex-1">
                   {visibleTasks
@@ -594,14 +911,14 @@ export default function App() {
                     .map((task) => {
                       const overdue = isOverdue(task.dueDate, task.status);
                       return (
-                        <div key={task.id} className={`flex justify-between items-center p-3 rounded-xl border ${overdue ? 'bg-rose-50 border-rose-200' : 'bg-slate-50 border-slate-100'}`}>
+                        <div key={task.id} className={`flex justify-between items-center p-3.5 rounded-2xl border ${overdue ? 'bg-rose-50/80 border-rose-100' : 'bg-[#f3f9fc] border-transparent'}`}>
                           <div className="overflow-hidden">
-                            <p className="font-bold text-slate-800 text-sm truncate">{task.title}</p>
-                            <p className="text-[11px] text-slate-500 mt-0.5 font-medium">รับผิดชอบ: {users.find((u) => u.id === task.assignedTo)?.name}</p>
+                            <p className="font-bold text-[#1e3a4c] text-sm truncate">{task.title}</p>
+                            <p className="text-[11px] text-[#5b7a8a] mt-0.5 font-medium">รับผิดชอบ: {users.find((u) => u.id === task.assignedTo)?.name}</p>
                           </div>
                           <div className="shrink-0 pl-3">
-                            <span className={`text-[10px] font-bold px-2.5 py-1 rounded-full uppercase tracking-wide ${overdue ? 'bg-rose-600 text-white animate-pulse' : 'bg-slate-200 text-slate-700'}`}>
-                              {overdue ? 'ล่าช้า (Overdue)' : formatDate(task.dueDate)}
+                            <span className={`text-[10px] font-bold px-2.5 py-1 rounded-full tracking-wide ${overdue ? 'bg-rose-500 text-white' : 'bg-white text-[#5b7a8a] border border-slate-100'}`}>
+                              {overdue ? 'ล่าช้า' : formatDate(task.dueDate)}
                             </span>
                           </div>
                         </div>
@@ -610,24 +927,24 @@ export default function App() {
                 </div>
               </div>
 
-              {currentUser.role === 'Head' ? (
-                <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6">
-                  <h3 className="font-bold text-slate-800 mb-5 flex items-center">
-                    <Users className="w-5 h-5 mr-2 text-indigo-500" /> ภาระงานรายบุคคล (กำลังทำ / รอรับ)
+              {isManager ? (
+                <div className="gtp-card p-6">
+                  <h3 className="gtp-display font-bold text-[#1e3a4c] mb-5 flex items-center">
+                    <Users className="w-5 h-5 mr-2 text-teal-500" /> ภาระงานรายบุคคล (กำลังทำ / รอรับ)
                   </h3>
                   <div className="space-y-5">
-                    {users.filter((u) => u.role === 'Staff').map((staff) => {
+                    {deptUsers.filter((u) => u.role === 'Staff').map((staff) => {
                       const activeTasks = tasks.filter((t) => t.assignedTo === staff.id && (t.status === 'In Progress' || t.status === 'Pending')).length;
                       const maxLoad = 5;
                       const percentage = Math.min((activeTasks / maxLoad) * 100, 100);
                       return (
                         <div key={staff.id}>
                           <div className="flex justify-between items-end mb-1.5">
-                            <span className="text-sm font-bold text-slate-700">{staff.name}</span>
-                            <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${activeTasks >= maxLoad ? 'bg-rose-100 text-rose-700' : 'bg-indigo-50 text-indigo-700'}`}>{activeTasks} งาน</span>
+                            <span className="text-sm font-bold text-[#1e3a4c]">{staff.name}</span>
+                            <span className={`text-xs font-bold px-2.5 py-0.5 rounded-full ${activeTasks >= maxLoad ? 'bg-rose-50 text-rose-600' : 'bg-teal-50 text-teal-700'}`}>{activeTasks} งาน</span>
                           </div>
-                          <div className="w-full bg-slate-100 rounded-full h-2.5 overflow-hidden">
-                            <div className={`h-full rounded-full ${activeTasks >= maxLoad ? 'bg-rose-500' : 'bg-gradient-to-r from-blue-500 to-indigo-500'}`} style={{ width: `${percentage}%` }} />
+                          <div className="w-full bg-[#e8f2f6] rounded-full h-2.5 overflow-hidden">
+                            <div className={`h-full rounded-full ${activeTasks >= maxLoad ? 'bg-rose-400' : 'bg-gradient-to-r from-teal-400 to-cyan-500'}`} style={{ width: `${percentage}%` }} />
                           </div>
                         </div>
                       );
@@ -635,10 +952,10 @@ export default function App() {
                   </div>
                 </div>
               ) : (
-                <div className="bg-gradient-to-br from-indigo-500 to-blue-600 rounded-2xl shadow-lg border border-indigo-400 p-8 text-white flex flex-col justify-center items-center text-center">
-                  <ShieldCheck className="w-16 h-16 mb-4 opacity-80" />
-                  <h3 className="text-xl font-bold mb-2">ยินดีต้อนรับ, {currentUser.name}</h3>
-                  <p className="text-indigo-100 text-sm">ระบบตรวจสอบสิทธิ์แล้ว คุณกำลังใช้งานในระดับ Staff<br />คุณสามารถดูงานทั้งหมดในแผนก และดึงงานมาทำแทนได้หากจำเป็น</p>
+                <div className="rounded-[1.75rem] shadow-lg border border-teal-300/30 p-8 text-white flex flex-col justify-center items-center text-center bg-gradient-to-br from-teal-500 via-cyan-500 to-sky-500">
+                  <ShieldCheck className="w-14 h-14 mb-4 opacity-90" />
+                  <h3 className="gtp-display text-xl font-bold mb-2">ยินดีต้อนรับ, {currentUser.name}</h3>
+                  <p className="text-teal-50 text-sm leading-relaxed max-w-sm">คุณกำลังใช้งานในระดับพนักงาน — ดูงานในแผนก และดึงงานมาทำแทนได้เมื่อจำเป็น</p>
                 </div>
               )}
             </div>
@@ -646,11 +963,11 @@ export default function App() {
         )}
 
         {currentModule === 'projects' && !detailProject && (
-          <div className="p-6 md:p-8 overflow-y-auto h-full">
+          <div className="p-6 md:p-8 overflow-y-auto h-full gtp-fade-in">
             <div className="flex justify-between items-end mb-8">
               <div>
-                <h2 className="text-2xl font-extrabold text-slate-800 tracking-tight">โปรเจกต์ทั้งหมด (Projects)</h2>
-                <p className="text-slate-500 text-sm mt-1 font-medium">ตั้งค่าช่วงเวลา · แผนขั้นตอน · S-Curve</p>
+                <h2 className="gtp-display text-2xl font-extrabold text-[#1e3a4c]">โปรเจกต์ทั้งหมด</h2>
+                <p className="text-[#5b7a8a] text-sm mt-1 font-medium">ตั้งค่าช่วงเวลา · แผนขั้นตอน · S-Curve</p>
               </div>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
@@ -667,29 +984,29 @@ export default function App() {
                   <div
                     key={proj.id}
                     onClick={() => setDetailProjectId(proj.id)}
-                    className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm hover:shadow-xl hover:-translate-y-1 transition-all cursor-pointer group flex flex-col"
+                    className="gtp-card gtp-card-hover p-6 cursor-pointer group flex flex-col"
                   >
                     <div className="flex justify-between items-start mb-4">
-                      <div className="bg-indigo-50 p-2.5 rounded-xl group-hover:bg-indigo-600 transition-colors">
-                        <FolderKanban className="w-6 h-6 text-indigo-600 group-hover:text-white" />
+                      <div className="bg-teal-50 p-2.5 rounded-2xl group-hover:bg-gradient-to-br group-hover:from-teal-400 group-hover:to-cyan-500 transition-all">
+                        <FolderKanban className="w-6 h-6 text-teal-600 group-hover:text-white" />
                       </div>
-                      <span className="text-[11px] font-bold px-2.5 py-1 bg-slate-100 text-slate-600 rounded-full border border-slate-200">
+                      <span className="text-[11px] font-bold px-2.5 py-1 bg-[#f3f9fc] text-[#5b7a8a] rounded-full">
                         {projMs.length ? `${completedMs}/${projMs.length} ขั้นตอน` : `${projTasks.length} งาน`}
                       </span>
                     </div>
-                    <h3 className="font-extrabold text-lg text-slate-800 mb-2 group-hover:text-indigo-700">{proj.name}</h3>
-                    <p className="text-sm text-slate-500 line-clamp-2 mb-3 flex-1 font-medium">{proj.description}</p>
-                    <p className="text-[11px] font-bold text-slate-400 mb-2">
+                    <h3 className="gtp-display font-extrabold text-lg text-[#1e3a4c] mb-2 group-hover:text-teal-700">{proj.name}</h3>
+                    <p className="text-sm text-[#5b7a8a] line-clamp-2 mb-3 flex-1 font-medium leading-relaxed">{proj.description}</p>
+                    <p className="text-[11px] font-bold text-[#8aa3b0] mb-2">
                       {formatThaiDate(proj.startDate)} → {formatThaiDate(proj.endDate)}
                     </p>
                     <ProjectTimeBar startDate={proj.startDate} endDate={proj.endDate} compact />
                     <div className="mt-4">
-                      <div className="flex justify-between text-xs font-bold text-slate-700 mb-2">
+                      <div className="flex justify-between text-xs font-bold text-[#1e3a4c] mb-2">
                         <span>ความคืบหน้าแผน (S-Curve)</span>
-                        <span className={progress === 100 ? 'text-emerald-600' : 'text-indigo-600'}>{progress}%</span>
+                        <span className={progress === 100 ? 'text-emerald-600' : 'text-teal-600'}>{progress}%</span>
                       </div>
-                      <div className="w-full bg-slate-100 rounded-full h-3 overflow-hidden">
-                        <div className={`h-full rounded-full ${progress === 100 ? 'bg-emerald-500' : 'bg-gradient-to-r from-blue-500 to-indigo-600'}`} style={{ width: `${progress}%` }} />
+                      <div className="w-full bg-[#e8f2f6] rounded-full h-3 overflow-hidden">
+                        <div className={`h-full rounded-full ${progress === 100 ? 'bg-emerald-400' : 'bg-gradient-to-r from-teal-400 to-cyan-500'}`} style={{ width: `${progress}%` }} />
                       </div>
                     </div>
                   </div>
@@ -717,23 +1034,23 @@ export default function App() {
         )}
 
         {currentModule === 'board' && (
-          <div className="flex flex-col h-full p-6 md:p-8">
+          <div className="flex flex-col h-full p-6 md:p-8 gtp-fade-in">
             <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 space-y-4 md:space-y-0">
-              <h2 className="text-2xl font-extrabold text-slate-800 flex items-center tracking-tight">
+              <h2 className="gtp-display text-2xl font-extrabold text-[#1e3a4c] flex items-center">
                 กระดานงาน
                 {activeProjectId && (
-                  <span className="ml-3 text-sm font-bold text-indigo-700 bg-indigo-100 border border-indigo-200 px-3 py-1 rounded-full">
+                  <span className="ml-3 text-sm font-bold text-teal-700 bg-teal-50 border border-teal-100 px-3 py-1 rounded-full">
                     {projects.find((p) => p.id === activeProjectId)?.name}
                   </span>
                 )}
               </h2>
               <div className="flex space-x-3">
                 {activeProjectId && (
-                  <button onClick={() => setActiveProjectId(null)} className="px-4 py-2 text-sm font-bold text-slate-600 bg-white border border-slate-300 rounded-xl hover:bg-slate-50 shadow-sm">
+                  <button onClick={() => setActiveProjectId(null)} className="px-4 py-2.5 text-sm font-bold text-[#5b7a8a] bg-white/90 border border-slate-100 rounded-2xl hover:bg-white shadow-sm">
                     ดูทั้งหมด
                   </button>
                 )}
-                <button onClick={() => setCurrentModule('create')} className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-xl text-sm font-bold flex items-center shadow-md">
+                <button onClick={() => setCurrentModule('create')} className="gtp-btn-primary px-4 py-2.5 text-sm flex items-center">
                   <Plus className="w-4 h-4 mr-1.5" /> สร้างงาน
                 </button>
               </div>
@@ -755,13 +1072,13 @@ export default function App() {
                     ? totalInCol - COMPLETED_PREVIEW
                     : 0;
                   const shownTasks = hiddenCompleted > 0 ? colTasks.slice(0, COMPLETED_PREVIEW) : colTasks;
-                  const borders = ['border-amber-200', 'border-blue-200', 'border-purple-200', 'border-emerald-200'];
-                  const bgs = ['bg-amber-50/50', 'bg-blue-50/50', 'bg-purple-50/50', 'bg-emerald-50/50'];
+                  const borders = ['border-amber-100', 'border-sky-100', 'border-teal-100', 'border-emerald-100'];
+                  const bgs = ['bg-amber-50/40', 'bg-sky-50/40', 'bg-teal-50/40', 'bg-emerald-50/40'];
                   return (
-                    <div key={status} className={`w-80 flex flex-col rounded-2xl border ${borders[index]} ${bgs[index]} max-h-full shrink-0 shadow-sm`}>
+                    <div key={status} className={`w-80 flex flex-col rounded-[1.5rem] border ${borders[index]} ${bgs[index]} max-h-full shrink-0 shadow-sm`}>
                       <div className="p-4 flex justify-between items-center border-b border-black/5">
-                        <h3 className="font-extrabold text-slate-800 text-sm uppercase tracking-wider">{getStatusText(status)}</h3>
-                        <span className="bg-white/80 text-xs font-bold px-2.5 py-1 rounded-full text-slate-700 shadow-sm">{totalInCol}</span>
+                        <h3 className="gtp-display font-extrabold text-[#1e3a4c] text-sm tracking-wide">{getStatusText(status)}</h3>
+                        <span className="bg-white/90 text-xs font-bold px-2.5 py-1 rounded-full text-[#5b7a8a] shadow-sm">{totalInCol}</span>
                       </div>
                       <div className="p-3 flex-1 overflow-y-auto space-y-3 custom-scrollbar">
                         {shownTasks.map((task) => {
@@ -773,25 +1090,25 @@ export default function App() {
                             <div
                               key={task.id}
                               onClick={() => { setSelectedTask(task); setTaskModalTab('details'); }}
-                              className={`bg-white p-4 rounded-xl shadow-sm border ${
-                                overdue ? 'border-rose-400' : (isMyTask && status === 'Pending' ? 'border-blue-500 ring-1 ring-blue-500' : 'border-slate-200')
+                              className={`bg-white/95 p-4 rounded-2xl shadow-sm border ${
+                                overdue ? 'border-rose-300' : (isMyTask && status === 'Pending' ? 'border-teal-400 ring-2 ring-teal-100' : 'border-white')
                               } ${status === 'Completed' ? 'opacity-80' : ''} cursor-pointer hover:shadow-md hover:-translate-y-0.5 transition-all relative group`}
                             >
                               {task.isRecurring && <Repeat className="w-4 h-4 absolute top-3.5 right-3.5 text-slate-300" />}
-                              {isMyTask && status === 'Pending' && <div className="absolute -top-2 -right-2 bg-blue-600 text-white text-[9px] font-bold px-2 py-0.5 rounded-full shadow-md animate-pulse">งานใหม่!</div>}
-                              {!isMyTask && overdue && <div className="absolute -top-2 -right-2 bg-rose-600 text-white text-[9px] font-bold px-2 py-0.5 rounded-full shadow-md animate-pulse">เลยกำหนด</div>}
+                              {isMyTask && status === 'Pending' && <div className="absolute -top-2 -right-2 bg-teal-500 text-white text-[9px] font-bold px-2 py-0.5 rounded-full shadow-md">งานใหม่!</div>}
+                              {!isMyTask && overdue && <div className="absolute -top-2 -right-2 bg-rose-500 text-white text-[9px] font-bold px-2 py-0.5 rounded-full shadow-md">เลยกำหนด</div>}
                               {task.projectId && !activeProjectId && (
-                                <span className="text-[10px] font-bold text-indigo-600 bg-indigo-50 px-1.5 py-0.5 rounded mb-2 inline-block border border-indigo-100 truncate max-w-[80%]">
+                                <span className="text-[10px] font-bold text-teal-700 bg-teal-50 px-1.5 py-0.5 rounded-lg mb-2 inline-block truncate max-w-[80%]">
                                   {projects.find((p) => p.id === task.projectId)?.name}
                                 </span>
                               )}
-                              <h4 className={`font-bold text-slate-800 text-sm mb-4 leading-relaxed pr-6 ${status === 'Completed' ? 'line-through decoration-slate-300' : ''}`}>{task.title}</h4>
+                              <h4 className={`font-bold text-[#1e3a4c] text-sm mb-4 leading-relaxed pr-6 ${status === 'Completed' ? 'line-through decoration-slate-300' : ''}`}>{task.title}</h4>
                               <div className="flex justify-between items-end pt-3 border-t border-slate-100/80">
                                 <div className="flex items-center space-x-2">
-                                  <div className={`w-7 h-7 rounded-full flex items-center justify-center text-[10px] font-extrabold ${isMyTask ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-600 border border-slate-200'}`}>
+                                  <div className={`w-7 h-7 rounded-full flex items-center justify-center text-[10px] font-extrabold ${isMyTask ? 'bg-teal-500 text-white' : 'bg-[#f3f9fc] text-[#5b7a8a]'}`}>
                                     {assignee?.name?.charAt(0)}
                                   </div>
-                                  <span className={`text-[11px] font-bold ${isMyTask ? 'text-blue-700' : 'text-slate-500'}`}>{assignee?.name?.split(' ')[0]}</span>
+                                  <span className={`text-[11px] font-bold ${isMyTask ? 'text-teal-700' : 'text-[#5b7a8a]'}`}>{assignee?.name?.split(' ')[0]}</span>
                                 </div>
                                 <div className="flex items-center space-x-2.5 text-[11px] font-bold">
                                   {commentCount > 0 && <span className="flex items-center text-slate-400"><MessageSquare className="w-3.5 h-3.5 mr-1" />{commentCount}</span>}
@@ -843,25 +1160,25 @@ export default function App() {
         )}
 
         {currentModule === 'calendar' && (
-          <div className="p-6 md:p-8 h-full flex flex-col">
+          <div className="p-6 md:p-8 h-full flex flex-col gtp-fade-in">
             <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 shrink-0 space-y-4 md:space-y-0">
-              <h2 className="text-2xl font-extrabold text-slate-800 flex items-center tracking-tight">
-                <CalendarDays className="w-7 h-7 mr-3 text-blue-600" /> ปฏิทินงาน (Deadlines)
+              <h2 className="gtp-display text-2xl font-extrabold text-[#1e3a4c] flex items-center">
+                <CalendarDays className="w-7 h-7 mr-3 text-teal-500" /> ปฏิทินงาน
               </h2>
-              <div className="flex items-center space-x-2 bg-white p-1.5 rounded-xl shadow-sm border border-slate-200">
-                <button onClick={() => setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() - 1, 1))} className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg">
+              <div className="flex items-center space-x-2 bg-white/90 p-1.5 rounded-2xl shadow-sm border border-white">
+                <button onClick={() => setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() - 1, 1))} className="p-2 text-[#5b7a8a] hover:text-teal-600 hover:bg-teal-50 rounded-xl">
                   <ArrowRightLeft className="w-4 h-4 rotate-180" />
                 </button>
-                <span className="font-bold text-slate-800 min-w-[140px] text-center">{formatThaiMonthYear(currentMonth)}</span>
-                <button onClick={() => setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1, 1))} className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg">
+                <span className="font-bold text-[#1e3a4c] min-w-[140px] text-center">{formatThaiMonthYear(currentMonth)}</span>
+                <button onClick={() => setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1, 1))} className="p-2 text-[#5b7a8a] hover:text-teal-600 hover:bg-teal-50 rounded-xl">
                   <ArrowRightLeft className="w-4 h-4" />
                 </button>
               </div>
             </div>
-            <div className="flex-1 bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden flex flex-col">
-              <div className="grid grid-cols-7 border-b border-slate-200 bg-slate-50 shrink-0">
+            <div className="flex-1 gtp-card overflow-hidden flex flex-col">
+              <div className="grid grid-cols-7 border-b border-slate-100 bg-[#f3f9fc] shrink-0">
                 {['อาทิตย์', 'จันทร์', 'อังคาร', 'พุธ', 'พฤหัสฯ', 'ศุกร์', 'เสาร์'].map((d, i) => (
-                  <div key={d} className={`p-3 text-center text-xs font-bold uppercase tracking-wider border-r border-slate-200 last:border-0 ${i === 0 || i === 6 ? 'text-rose-500' : 'text-slate-500'}`}>{d}</div>
+                  <div key={d} className={`p-3 text-center text-xs font-bold tracking-wide border-r border-slate-100 last:border-0 ${i === 0 || i === 6 ? 'text-rose-400' : 'text-[#5b7a8a]'}`}>{d}</div>
                 ))}
               </div>
               <div className="flex-1 grid grid-cols-7 grid-rows-5 overflow-y-auto bg-slate-50/30">
@@ -873,9 +1190,9 @@ export default function App() {
                   const isToday = dateStr === new Date().setHours(0, 0, 0, 0);
                   const dayTasks = tasksByDueDay.get(dateStr) || [];
                   return (
-                    <div key={day} className={`border-r border-b border-slate-200/50 min-h-[120px] p-2 flex flex-col ${isToday ? 'bg-blue-50/50 ring-1 ring-inset ring-blue-500' : 'bg-white hover:bg-slate-50'}`}>
+                    <div key={day} className={`border-r border-b border-slate-200/50 min-h-[120px] p-2 flex flex-col ${isToday ? 'bg-teal-50/60 ring-1 ring-inset ring-teal-400' : 'bg-white hover:bg-slate-50'}`}>
                       <div className="flex justify-between items-center mb-2">
-                        <span className={`text-sm w-7 h-7 flex items-center justify-center rounded-full font-bold ${isToday ? 'bg-blue-600 text-white shadow-md' : 'text-slate-700'}`}>{day}</span>
+                        <span className={`text-sm w-7 h-7 flex items-center justify-center rounded-full font-bold ${isToday ? 'bg-teal-500 text-white shadow-md' : 'text-slate-700'}`}>{day}</span>
                       </div>
                       <div className="flex-1 overflow-y-auto space-y-1.5 no-scrollbar px-0.5">
                         {dayTasks.map((task) => (
@@ -901,41 +1218,58 @@ export default function App() {
             currentUser={currentUser}
             busy={busy}
             onSave={handleSaveSettings}
+            onChangePassword={handleChangePassword}
             showToast={showToast}
             isProductionHost={isProductionHost()}
           />
         )}
 
+        {currentModule === 'adminUsers' && currentUser.role === 'Admin' && (
+          <AdminUsers
+            users={users}
+            orgUnits={orgUnits}
+            currentUser={currentUser}
+            busy={busy}
+            onLoadUsers={handleAdminLoadUsers}
+            onCreate={handleAdminCreateUser}
+            onUpdateUser={handleAdminUpdateUser}
+            onToggleActive={handleAdminToggleActive}
+            onCreateOrg={handleAdminCreateOrg}
+            onDeleteOrg={handleAdminDeleteOrg}
+            showToast={showToast}
+          />
+        )}
+
         {currentModule === 'reports' && (
-          <div className="p-6 md:p-8 overflow-y-auto h-full">
+          <div className="p-6 md:p-8 overflow-y-auto h-full gtp-fade-in">
             <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 space-y-4 md:space-y-0">
               <div>
-                <h2 className="text-2xl font-extrabold text-slate-800 flex items-center tracking-tight">
-                  <BarChart2 className="w-7 h-7 mr-3 text-indigo-600" /> สถิติ & รายงาน
+                <h2 className="gtp-display text-2xl font-extrabold text-[#1e3a4c] flex items-center">
+                  <BarChart2 className="w-7 h-7 mr-3 text-teal-500" /> สถิติ & รายงาน
                 </h2>
-                <p className="text-sm text-slate-500 mt-1 font-medium">สรุปประวัติการสร้างงานและการทำสำเร็จ</p>
+                <p className="text-sm text-[#5b7a8a] mt-1 font-medium">สรุปประวัติการสร้างงานและการทำสำเร็จ</p>
               </div>
               <div className="flex space-x-3">
-                <button onClick={() => { showToast('⏳ สร้างไฟล์ Excel...'); setTimeout(() => showToast('📥 ดาวน์โหลด Excel สำเร็จ'), 1500); }} className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2.5 rounded-xl text-sm font-bold flex items-center shadow-md">
+                <button onClick={() => { showToast('⏳ สร้างไฟล์ Excel...'); setTimeout(() => showToast('📥 ดาวน์โหลด Excel สำเร็จ'), 1500); }} className="bg-emerald-500 hover:bg-emerald-600 text-white px-4 py-2.5 rounded-2xl text-sm font-bold flex items-center shadow-md shadow-emerald-400/25">
                   <Download className="w-4 h-4 mr-2" /> Export Excel
                 </button>
-                <button onClick={() => { showToast('⏳ สร้างไฟล์ PDF...'); setTimeout(() => showToast('📥 ดาวน์โหลด PDF สำเร็จ'), 1500); }} className="bg-rose-600 hover:bg-rose-700 text-white px-4 py-2.5 rounded-xl text-sm font-bold flex items-center shadow-md">
+                <button onClick={() => { showToast('⏳ สร้างไฟล์ PDF...'); setTimeout(() => showToast('📥 ดาวน์โหลด PDF สำเร็จ'), 1500); }} className="bg-rose-400 hover:bg-rose-500 text-white px-4 py-2.5 rounded-2xl text-sm font-bold flex items-center shadow-md shadow-rose-300/30">
                   <FileText className="w-4 h-4 mr-2" /> Export PDF
                 </button>
               </div>
             </div>
 
-            <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm mb-6 flex flex-wrap gap-4 items-end">
+            <div className="gtp-card p-5 mb-6 flex flex-wrap gap-4 items-end">
               <div>
-                <label className="block text-xs font-bold text-slate-500 mb-1.5 uppercase tracking-wider">ผู้ปฏิบัติงาน</label>
-                <select value={reportUser} onChange={(e) => setReportUser(e.target.value)} className="border-2 border-slate-200 rounded-xl p-2.5 text-sm font-bold outline-none bg-slate-50 focus:border-indigo-500">
+                <label className="block text-xs font-bold text-[#5b7a8a] mb-1.5 tracking-wide">ผู้ปฏิบัติงาน</label>
+                <select value={reportUser} onChange={(e) => setReportUser(e.target.value)} className="border border-slate-100 rounded-2xl p-2.5 text-sm font-bold outline-none bg-white focus:border-teal-400">
                   <option value="all">-- ทุกคนในแผนก --</option>
-                  {users.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
+                  {deptUsers.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
                 </select>
               </div>
               <div>
-                <label className="block text-xs font-bold text-slate-500 mb-1.5 uppercase tracking-wider">ช่วงเวลา</label>
-                <select value={reportPeriod} onChange={(e) => setReportPeriod(e.target.value)} className="border-2 border-slate-200 rounded-xl p-2.5 text-sm font-bold outline-none bg-slate-50 focus:border-indigo-500">
+                <label className="block text-xs font-bold text-[#5b7a8a] mb-1.5 tracking-wide">ช่วงเวลา</label>
+                <select value={reportPeriod} onChange={(e) => setReportPeriod(e.target.value)} className="border border-slate-100 rounded-2xl p-2.5 text-sm font-bold outline-none bg-white focus:border-teal-400">
                   <option value="today">วันนี้</option>
                   <option value="week">สัปดาห์นี้</option>
                   <option value="month">เดือนนี้</option>
@@ -951,14 +1285,14 @@ export default function App() {
               <div className="p-0">
                 {Object.entries(reportData).map(([date, tasksForDate]) => (
                   <div key={date} className="border-b border-slate-100 last:border-0">
-                    <div className="bg-indigo-50/50 px-6 py-2.5 text-xs font-bold text-indigo-700 flex items-center uppercase tracking-wider border-y border-indigo-100/50">
+                    <div className="bg-teal-50/50 px-6 py-2.5 text-xs font-bold text-teal-700 flex items-center uppercase tracking-wider border-y border-teal-100/50">
                       <CalendarIcon className="w-4 h-4 mr-2" /> วันที่ {date}
                     </div>
                     <div className="divide-y divide-slate-100">
                       {tasksForDate.map((task) => (
                         <div key={task.id} className="px-6 py-4 flex flex-col lg:flex-row justify-between lg:items-center hover:bg-slate-50 group">
                           <div className="mb-3 lg:mb-0">
-                            <p className="font-bold text-slate-800 text-sm group-hover:text-blue-600">{task.title}</p>
+                            <p className="font-bold text-slate-800 text-sm group-hover:text-teal-600">{task.title}</p>
                             <p className="text-xs text-slate-500 mt-1.5 font-medium flex items-center">
                               <User className="w-3 h-3 mr-1" /> {users.find((u) => u.id === task.assignedTo)?.name}
                               {task.projectId && (<><FolderKanban className="w-3 h-3 ml-3 mr-1" /> {projects.find((p) => p.id === task.projectId)?.name}</>)}
@@ -992,49 +1326,49 @@ export default function App() {
 
         {currentModule === 'create' && (
           <div className="p-6 md:p-8 overflow-y-auto h-full flex justify-center">
-            <div className="max-w-3xl w-full bg-white p-8 rounded-3xl shadow-xl border border-slate-100 my-auto">
-              {currentUser.role === 'Head' && (
+            <div className="max-w-3xl w-full gtp-card p-8 md:p-10 my-auto">
+              {isManager && (
                 <div className="flex space-x-2 mb-8 bg-slate-100 p-1.5 rounded-2xl">
                   <button onClick={() => setCreateType('task')} className={`flex-1 py-2.5 text-sm font-extrabold rounded-xl ${createType === 'task' ? 'bg-white shadow-sm text-blue-700' : 'text-slate-500'}`}>📝 มอบหมายงาน (Task)</button>
-                  <button onClick={() => setCreateType('project')} className={`flex-1 py-2.5 text-sm font-extrabold rounded-xl ${createType === 'project' ? 'bg-white shadow-sm text-indigo-700' : 'text-slate-500'}`}>📁 สร้างโปรเจกต์ (Project)</button>
+                  <button onClick={() => setCreateType('project')} className={`flex-1 py-2.5 text-sm font-extrabold rounded-xl ${createType === 'project' ? 'bg-white shadow-sm text-teal-700' : 'text-slate-500'}`}>📁 สร้างโปรเจกต์ (Project)</button>
                 </div>
               )}
               <h2 className="text-3xl font-black text-slate-800 mb-8 tracking-tight">
-                {createType === 'project' ? 'สร้างโปรเจกต์ใหม่' : (currentUser.role === 'Head' ? 'สร้าง / มอบหมายงาน' : 'บันทึกงานของตัวเอง')}
+                {createType === 'project' ? 'สร้างโปรเจกต์ใหม่' : (isManager ? 'สร้าง / มอบหมายงาน' : 'บันทึกงานของตัวเอง')}
               </h2>
               <form onSubmit={handleCreateSubmit} className="space-y-5">
                 <div>
                   <label className="block text-sm font-extrabold text-slate-700 mb-2">{createType === 'project' ? 'ชื่อโปรเจกต์' : 'หัวข้องาน'} <span className="text-rose-500">*</span></label>
-                  <input required type="text" name={createType === 'project' ? 'name' : 'title'} className="w-full border-2 border-slate-200 rounded-2xl p-3.5 text-slate-800 font-medium outline-none focus:border-blue-500" placeholder="ระบุหัวข้อที่ชัดเจน" />
+                  <input required type="text" name={createType === 'project' ? 'name' : 'title'} className="w-full border border-slate-100 rounded-2xl p-3.5 text-slate-800 font-medium outline-none focus:border-teal-400" placeholder="ระบุหัวข้อที่ชัดเจน" />
                 </div>
                 <div>
                   <label className="block text-sm font-extrabold text-slate-700 mb-2">รายละเอียดเพิ่มเติม</label>
-                  <textarea name="description" rows="3" className="w-full border-2 border-slate-200 rounded-2xl p-3.5 text-slate-800 font-medium outline-none focus:border-blue-500" placeholder="ระบุขอบเขตงานหรือความต้องการ" />
+                  <textarea name="description" rows="3" className="w-full border border-slate-100 rounded-2xl p-3.5 text-slate-800 font-medium outline-none focus:border-teal-400" placeholder="ระบุขอบเขตงานหรือความต้องการ" />
                 </div>
                 {createType === 'project' && (
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
                     <div>
                       <label className="block text-sm font-extrabold text-slate-700 mb-2">วันเริ่มบริหารโครงการ</label>
-                      <input type="date" name="startDate" className="w-full border-2 border-slate-200 rounded-2xl p-3.5 text-slate-800 font-bold outline-none bg-white focus:border-blue-500" />
+                      <input type="date" name="startDate" className="w-full border border-slate-100 rounded-2xl p-3.5 text-slate-800 font-bold outline-none bg-white focus:border-teal-400" />
                     </div>
                     <div>
                       <label className="block text-sm font-extrabold text-slate-700 mb-2">วันสิ้นสุดโครงการ</label>
-                      <input type="date" name="endDate" className="w-full border-2 border-slate-200 rounded-2xl p-3.5 text-slate-800 font-bold outline-none bg-white focus:border-blue-500" />
+                      <input type="date" name="endDate" className="w-full border border-slate-100 rounded-2xl p-3.5 text-slate-800 font-bold outline-none bg-white focus:border-teal-400" />
                     </div>
                   </div>
                 )}
                 {createType === 'task' && (
                   <>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-                      {currentUser.role === 'Head' && (
+                      {isManager && (
                         <div>
                           <label className="block text-sm font-extrabold text-slate-700 mb-2">
                             มอบหมายให้ <span className="text-slate-400 font-bold">(ไม่บังคับ)</span>
                           </label>
-                          <select name="assignedTo" defaultValue="" className="w-full border-2 border-slate-200 rounded-2xl p-3.5 text-slate-800 font-bold outline-none bg-white focus:border-blue-500">
+                          <select name="assignedTo" defaultValue="" className="w-full border border-slate-100 rounded-2xl p-3.5 text-slate-800 font-bold outline-none bg-white focus:border-teal-400">
                             <option value="">— ทำเอง (ไม่มอบหมาย) —</option>
                             <option value={currentUser.id}>{currentUser.name} (ตัวเอง)</option>
-                            {users.filter((u) => u.role === 'Staff').map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
+                            {deptUsers.filter((u) => u.role === 'Staff' || (currentUser.role === 'Admin' && u.role !== 'Admin')).map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
                           </select>
                           <p className="text-[11px] text-slate-400 font-medium mt-1.5">เว้นว่างหรือเลือกตัวเอง = หัวหน้ารับทำเองทันที</p>
                         </div>
@@ -1043,23 +1377,23 @@ export default function App() {
                         <label className="block text-sm font-extrabold text-slate-700 mb-2">
                           กำหนดส่ง (Deadline) <span className="text-slate-400 font-bold">(ไม่บังคับ)</span>
                         </label>
-                        <input type="date" name="dueDate" className="w-full border-2 border-slate-200 rounded-2xl p-3.5 text-slate-800 font-bold outline-none bg-white focus:border-blue-500" />
+                        <input type="date" name="dueDate" className="w-full border border-slate-100 rounded-2xl p-3.5 text-slate-800 font-bold outline-none bg-white focus:border-teal-400" />
                         <p className="text-[11px] text-slate-400 font-medium mt-1.5">เว้นว่างได้ — ระบบจะแสดงเป็น “ไม่ระบุ”</p>
                       </div>
                     </div>
                     <div>
                       <label className="block text-sm font-extrabold text-slate-700 mb-2">จัดอยู่ในโปรเจกต์</label>
-                      <select name="projectId" className="w-full border-2 border-slate-200 rounded-2xl p-3.5 text-slate-800 font-bold outline-none bg-white focus:border-blue-500">
+                      <select name="projectId" className="w-full border border-slate-100 rounded-2xl p-3.5 text-slate-800 font-bold outline-none bg-white focus:border-teal-400">
                         <option value="">-- ไม่ระบุ (งานทั่วไป) --</option>
                         {projects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
                       </select>
                     </div>
-                    <div className="flex flex-col sm:flex-row sm:items-center space-y-3 sm:space-y-0 sm:space-x-6 pt-2 bg-slate-50 p-4 rounded-2xl border border-slate-200">
+                    <div className="flex flex-col sm:flex-row sm:items-center space-y-3 sm:space-y-0 sm:space-x-6 pt-2 bg-[#f3f9fc] p-4 rounded-2xl border border-slate-200">
                       <label className="flex items-center space-x-3 cursor-pointer">
                         <input type="checkbox" name="isRecurring" className="w-5 h-5 text-blue-600 rounded-md border-slate-300" />
                         <span className="text-sm font-bold text-slate-700 flex items-center"><Repeat className="w-4 h-4 mr-1.5 text-slate-400" /> งานประจำ (ทำซ้ำอัตโนมัติ)</span>
                       </label>
-                      {currentUser.role === 'Head' && (
+                      {isManager && (
                         <label className="flex items-center space-x-3 cursor-pointer">
                           <input type="checkbox" name="notifyLine" defaultChecked={!!currentUser.notifyLineDefault} className="w-5 h-5 text-green-600 rounded-md border-slate-300 accent-green-600" />
                           <span className="text-sm font-bold text-slate-700 flex items-center"><Smartphone className="w-4 h-4 mr-1.5 text-green-500" /> แจ้งเตือนเข้า LINE ทันที</span>
@@ -1069,7 +1403,7 @@ export default function App() {
                   </>
                 )}
                 <div className="pt-6">
-                  <button type="submit" disabled={busy} className="w-full bg-blue-600 text-white rounded-2xl py-4 font-extrabold text-lg hover:bg-blue-700 shadow-lg shadow-blue-500/30 flex justify-center items-center disabled:opacity-60">
+                  <button type="submit" disabled={busy} className="gtp-btn-primary w-full py-4 text-lg flex justify-center items-center disabled:opacity-60">
                     {busy ? <Loader2 className="w-5 h-5 mr-2 animate-spin" /> : <Send className="w-5 h-5 mr-2" />}
                     บันทึกและสร้างงาน
                   </button>
@@ -1080,15 +1414,57 @@ export default function App() {
         )}
       </main>
 
+      {/* Mobile bottom navigation */}
+      <nav className="md:hidden fixed bottom-0 inset-x-0 z-40 gtp-nav border-t border-white/10 gtp-safe-bottom">
+        <div className="grid grid-cols-5 gap-0.5 px-1 pt-1.5 pb-1">
+          {[
+            { id: 'dashboard', icon: LayoutDashboard, label: 'ภาพรวม' },
+            { id: 'board', icon: KanbanSquare, label: 'กระดาน', action: () => setActiveProjectId(null) },
+            { id: 'create', icon: Plus, label: 'สร้าง', primary: true },
+            { id: 'projects', icon: FolderKanban, label: 'โปรเจกต์' },
+            { id: 'more', icon: MoreHorizontal, label: 'เพิ่มเติม', openMore: true },
+          ].map((item) => {
+            const active = item.id !== 'more' && currentModule === item.id;
+            return (
+              <button
+                key={item.id}
+                type="button"
+                onClick={() => {
+                  if (item.openMore) {
+                    setMobileMoreOpen(true);
+                    return;
+                  }
+                  setCurrentModule(item.id);
+                  if (item.id === 'projects') setDetailProjectId(null);
+                  if (item.action) item.action();
+                }}
+                className={`flex flex-col items-center justify-center py-1.5 rounded-2xl min-h-[3.25rem] ${
+                  item.primary
+                    ? 'text-white'
+                    : active
+                      ? 'text-teal-200'
+                      : 'text-teal-100/55'
+                }`}
+              >
+                <span className={`flex items-center justify-center ${item.primary ? 'w-11 h-11 -mt-5 mb-0.5 rounded-2xl bg-gradient-to-br from-teal-400 to-cyan-500 shadow-lg shadow-teal-500/40' : ''}`}>
+                  <item.icon className={item.primary ? 'w-5 h-5' : 'w-[1.15rem] h-[1.15rem]'} />
+                </span>
+                <span className="text-[10px] font-bold mt-0.5">{item.label}</span>
+              </button>
+            );
+          })}
+        </div>
+      </nav>
+
       {selectedTask && (
         <div className="fixed inset-0 bg-slate-900/70 backdrop-blur-md z-50 flex items-center justify-center p-2 sm:p-4">
-          <div className="bg-white rounded-3xl w-full max-w-5xl shadow-2xl overflow-hidden flex flex-col h-[95vh] md:h-[90vh] border border-slate-200">
+          <div className="bg-white/95 backdrop-blur-xl rounded-[1.75rem] w-full max-w-5xl shadow-2xl overflow-hidden flex flex-col h-[95vh] md:h-[90vh] border border-white">
             <div className="p-5 md:p-7 border-b border-slate-200 bg-white relative z-10 shrink-0 shadow-sm">
               <div className="pr-12">
                 <div className="flex flex-wrap items-center gap-2 mb-3">
                   <span className={`text-[10px] font-black px-3 py-1.5 rounded-full border uppercase tracking-wider ${getStatusColor(selectedTask.status)}`}>{getStatusText(selectedTask.status)}</span>
                   {selectedTask.projectId && (
-                    <span className="text-[10px] font-black text-indigo-700 bg-indigo-50 px-3 py-1.5 rounded-full border border-indigo-200 flex items-center">
+                    <span className="text-[10px] font-black text-teal-700 bg-teal-50 px-3 py-1.5 rounded-full border border-teal-200 flex items-center">
                       <FolderKanban className="w-3 h-3 mr-1" /> {projects.find((p) => p.id === selectedTask.projectId)?.name}
                     </span>
                   )}
@@ -1120,7 +1496,7 @@ export default function App() {
               <button onClick={() => setTaskModalTab('details')} className={`py-4 px-2 md:px-4 font-extrabold text-sm border-b-4 flex-1 md:flex-none ${taskModalTab === 'details' ? 'border-blue-600 text-blue-700' : 'border-transparent text-slate-500'}`}>รายละเอียด & จัดการ</button>
               <button onClick={() => setTaskModalTab('comments')} className={`py-4 px-2 md:px-4 font-extrabold text-sm border-b-4 flex items-center justify-center flex-1 md:flex-none ${taskModalTab === 'comments' ? 'border-blue-600 text-blue-700' : 'border-transparent text-slate-500'}`}>
                 แชท & แนบไฟล์
-                <span className={`ml-2 text-[10px] px-2 py-0.5 rounded-full ${taskModalTab === 'comments' ? 'bg-blue-100 text-blue-800' : 'bg-slate-200 text-slate-700'}`}>
+                <span className={`ml-2 text-[10px] px-2 py-0.5 rounded-full ${taskModalTab === 'comments' ? 'bg-teal-100 text-teal-800' : 'bg-slate-200 text-slate-700'}`}>
                   {selectedComments.length}
                 </span>
               </button>
@@ -1135,11 +1511,11 @@ export default function App() {
                       <p className="text-slate-700 whitespace-pre-wrap text-sm leading-relaxed bg-slate-50 p-5 rounded-2xl border border-slate-100 font-medium">{selectedTask.description || 'ไม่มีรายละเอียดเพิ่มเติม'}</p>
                     </div>
                     <div className="grid grid-cols-2 gap-4">
-                      <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100">
+                      <div className="bg-[#f3f9fc] p-4 rounded-2xl border border-slate-100">
                         <span className="block text-[10px] font-black text-slate-400 mb-1 uppercase tracking-wider">ผู้สั่งงาน</span>
                         <span className="font-bold text-sm text-slate-800">{users.find((u) => u.id === selectedTask.createdBy)?.name}</span>
                       </div>
-                      <div className={`p-4 rounded-2xl border ${selectedTask.assignedTo === currentUser.id ? 'bg-blue-50 border-blue-200' : 'bg-slate-50 border-slate-100'}`}>
+                      <div className={`p-4 rounded-2xl border ${selectedTask.assignedTo === currentUser.id ? 'bg-teal-50 border-teal-100' : 'bg-slate-50 border-slate-100'}`}>
                         <span className="block text-[10px] font-black text-blue-500 mb-1 uppercase tracking-wider">รับผิดชอบปัจจุบัน</span>
                         <span className="font-bold text-sm text-blue-800">{users.find((u) => u.id === selectedTask.assignedTo)?.name}</span>
                       </div>
@@ -1151,24 +1527,24 @@ export default function App() {
                       {currentUser.id === selectedTask.assignedTo && (
                         <div className="space-y-4">
                           {selectedTask.status === 'Pending' && (
-                            <button disabled={busy} onClick={() => handleUpdateStatus(selectedTask.id, 'In Progress')} className="w-full bg-blue-600 text-white py-3.5 rounded-2xl font-black text-sm shadow-lg disabled:opacity-60">
+                            <button disabled={busy} onClick={() => handleUpdateStatus(selectedTask.id, 'In Progress')} className="w-full bg-teal-500 text-white py-3.5 rounded-2xl font-black text-sm shadow-lg disabled:opacity-60">
                               กดรับงาน (เริ่มดำเนินการ)
                             </button>
                           )}
                           {selectedTask.status === 'In Progress' && (
                             <div className="space-y-4 p-5 bg-slate-50 rounded-3xl border border-slate-200">
-                              {currentUser.role === 'Staff' && (
+                              {isStaff && (
                                 <label className="flex items-center space-x-3 cursor-pointer p-3 bg-green-50 rounded-xl border border-green-200">
                                   <input type="checkbox" id="notifyHeadToggle" defaultChecked className="accent-green-600 w-5 h-5" />
                                   <span className="font-bold text-green-800 text-sm flex items-center"><Smartphone className="w-4 h-4 mr-1.5 text-green-600" /> แจ้งเตือนหัวหน้าผ่าน LINE</span>
                                 </label>
                               )}
                               <div className="flex flex-col sm:flex-row space-y-3 sm:space-y-0 sm:space-x-4">
-                                {currentUser.role === 'Staff' && (
-                                  <button disabled={busy} onClick={() => handleUpdateStatus(selectedTask.id, 'Review', document.getElementById('notifyHeadToggle')?.checked)} className="flex-1 bg-purple-600 text-white py-3.5 rounded-xl font-black text-sm shadow-lg disabled:opacity-60">ส่งงาน (รอตรวจ)</button>
+                                {isStaff && (
+                                  <button disabled={busy} onClick={() => handleUpdateStatus(selectedTask.id, 'Review', document.getElementById('notifyHeadToggle')?.checked)} className="flex-1 bg-teal-600 text-white py-3.5 rounded-xl font-black text-sm shadow-lg disabled:opacity-60">ส่งงาน (รอตรวจ)</button>
                                 )}
                                 <button disabled={busy} onClick={() => handleUpdateStatus(selectedTask.id, 'Completed')} className="flex-1 bg-emerald-500 text-white py-3.5 rounded-xl font-black text-sm shadow-lg disabled:opacity-60">
-                                  {currentUser.role === 'Head' ? 'เสร็จสิ้น (ปิดงาน)' : 'เสร็จสิ้น (ปิดจบเอง)'}
+                                  {isManager ? 'เสร็จสิ้น (ปิดงาน)' : 'เสร็จสิ้น (ปิดจบเอง)'}
                                 </button>
                               </div>
                             </div>
@@ -1177,9 +1553,9 @@ export default function App() {
                             <div className="mt-6 p-5 bg-white border-2 border-dashed border-slate-200 rounded-3xl">
                               <p className="text-xs font-bold text-slate-500 mb-3 uppercase tracking-wider">โอนงานให้เพื่อนร่วมทีม</p>
                               <div className="flex space-x-3">
-                                <select id="forwardSelect" className="flex-1 border-2 border-slate-200 rounded-xl p-2.5 text-sm font-bold outline-none bg-slate-50">
+                                <select id="forwardSelect" className="flex-1 border border-slate-100 rounded-xl p-2.5 text-sm font-bold outline-none bg-slate-50">
                                   <option value="">-- เลือกผู้รับงาน --</option>
-                                  {users.filter((u) => u.id !== currentUser.id && (u.role === 'Staff' || u.role === 'Head')).map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
+                                  {deptUsers.filter((u) => u.id !== currentUser.id && (u.role === 'Staff' || u.role === 'Head')).map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
                                 </select>
                                 <button disabled={busy} onClick={() => { const s = document.getElementById('forwardSelect').value; if (s) handleForward(selectedTask.id, s); }} className="bg-slate-800 text-white px-5 py-2.5 rounded-xl text-sm font-bold disabled:opacity-60">ส่งต่อ</button>
                               </div>
@@ -1188,21 +1564,21 @@ export default function App() {
                         </div>
                       )}
 
-                      {currentUser.role === 'Staff' && currentUser.id !== selectedTask.assignedTo && selectedTask.status !== 'Completed' && (
-                        <div className="bg-indigo-50 border-2 border-indigo-100 rounded-3xl p-6 shadow-sm">
+                      {isStaff && currentUser.id !== selectedTask.assignedTo && selectedTask.status !== 'Completed' && (
+                        <div className="bg-teal-50 border-2 border-teal-100 rounded-3xl p-6 shadow-sm">
                           <div className="flex flex-col sm:flex-row items-start sm:items-center space-y-4 sm:space-y-0">
-                            <div className="bg-indigo-100 p-3 rounded-2xl mr-4 shrink-0"><Grab className="w-6 h-6 text-indigo-700" /></div>
+                            <div className="bg-teal-100 p-3 rounded-2xl mr-4 shrink-0"><Grab className="w-6 h-6 text-teal-700" /></div>
                             <div className="flex-1 pr-4">
-                              <h5 className="font-extrabold text-indigo-900 text-base mb-1">ดึงงานนี้มาทำแทน (Takeover)</h5>
-                              <p className="text-xs text-indigo-700/80 font-medium leading-relaxed">งานนี้อยู่กับ <strong>{users.find((u) => u.id === selectedTask.assignedTo)?.name}</strong> คุณสามารถดึงมาทำเองได้กรณีฉุกเฉิน ระบบจะบันทึก Log ให้อัตโนมัติ</p>
+                              <h5 className="font-extrabold text-teal-900 text-base mb-1">ดึงงานนี้มาทำแทน (Takeover)</h5>
+                              <p className="text-xs text-teal-700/80 font-medium leading-relaxed">งานนี้อยู่กับ <strong>{users.find((u) => u.id === selectedTask.assignedTo)?.name}</strong> คุณสามารถดึงมาทำเองได้กรณีฉุกเฉิน ระบบจะบันทึก Log ให้อัตโนมัติ</p>
                             </div>
-                            <button disabled={busy} onClick={() => handleTakeover(selectedTask.id)} className="bg-indigo-600 hover:bg-indigo-700 text-white px-6 py-3 rounded-xl text-sm font-black shadow-lg shrink-0 w-full sm:w-auto disabled:opacity-60">ดึงงานมาทำ</button>
+                            <button disabled={busy} onClick={() => handleTakeover(selectedTask.id)} className="bg-teal-600 hover:bg-teal-700 text-white px-6 py-3 rounded-xl text-sm font-black shadow-lg shrink-0 w-full sm:w-auto disabled:opacity-60">ดึงงานมาทำ</button>
                           </div>
                         </div>
                       )}
 
-                      {currentUser.role === 'Head' && currentUser.id !== selectedTask.assignedTo && selectedTask.status === 'Review' && (
-                        <div className="flex flex-col sm:flex-row space-y-3 sm:space-y-0 sm:space-x-4 mt-2 p-5 bg-purple-50 rounded-3xl border border-purple-100">
+                      {isManager && currentUser.id !== selectedTask.assignedTo && selectedTask.status === 'Review' && (
+                        <div className="flex flex-col sm:flex-row space-y-3 sm:space-y-0 sm:space-x-4 mt-2 p-5 bg-teal-50 rounded-3xl border border-teal-100">
                           <button disabled={busy} onClick={() => handleUpdateStatus(selectedTask.id, 'Completed')} className="flex-1 bg-emerald-500 text-white py-3.5 rounded-xl font-black text-sm shadow-lg flex justify-center items-center disabled:opacity-60">
                             <CheckCircle className="w-4 h-4 mr-2" /> ตรวจผ่าน (ปิดงาน)
                           </button>
@@ -1211,7 +1587,7 @@ export default function App() {
                           </button>
                         </div>
                       )}
-                      {currentUser.role === 'Head' && currentUser.id !== selectedTask.assignedTo && selectedTask.status !== 'Review' && selectedTask.status !== 'Completed' && (
+                      {isManager && currentUser.id !== selectedTask.assignedTo && selectedTask.status !== 'Review' && selectedTask.status !== 'Completed' && (
                         <div className="p-6 bg-slate-50 rounded-3xl border border-slate-200 border-dashed text-center">
                           <Clock className="w-6 h-6 mx-auto mb-2 text-slate-300" />
                           <p className="text-sm font-bold text-slate-500">รอรับการส่งงาน</p>
@@ -1234,7 +1610,7 @@ export default function App() {
                               {!isMe && <span className="text-[10px] font-black text-slate-500">{author?.name}</span>}
                               <span className="text-[9px] font-bold text-slate-400">{new Date(comment.timestamp).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })}</span>
                             </div>
-                            <div className={`px-5 py-3 rounded-2xl max-w-[85%] text-sm shadow-sm font-medium leading-relaxed ${isMe ? 'bg-blue-600 text-white rounded-br-sm' : 'bg-slate-100 text-slate-800 rounded-bl-sm border border-slate-200'}`}>
+                            <div className={`px-5 py-3 rounded-2xl max-w-[85%] text-sm shadow-sm font-medium leading-relaxed ${isMe ? 'bg-teal-500 text-white rounded-br-sm' : 'bg-slate-100 text-slate-800 rounded-bl-sm border border-slate-200'}`}>
                               {comment.text}
                             </div>
                           </div>
@@ -1249,9 +1625,9 @@ export default function App() {
                       )}
                     </div>
                     <form onSubmit={handleAddComment} className="mt-auto flex items-end space-x-3 border-t border-slate-100 pt-5">
-                      <button type="button" className="p-3.5 text-slate-400 hover:text-blue-600 bg-slate-100 rounded-xl border border-slate-200"><Paperclip className="w-5 h-5" /></button>
-                      <input type="text" name="comment" required placeholder="พิมพ์ข้อความ..." className="flex-1 border-2 border-slate-200 rounded-xl px-5 py-3.5 text-sm font-medium outline-none focus:border-blue-500 bg-slate-50 focus:bg-white" autoComplete="off" />
-                      <button type="submit" disabled={busy} className="p-3.5 bg-blue-600 text-white rounded-xl hover:bg-blue-700 shadow-md disabled:opacity-60"><Send className="w-5 h-5" /></button>
+                      <button type="button" className="p-3.5 text-slate-400 hover:text-teal-600 bg-slate-100 rounded-xl border border-slate-200"><Paperclip className="w-5 h-5" /></button>
+                      <input type="text" name="comment" required placeholder="พิมพ์ข้อความ..." className="flex-1 border border-slate-100 rounded-xl px-5 py-3.5 text-sm font-medium outline-none focus:border-teal-400 bg-slate-50 focus:bg-white" autoComplete="off" />
+                      <button type="submit" disabled={busy} className="p-3.5 bg-teal-500 text-white rounded-xl hover:bg-teal-600 shadow-md disabled:opacity-60"><Send className="w-5 h-5" /></button>
                     </form>
                   </div>
                 )}
@@ -1259,7 +1635,7 @@ export default function App() {
 
               <div className="w-full lg:w-80 p-6 md:p-8 bg-slate-50 overflow-y-auto border-t lg:border-t-0 shrink-0">
                 <div className="flex items-center space-x-2 mb-8">
-                  <History className="w-5 h-5 text-indigo-500" />
+                  <History className="w-5 h-5 text-teal-500" />
                   <h4 className="font-extrabold text-slate-800 text-sm">ประวัติ (Timeline)</h4>
                 </div>
                 <div className="border-l-2 border-slate-200 ml-2.5 space-y-6">
@@ -1269,9 +1645,9 @@ export default function App() {
                       const isTakeover = log.actionType === 'Takeover';
                       return (
                         <div key={log.id} className="relative pl-6">
-                          <div className={`absolute w-3 h-3 border-2 rounded-full -left-[7px] top-1 ${isTakeover ? 'bg-indigo-500 border-white ring-2 ring-indigo-200' : (idx === 0 ? 'bg-blue-500 border-white ring-2 ring-blue-200' : 'bg-white border-slate-300')}`} />
+                          <div className={`absolute w-3 h-3 border-2 rounded-full -left-[7px] top-1 ${isTakeover ? 'bg-teal-500 border-white ring-2 ring-teal-200' : (idx === 0 ? 'bg-teal-500 border-white ring-2 ring-teal-200' : 'bg-white border-slate-300')}`} />
                           <p className="text-xs font-black text-slate-800">{users.find((u) => u.id === log.actionBy)?.name}</p>
-                          <p className={`text-xs mt-1.5 mb-1.5 p-3 rounded-xl border shadow-sm leading-relaxed font-medium ${isTakeover ? 'bg-indigo-50 border-indigo-100 text-indigo-800' : 'bg-white border-slate-200 text-slate-600'}`}>{log.detail}</p>
+                          <p className={`text-xs mt-1.5 mb-1.5 p-3 rounded-xl border shadow-sm leading-relaxed font-medium ${isTakeover ? 'bg-teal-50 border-teal-100 text-teal-800' : 'bg-white border-slate-200 text-slate-600'}`}>{log.detail}</p>
                           <p className="text-[10px] font-bold text-slate-400">{formatDate(log.timestamp)} {new Date(log.timestamp).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })}</p>
                         </div>
                       );
