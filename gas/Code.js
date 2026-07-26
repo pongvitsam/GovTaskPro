@@ -214,7 +214,7 @@ function include_(filename) {
   return include(filename);
 }
 
-var SCHEMA_VERSION = '10';
+var SCHEMA_VERSION = '11';
 var BOOT_CACHE_KEY = 'gtp_boot_v7';
 var BOOT_CACHE_TTL = 90;
 var _ssCache = null;
@@ -562,6 +562,7 @@ function addComment(payload) {
 /** Personal sticky notes — Google Keep–style fields, scoped to payload.userId */
 function listStickyNotes(payload) {
   openDatabase_(false);
+  ensureStickyHeaders_();
   var userId = String((payload && payload.userId) || '');
   if (!userId) throw new Error('ต้องระบุผู้ใช้');
   return listStickyNotesForUser_(userId);
@@ -624,6 +625,7 @@ function stringifyStickyLabels_(labels) {
 
 function createStickyNote(payload) {
   openDatabase_(false);
+  ensureStickyHeaders_();
   var userId = String(payload.userId || '');
   if (!userId) throw new Error('ต้องระบุผู้ใช้');
   var now = new Date().toISOString();
@@ -674,8 +676,16 @@ function createStickyNote(payload) {
   return normalizeStickyNote_(row);
 }
 
+/** Ensure StickyNotes has Keep columns (trashed/archived/…) even if SCHEMA already matched */
+function ensureStickyHeaders_() {
+  var ss = openDatabase_(false);
+  ensureSheetWithHeaders_(ss, STICKY_NOTES_SHEET, STICKY_NOTE_HEADERS);
+  try { delete _sheetHeaderCache[STICKY_NOTES_SHEET]; } catch (e) {}
+}
+
 function updateStickyNote(payload) {
   openDatabase_(false);
+  ensureStickyHeaders_();
   var id = String(payload.id || '');
   var userId = String(payload.userId || '');
   if (!id) throw new Error('ไม่พบโน้ต');
@@ -712,6 +722,7 @@ function updateStickyNote(payload) {
 
 function deleteStickyNote(payload) {
   openDatabase_(false);
+  ensureStickyHeaders_();
   var id = String(payload.id || '');
   var userId = String(payload.userId || '');
   if (!id) throw new Error('ไม่พบโน้ต');
@@ -726,7 +737,23 @@ function deleteStickyNote(payload) {
       archived: 'FALSE',
       updatedAt: new Date().toISOString()
     });
-    return { ok: true, id: id, trashed: true, note: normalizeStickyNote_(soft) };
+    if (!soft) throw new Error('ย้ายไปถังขยะไม่สำเร็จ');
+    var normalized = normalizeStickyNote_(soft);
+    // If column was missing before ensure, re-read after forced header repair
+    if (!normalized.trashed) {
+      ensureStickyHeaders_();
+      soft = updateRowById_(STICKY_NOTES_SHEET, id, {
+        trashed: 'TRUE',
+        archived: 'FALSE',
+        updatedAt: new Date().toISOString()
+      });
+      if (!soft) throw new Error('ย้ายไปถังขยะไม่สำเร็จ');
+      normalized = normalizeStickyNote_(soft);
+    }
+    if (!normalized.trashed) {
+      throw new Error('ชีต StickyNotes ยังไม่มีคอลัมน์ถังขยะ — รีเฟรชหน้าแล้วลองใหม่');
+    }
+    return { ok: true, id: id, trashed: true, note: normalized };
   }
 
   var sheet = getSheet_(STICKY_NOTES_SHEET);
@@ -744,6 +771,7 @@ function deleteStickyNote(payload) {
 
 function emptyStickyTrash(payload) {
   openDatabase_(false);
+  ensureStickyHeaders_();
   var userId = String((payload && payload.userId) || '');
   if (!userId) throw new Error('ต้องระบุผู้ใช้');
   var sheet = getSheet_(STICKY_NOTES_SHEET);
@@ -753,10 +781,11 @@ function emptyStickyTrash(payload) {
   var idIdx = headers.indexOf('id');
   var userIdx = headers.indexOf('userId');
   var trashIdx = headers.indexOf('trashed');
+  if (trashIdx < 0) return { ok: true, removed: 0 };
   var removed = 0;
   for (var i = data.length - 1; i >= 1; i--) {
     if (String(data[i][userIdx]) !== String(userId)) continue;
-    var trashed = trashIdx >= 0 ? boolFlag_(data[i][trashIdx], false) : false;
+    var trashed = boolFlag_(data[i][trashIdx], false);
     if (!trashed) continue;
     sheet.deleteRow(i + 1);
     removed++;

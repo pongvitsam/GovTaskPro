@@ -222,24 +222,44 @@ export default function StickyNotes({ currentUser, showToast, onRemindersChange 
     }
   };
 
-  const handleDelete = async (id) => {
-    if (busy) return;
+  const handleDelete = async (id, e) => {
+    e?.preventDefault?.();
+    e?.stopPropagation?.();
     const note = notes.find((n) => n.id === id);
-    const permanent = !!note?.trashed;
+    if (!note) return;
+    const permanent = !!note.trashed;
     if (!window.confirm(permanent ? 'ลบถาวรโน้ตนี้?' : 'ย้ายโน้ตไปถังขยะ?')) return;
     setBusy(true);
     try {
-      await api('deleteStickyNote', { id, userId: currentUser.id, permanent });
       if (permanent) {
+        await api('deleteStickyNote', { id, userId: currentUser.id, permanent: true });
         setNotes((prev) => prev.filter((n) => n.id !== id));
         showToast('ลบถาวรแล้ว');
       } else {
-        setNotes((prev) => prev.map((n) => (n.id === id ? { ...n, trashed: true, archived: false } : n)));
+        // Soft-delete via update (more reliable) + deleteStickyNote fallback
+        let row = null;
+        try {
+          row = await api('updateStickyNote', {
+            id,
+            userId: currentUser.id,
+            trashed: true,
+            archived: false,
+          });
+        } catch (_) {
+          const res = await api('deleteStickyNote', { id, userId: currentUser.id, permanent: false });
+          row = res?.note || null;
+        }
+        if (row) {
+          setNotes((prev) => prev.map((n) => (n.id === id ? normalizeNote({ ...n, ...row, trashed: true, archived: false }) : n)));
+        } else {
+          setNotes((prev) => prev.map((n) => (n.id === id ? { ...n, trashed: true, archived: false } : n)));
+        }
         showToast('ย้ายไปถังขยะแล้ว');
+        setView('trash');
       }
       if (selectedId === id) setSelectedId(null);
     } catch (err) {
-      showToast(err?.message || 'ลบโน้ตไม่สำเร็จ');
+      showToast('❌ ' + (err?.message || 'ย้ายไปถังขยะไม่สำเร็จ'));
     } finally {
       setBusy(false);
     }
@@ -756,7 +776,7 @@ export default function StickyNotes({ currentUser, showToast, onRemindersChange 
                         <button
                           type="button"
                           title={note.trashed ? 'ลบถาวร' : 'ย้ายไปถังขยะ'}
-                          onClick={() => handleDelete(note.id)}
+                          onClick={(e) => handleDelete(note.id, e)}
                           className="p-1 rounded-md hover:bg-black/10"
                         >
                           <Trash2 className="w-3.5 h-3.5" />
