@@ -175,14 +175,7 @@ const localHandlers = {
       tasks: db.tasks,
       taskLogs: [],
       comments: [],
-      commentCounts: (() => {
-        const m = {};
-        for (const c of db.comments) {
-          const k = String(c.taskId);
-          m[k] = (m[k] || 0) + 1;
-        }
-        return m;
-      })(),
+      commentCounts: {},
       milestones: db.milestones || [],
       orgUnits: (db.orgUnits || []).filter((o) => o.active !== false),
       serverTime: new Date().toISOString(),

@@ -211,9 +211,10 @@ function include_(filename) {
 }
 
 var SCHEMA_VERSION = '9';
-var BOOT_CACHE_KEY = 'gtp_boot_v6';
-var BOOT_CACHE_TTL = 20;
+var BOOT_CACHE_KEY = 'gtp_boot_v7';
+var BOOT_CACHE_TTL = 90;
 var _ssCache = null;
+var _sheetHeaderCache = {};
 var STICKY_COLORS = ['yellow', 'pink', 'mint', 'blue', 'lavender'];
 
 function invalidateBootstrapCache_() {
@@ -251,20 +252,14 @@ function getBootstrap(opt) {
       }
     }
 
-    var comments = listCommentsFromSs_(ss);
-    var commentCounts = {};
-    for (var i = 0; i < comments.length; i++) {
-      var tid = String(comments[i].taskId);
-      commentCounts[tid] = (commentCounts[tid] || 0) + 1;
-    }
-
+    // Comments/logs are lazy via getTaskActivity — skip Comments sheet on boot
     var payload = {
       users: listUsersFromSs_(ss),
       projects: listProjectsFromSs_(ss),
       tasks: listTasksFromSs_(ss),
       taskLogs: [],
       comments: [],
-      commentCounts: commentCounts,
+      commentCounts: {},
       milestones: listMilestonesFromSs_(ss),
       orgUnits: listOrgUnitsFromSs_(ss),
       serverTime: new Date().toISOString()
@@ -288,11 +283,24 @@ function getTaskActivity(payload) {
   openDatabase_(false);
   var taskId = String((payload && payload.taskId) || '');
   if (!taskId) throw new Error('ไม่พบงาน');
-  var comments = listComments_().filter(function (c) {
-    return String(c.taskId) === taskId;
+  var comments = listByTaskId_(COMMENTS_SHEET, taskId).map(function (c) {
+    return {
+      id: String(c.id),
+      taskId: isFinite(Number(c.taskId)) ? Number(c.taskId) : String(c.taskId),
+      timestamp: toIso_(c.timestamp),
+      authorId: String(c.authorId || ''),
+      text: String(c.text || '')
+    };
   });
-  var taskLogs = listLogs_().filter(function (l) {
-    return String(l.taskId) === taskId;
+  var taskLogs = listByTaskId_(LOGS_SHEET, taskId).map(function (l) {
+    return {
+      id: String(l.id),
+      taskId: isFinite(Number(l.taskId)) ? Number(l.taskId) : String(l.taskId),
+      timestamp: toIso_(l.timestamp),
+      actionBy: String(l.actionBy || ''),
+      actionType: String(l.actionType || ''),
+      detail: String(l.detail || '')
+    };
   });
   return { comments: comments, taskLogs: taskLogs };
 }
@@ -723,6 +731,7 @@ function ensureSheets_(ss) {
 }
 
 function ensureSheetWithHeaders_(ss, name, headers) {
+  try { delete _sheetHeaderCache[name]; } catch (e) {}
   var sheet = ss.getSheetByName(name);
   if (!sheet) {
     sheet = ss.insertSheet(name);
@@ -757,10 +766,17 @@ function getSheet_(name) {
   return sheet;
 }
 
+function getCachedHeaders_(sheet, sheetName, minCols) {
+  if (sheetName && _sheetHeaderCache[sheetName]) return _sheetHeaderCache[sheetName];
+  var lastCol = Math.max(sheet.getLastColumn(), minCols || 1);
+  var sheetHeaders = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
+  if (sheetName) _sheetHeaderCache[sheetName] = sheetHeaders;
+  return sheetHeaders;
+}
+
 function appendObject_(sheetName, headers, obj) {
   var sheet = getSheet_(sheetName);
-  var lastCol = Math.max(sheet.getLastColumn(), headers.length);
-  var sheetHeaders = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
+  var sheetHeaders = getCachedHeaders_(sheet, sheetName, headers.length);
   var row = [];
   for (var i = 0; i < sheetHeaders.length; i++) {
     var h = String(sheetHeaders[i] || '');
@@ -781,19 +797,46 @@ function updateRowById_(sheetName, id, updates) {
   var headers = data[0];
   var idIdx = headers.indexOf('id');
   if (idIdx < 0) return null;
+  var colCount = headers.length;
   for (var i = 1; i < data.length; i++) {
     if (String(data[i][idIdx]) !== String(id)) continue;
+    var changed = false;
     for (var key in updates) {
       if (!Object.prototype.hasOwnProperty.call(updates, key)) continue;
       if (updates[key] === undefined) continue;
       var col = headers.indexOf(key);
       if (col < 0) continue;
-      sheet.getRange(i + 1, col + 1).setValue(updates[key] === null ? '' : updates[key]);
       data[i][col] = updates[key] === null ? '' : updates[key];
+      changed = true;
+    }
+    if (changed) {
+      var writeRow = [];
+      for (var c = 0; c < colCount; c++) writeRow.push(data[i][c]);
+      sheet.getRange(i + 1, 1, i + 1, colCount).setValues([writeRow]);
     }
     return rowToObject_(headers, data[i]);
   }
   return null;
+}
+
+/** Filter by taskId in one pass (avoids map-all-then-filter) */
+function listByTaskId_(sheetName, taskId) {
+  var sheet = getSheet_(sheetName);
+  var lastRow = sheet.getLastRow();
+  var lastCol = sheet.getLastColumn();
+  if (lastRow < 2 || lastCol < 1) return [];
+  var values = sheet.getRange(1, 1, lastRow, lastCol).getValues();
+  var headers = values[0];
+  var taskIdx = headers.indexOf('taskId');
+  if (taskIdx < 0) return [];
+  var needle = String(taskId);
+  var out = [];
+  for (var i = 1; i < values.length; i++) {
+    if (String(values[i][taskIdx]) !== needle) continue;
+    if (!values[i][0] && values[i].every(function (c) { return c === ''; })) continue;
+    out.push(rowToObject_(headers, values[i]));
+  }
+  return out;
 }
 
 function listObjectsFromSheet_(sheet) {
@@ -919,8 +962,6 @@ function findDeptByCode_(code) {
 /** Staff/Head: รหัสแผนก + username (legacy) */
 function loginDept(payload) {
   openDatabase_(false);
-  ensureAdminUser_();
-  try { ensureOrgUnitsSeed_(); } catch (e) {}
   var departmentCode = String(payload.departmentCode || '').trim();
   var username = String(payload.username || '').trim().toLowerCase();
   if (!departmentCode) throw new Error('กรอกรหัสแผนก');
@@ -951,8 +992,6 @@ function loginDept(payload) {
 /** Staff/Head: เปิดแผนกด้วยรหัส → ได้รายชื่อให้เลือก */
 function listDeptUsersForLogin(payload) {
   openDatabase_(false);
-  ensureAdminUser_();
-  try { ensureOrgUnitsSeed_(); } catch (e) {}
   var departmentCode = String(payload.departmentCode || '').trim();
   if (!departmentCode) throw new Error('กรอก Username แผนก');
 
@@ -992,8 +1031,6 @@ function listDeptUsersForLogin(payload) {
 /** Staff/Head: เลือกชื่อตัวเองหลังเปิดแผนก */
 function loginDeptPick(payload) {
   openDatabase_(false);
-  ensureAdminUser_();
-  try { ensureOrgUnitsSeed_(); } catch (e) {}
   var departmentCode = String(payload.departmentCode || '').trim();
   var userId = String(payload.userId || '').trim();
   if (!departmentCode) throw new Error('กรอก Username แผนก');
@@ -1021,7 +1058,6 @@ function loginDeptPick(payload) {
 /** Staff/Head: กรอกแค่ username (legacy) */
 function loginStaff(payload) {
   openDatabase_(false);
-  ensureAdminUser_();
   var username = String(payload.username || '').trim().toLowerCase();
   if (!username) throw new Error('กรอกชื่อผู้ใช้');
 
@@ -1046,7 +1082,6 @@ function loginStaff(payload) {
 /** แอดมิน: username + password */
 function loginAdmin(payload) {
   openDatabase_(false);
-  ensureAdminUser_();
   var username = String(payload.username || '').trim().toLowerCase();
   var password = String(payload.password || '');
   if (!username || !password) throw new Error('กรอกชื่อผู้ใช้และรหัสผ่าน');
@@ -1070,7 +1105,6 @@ function loginAdmin(payload) {
 function login(payload) {
   // backward compatible: route by role after password match
   openDatabase_(false);
-  ensureAdminUser_();
   var username = String(payload.username || '').trim().toLowerCase();
   var password = String(payload.password || '');
   if (!username || !password) throw new Error('กรอกชื่อผู้ใช้และรหัสผ่าน');
@@ -1931,11 +1965,8 @@ function addLog_(taskId, actionBy, actionType, detail) {
 }
 
 function findUserName_(userId) {
-  var users = listUsers_();
-  for (var i = 0; i < users.length; i++) {
-    if (users[i].id === String(userId)) return users[i].name;
-  }
-  return String(userId);
+  var u = findUserById_(userId);
+  return u ? u.name : String(userId);
 }
 
 function toIso_(v) {

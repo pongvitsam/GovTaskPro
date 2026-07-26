@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import {
   User, CheckCircle, Clock, Plus, LayoutDashboard, LogOut, Send,
   ArrowRightLeft, History, FolderKanban, Briefcase, KanbanSquare, Bell, Calendar as CalendarIcon,
@@ -7,16 +7,28 @@ import {
   Menu, X, MoreHorizontal, RefreshCw
 } from 'lucide-react';
 import { api, isProductionGas, isProductionHost } from './api';
-import ProjectDetail from './ProjectDetail';
-import StickyNotes from './StickyNotes';
-import SettingsPage from './Settings';
-import AdminUsers from './AdminUsers';
 import LoginScreen from './LoginScreen';
 import { formatThaiDate, formatThaiMonthYear } from './formatThaiDate';
 import ProjectTimeBar from './ProjectTimeBar';
 import { readSession, saveSession, clearSession } from './session';
 
+const ProjectDetail = lazy(() => import('./ProjectDetail'));
+const StickyNotes = lazy(() => import('./StickyNotes'));
+const SettingsPage = lazy(() => import('./Settings'));
+const AdminUsers = lazy(() => import('./AdminUsers'));
+
 const DAY = 86400000;
+
+function ModuleLoading({ label }) {
+  return (
+    <div className="flex-1 flex items-center justify-center p-10 gtp-fade-in">
+      <div className="flex flex-col items-center text-[#5b7a8a]">
+        <Loader2 className="w-8 h-8 animate-spin text-teal-500 mb-3" />
+        <p className="text-sm font-semibold">กำลังโหลด{label ? ` ${label}` : ''}...</p>
+      </div>
+    </div>
+  );
+}
 
 function upsertById(list, row) {
   if (!row) return list;
@@ -29,7 +41,7 @@ function upsertById(list, row) {
 }
 
 export default function App() {
-  const [bootLoading, setBootLoading] = useState(true);
+  const [bootLoading, setBootLoading] = useState(() => !!readSession()?.userId);
   const [bootError, setBootError] = useState(null);
   const [users, setUsers] = useState([]);
   const [orgUnits, setOrgUnits] = useState([]);
@@ -117,13 +129,14 @@ export default function App() {
   };
 
   const softRefresh = async ({ silent = true } = {}) => {
-    if (softRefreshingRef.current || bootLoading) return;
+    if (softRefreshingRef.current || bootLoading || !currentUser) return;
     const now = Date.now();
-    if (silent && now - lastSyncAtRef.current < 8000) return;
+    if (silent && now - lastSyncAtRef.current < 15000) return;
     softRefreshingRef.current = true;
     if (!silent) setSyncing(true);
     try {
-      const data = await api('getBootstrap', { force: true });
+      // Silent sync uses CacheService; manual sync forces fresh Sheets read
+      const data = await api('getBootstrap', silent ? {} : { force: true });
       if (!data || !Array.isArray(data.users)) return;
       applyBootstrap(data, { restoreSession: false });
       lastSyncAtRef.current = Date.now();
@@ -143,11 +156,11 @@ export default function App() {
     setSelectedTask((prev) => (prev && String(prev.id) === String(task.id) ? task : prev));
   };
 
-  const loadBootstrap = async () => {
+  const loadBootstrap = async ({ force = true } = {}) => {
     setBootLoading(true);
     setBootError(null);
     try {
-      const data = await api('getBootstrap', { force: true });
+      const data = await api('getBootstrap', force ? { force: true } : {});
       if (!data || !Array.isArray(data.users)) {
         throw new Error('รูปแบบข้อมูลจากเซิร์ฟเวอร์ไม่ถูกต้อง');
       }
@@ -162,11 +175,17 @@ export default function App() {
 
   useEffect(() => {
     let cancelled = false;
+    const session = readSession();
+    // No session → show login immediately (do not wait for full Sheets dump)
+    if (!session?.userId) {
+      setBootLoading(false);
+      return undefined;
+    }
     (async () => {
       setBootLoading(true);
       setBootError(null);
       try {
-        const data = await api('getBootstrap', { force: true });
+        const data = await api('getBootstrap', {});
         if (cancelled) return;
         if (!data || !Array.isArray(data.users)) {
           throw new Error('รูปแบบข้อมูลจากเซิร์ฟเวอร์ไม่ถูกต้อง');
@@ -188,20 +207,17 @@ export default function App() {
     const onVisible = () => {
       if (document.visibilityState === 'visible') softRefresh({ silent: true });
     };
-    const onFocus = () => softRefresh({ silent: true });
     const onOnline = () => softRefresh({ silent: false });
 
     document.addEventListener('visibilitychange', onVisible);
-    window.addEventListener('focus', onFocus);
     window.addEventListener('online', onOnline);
 
     const timer = setInterval(() => {
       if (document.visibilityState === 'visible') softRefresh({ silent: true });
-    }, 45000);
+    }, 60000);
 
     return () => {
       document.removeEventListener('visibilitychange', onVisible);
-      window.removeEventListener('focus', onFocus);
       window.removeEventListener('online', onOnline);
       clearInterval(timer);
     };
@@ -216,14 +232,16 @@ export default function App() {
       try {
         const data = await api('getTaskActivity', { taskId });
         if (cancelled) return;
+        const nextComments = data.comments || [];
         setComments((prev) => {
           const others = prev.filter((c) => String(c.taskId) !== String(taskId));
-          return [...others, ...(data.comments || [])];
+          return [...others, ...nextComments];
         });
         setTaskLogs((prev) => {
           const others = prev.filter((l) => String(l.taskId) !== String(taskId));
           return [...others, ...(data.taskLogs || [])];
         });
+        setCommentCounts((prev) => ({ ...prev, [String(taskId)]: nextComments.length }));
       } catch (err) {
         if (!cancelled) showToast('❌ โหลดประวัติงานไม่สำเร็จ');
       } finally {
@@ -238,6 +256,36 @@ export default function App() {
     users.forEach((u) => m.set(u.id, u));
     return m;
   }, [users]);
+
+  const tasksByProjectId = useMemo(() => {
+    const m = new Map();
+    tasks.forEach((t) => {
+      const key = String(t.projectId || '');
+      if (!m.has(key)) m.set(key, []);
+      m.get(key).push(t);
+    });
+    return m;
+  }, [tasks]);
+
+  const milestonesByProjectId = useMemo(() => {
+    const m = new Map();
+    milestones.forEach((ms) => {
+      const key = String(ms.projectId || '');
+      if (!m.has(key)) m.set(key, []);
+      m.get(key).push(ms);
+    });
+    return m;
+  }, [milestones]);
+
+  const activeTaskCountByUserId = useMemo(() => {
+    const m = new Map();
+    tasks.forEach((t) => {
+      if (t.status !== 'In Progress' && t.status !== 'Pending') return;
+      const id = String(t.assignedTo || '');
+      m.set(id, (m.get(id) || 0) + 1);
+    });
+    return m;
+  }, [tasks]);
 
   const visibleTasks = useMemo(() => {
     if (!currentUser) return [];
@@ -270,14 +318,30 @@ export default function App() {
     )
   );
 
-  const finishLogin = (user) => {
+  const finishLogin = async (user) => {
     if (!user?.id) throw new Error('เข้าสู่ระบบไม่สำเร็จ');
     saveSession(user);
-    setCurrentUser(user);
-    setUsers((prev) => upsertById(prev, user));
     setCreateType('task');
     setCurrentModule('dashboard');
     setLoginError(null);
+    setBootLoading(true);
+    setBootError(null);
+    try {
+      const data = await api('getBootstrap', {});
+      if (!data || !Array.isArray(data.users)) {
+        throw new Error('รูปแบบข้อมูลจากเซิร์ฟเวอร์ไม่ถูกต้อง');
+      }
+      applyBootstrap(data, { restoreSession: false });
+      const fresh = (data.users || []).find((x) => String(x.id) === String(user.id) && x.active !== false);
+      setCurrentUser(fresh ? { ...user, ...fresh } : user);
+      lastSyncAtRef.current = Date.now();
+    } catch (err) {
+      setUsers((prev) => upsertById(prev, user));
+      setCurrentUser(user);
+      showToast('❌ โหลดข้อมูลไม่ครบ: ' + (err?.message || String(err)));
+    } finally {
+      setBootLoading(false);
+    }
   };
 
   const handleOpenDepartment = async ({ departmentCode }) => {
@@ -301,7 +365,7 @@ export default function App() {
     setLoginError(null);
     try {
       const user = await api('loginDeptPick', { departmentCode, userId });
-      finishLogin(user);
+      await finishLogin(user);
     } catch (err) {
       setLoginError(err?.message || String(err));
     } finally {
@@ -315,7 +379,7 @@ export default function App() {
     setLoginError(null);
     try {
       const user = await api('loginAdmin', { username, password });
-      finishLogin(user);
+      await finishLogin(user);
     } catch (err) {
       setLoginError(err?.message || String(err));
     } finally {
@@ -998,7 +1062,7 @@ export default function App() {
                   </h3>
                   <div className="space-y-5">
                     {deptUsers.filter((u) => u.role === 'Staff').map((staff) => {
-                      const activeTasks = tasks.filter((t) => t.assignedTo === staff.id && (t.status === 'In Progress' || t.status === 'Pending')).length;
+                      const activeTasks = activeTaskCountByUserId.get(String(staff.id)) || 0;
                       const maxLoad = 5;
                       const percentage = Math.min((activeTasks / maxLoad) * 100, 100);
                       return (
@@ -1036,8 +1100,8 @@ export default function App() {
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
               {projects.map((proj) => {
-                const projTasks = tasks.filter((t) => t.projectId === proj.id);
-                const projMs = milestones.filter((m) => m.projectId === proj.id);
+                const projTasks = tasksByProjectId.get(String(proj.id)) || [];
+                const projMs = milestonesByProjectId.get(String(proj.id)) || [];
                 const completedMs = projMs.filter((m) => m.completed).length;
                 const totalW = projMs.reduce((s, m) => s + (Number(m.weight) || 1), 0) || 1;
                 const doneW = projMs.filter((m) => m.completed).reduce((s, m) => s + (Number(m.weight) || 1), 0);
@@ -1081,20 +1145,22 @@ export default function App() {
         )}
 
         {currentModule === 'projects' && detailProject && (
-          <ProjectDetail
-            project={detailProject}
-            milestones={milestones}
-            tasks={tasks}
-            currentUser={currentUser}
-            busy={busy}
-            onBack={() => setDetailProjectId(null)}
-            onOpenBoard={() => { setActiveProjectId(detailProject.id); setCurrentModule('board'); }}
-            onSaveProject={handleSaveProject}
-            onCreateMilestone={handleCreateMilestone}
-            onUpdateMilestone={handleUpdateMilestone}
-            onDeleteMilestone={handleDeleteMilestone}
-            showToast={showToast}
-          />
+          <Suspense fallback={<ModuleLoading label="โปรเจกต์" />}>
+            <ProjectDetail
+              project={detailProject}
+              milestones={milestones}
+              tasks={tasks}
+              currentUser={currentUser}
+              busy={busy}
+              onBack={() => setDetailProjectId(null)}
+              onOpenBoard={() => { setActiveProjectId(detailProject.id); setCurrentModule('board'); }}
+              onSaveProject={handleSaveProject}
+              onCreateMilestone={handleCreateMilestone}
+              onUpdateMilestone={handleUpdateMilestone}
+              onDeleteMilestone={handleDeleteMilestone}
+              showToast={showToast}
+            />
+          </Suspense>
         )}
 
         {currentModule === 'board' && (
@@ -1277,36 +1343,42 @@ export default function App() {
         )}
 
         {currentModule === 'sticky' && (
-          <StickyNotes currentUser={currentUser} showToast={showToast} />
+          <Suspense fallback={<ModuleLoading label="โน้ตติดผนัง" />}>
+            <StickyNotes currentUser={currentUser} showToast={showToast} />
+          </Suspense>
         )}
 
         {currentModule === 'settings' && (
-          <SettingsPage
-            currentUser={currentUser}
-            busy={busy}
-            onSave={handleSaveSettings}
-            onChangePassword={handleChangePassword}
-            showToast={showToast}
-            isProductionHost={isProductionHost()}
-          />
+          <Suspense fallback={<ModuleLoading label="ตั้งค่า" />}>
+            <SettingsPage
+              currentUser={currentUser}
+              busy={busy}
+              onSave={handleSaveSettings}
+              onChangePassword={handleChangePassword}
+              showToast={showToast}
+              isProductionHost={isProductionHost()}
+            />
+          </Suspense>
         )}
 
         {currentModule === 'adminUsers' && currentUser.role === 'Admin' && (
-          <AdminUsers
-            users={users}
-            orgUnits={orgUnits}
-            currentUser={currentUser}
-            busy={busy}
-            onLoadUsers={handleAdminLoadUsers}
-            onCreate={handleAdminCreateUser}
-            onUpdateUser={handleAdminUpdateUser}
-            onToggleActive={handleAdminToggleActive}
-            onCreateOrg={handleAdminCreateOrg}
-            onUpdateOrg={handleAdminUpdateOrg}
-            onDeleteOrg={handleAdminDeleteOrg}
-            onSeedDemo={handleAdminSeedDemo}
-            showToast={showToast}
-          />
+          <Suspense fallback={<ModuleLoading label="สิทธิ์ตามแผนก" />}>
+            <AdminUsers
+              users={users}
+              orgUnits={orgUnits}
+              currentUser={currentUser}
+              busy={busy}
+              onLoadUsers={handleAdminLoadUsers}
+              onCreate={handleAdminCreateUser}
+              onUpdateUser={handleAdminUpdateUser}
+              onToggleActive={handleAdminToggleActive}
+              onCreateOrg={handleAdminCreateOrg}
+              onUpdateOrg={handleAdminUpdateOrg}
+              onDeleteOrg={handleAdminDeleteOrg}
+              onSeedDemo={handleAdminSeedDemo}
+              showToast={showToast}
+            />
+          </Suspense>
         )}
 
         {currentModule === 'reports' && (
