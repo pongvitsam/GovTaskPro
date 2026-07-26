@@ -236,7 +236,7 @@ const localHandlers = {
   listDeptUsersForLogin(payload) {
     const db = getLocalDb();
     const departmentCode = String(payload.departmentCode || '').trim().toLowerCase();
-    if (!departmentCode) throw new Error('กรอกรหัสแผนก');
+    if (!departmentCode) throw new Error('กรอก Username แผนก');
     const orgs = db.orgUnits || [];
     const dept = orgs.find((o) => {
       if (o.type !== 'department' || o.active === false) return false;
@@ -244,7 +244,7 @@ const localHandlers = {
       const n = String(o.name || '').toLowerCase();
       return c === departmentCode || n === departmentCode || n.replace(/\s+/g, '') === departmentCode;
     });
-    if (!dept) throw new Error('รหัสแผนกไม่ถูกต้อง');
+    if (!dept) throw new Error('Username แผนกไม่ถูกต้อง');
     const users = db.users
       .filter((u) => u.active !== false && u.role !== 'Admin' && String(u.department || '').toLowerCase() === String(dept.name).toLowerCase())
       .map((u) => ({
@@ -265,7 +265,7 @@ const localHandlers = {
     const db = getLocalDb();
     const departmentCode = String(payload.departmentCode || '').trim().toLowerCase();
     const userId = String(payload.userId || '').trim();
-    if (!departmentCode) throw new Error('กรอกรหัสแผนก');
+    if (!departmentCode) throw new Error('กรอก Username แผนก');
     if (!userId) throw new Error('เลือกชื่อผู้ใช้');
     const orgs = db.orgUnits || [];
     const dept = orgs.find((o) => {
@@ -274,7 +274,7 @@ const localHandlers = {
       const n = String(o.name || '').toLowerCase();
       return c === departmentCode || n === departmentCode || n.replace(/\s+/g, '') === departmentCode;
     });
-    if (!dept) throw new Error('รหัสแผนกไม่ถูกต้อง');
+    if (!dept) throw new Error('Username แผนกไม่ถูกต้อง');
     const u = db.users.find((x) => String(x.id) === userId);
     if (!u) throw new Error('ไม่พบผู้ใช้ในแผนกนี้');
     if (u.active === false) throw new Error('บัญชีถูกปิดการใช้งาน');
@@ -317,16 +317,28 @@ const localHandlers = {
   adminCreateUser(payload) {
     const db = getLocalDb();
     requireAdmin(db, payload.adminId);
-    const username = String(payload.username || '').trim();
-    const password = String(payload.password || '');
     const name = String(payload.name || '').trim();
     const role = String(payload.role || 'Staff');
     let department = String(payload.department || '').trim();
-    if (!username || !password || !name) throw new Error('กรอกชื่อผู้ใช้ รหัสผ่าน และชื่อแสดง');
+    let username = String(payload.username || '').trim();
+    let password = String(payload.password || '');
+    if (!name) throw new Error('กรอกชื่อแสดง');
     if (!department) department = role === 'Admin' ? 'SYSTEM' : '';
-    if (!department) throw new Error('ต้องระบุแผนก (1 Username ต่อ 1 แผนก)');
-    if (db.users.some((u) => String(u.username || u.id).toLowerCase() === username.toLowerCase())) {
-      throw new Error('Username นี้ถูกใช้แล้ว (ใช้ได้คนเดียวทั้งระบบ / 1 Username = 1 แผนก)');
+    if (!department) throw new Error('ต้องระบุแผนก');
+    if (role === 'Admin') {
+      if (!username || !password) throw new Error('แอดมินต้องมี Username และรหัสผ่าน');
+      if (password.length < 4) throw new Error('รหัสผ่านต้องมีอย่างน้อย 4 ตัวอักษร');
+    } else {
+      if (!username) username = String(name).replace(/\s+/g, '').toLowerCase() || ('user' + Date.now());
+      if (!password) password = '-';
+    }
+    let lower = username.toLowerCase();
+    let guard = 0;
+    while (guard < 20 && db.users.some((u) => String(u.username || u.id).toLowerCase() === lower)) {
+      if (role === 'Admin') throw new Error('Username นี้ถูกใช้แล้ว');
+      username = `${username}_${String(Date.now() + guard).slice(-4)}`;
+      lower = username.toLowerCase();
+      guard += 1;
     }
     const division = String(payload.division || '').trim();
     const row = {
@@ -432,6 +444,31 @@ const localHandlers = {
     };
     db.orgUnits.push(row);
     return row;
+  },
+  adminUpdateOrgUnit(payload) {
+    const db = getLocalDb();
+    requireAdmin(db, payload.adminId);
+    if (!db.orgUnits) db.orgUnits = [];
+    const idx = db.orgUnits.findIndex((o) => String(o.id) === String(payload.id));
+    if (idx < 0) throw new Error('ไม่พบแผนก');
+    const prev = db.orgUnits[idx];
+    if (prev.type !== 'department') throw new Error('แก้ Username ได้เฉพาะแผนก');
+    const next = { ...prev };
+    if (payload.name !== undefined) {
+      const name = String(payload.name || '').trim();
+      if (!name) throw new Error('ชื่อแผนกจำเป็น');
+      next.name = name;
+    }
+    if (payload.code !== undefined) {
+      const code = String(payload.code || '').trim().replace(/\s+/g, '').toUpperCase();
+      if (!code) throw new Error('Username แผนกจำเป็น');
+      if (db.orgUnits.some((o, i) => i !== idx && o.type === 'department' && o.active !== false && String(o.code || o.name).replace(/\s+/g, '').toUpperCase() === code)) {
+        throw new Error('Username แผนกนี้ถูกใช้แล้ว');
+      }
+      next.code = code;
+    }
+    db.orgUnits[idx] = next;
+    return next;
   },
   adminDeleteOrgUnit(payload) {
     const db = getLocalDb();

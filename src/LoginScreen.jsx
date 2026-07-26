@@ -77,14 +77,14 @@ export default function LoginScreen({
           GovTask<span className="text-teal-600">Pro</span>
         </h1>
         <p className="text-center text-[#5b7a8a] text-sm font-medium mb-1">
-          {step === 'dept' ? 'พนักงาน / หัวหน้า — กรอกรหัสแผนก' : 'เลือกชื่อของคุณในแผนก'}
+          {step === 'dept' ? 'พนักงาน / หัวหน้า — กรอก Username แผนก (ไม่ใช้รหัสผ่าน)' : 'เลือกชื่อของคุณในแผนก'}
         </p>
         <p className="text-center text-[11px] text-teal-600 font-bold mb-8">● {hostHint}</p>
 
         {step === 'dept' && (
           <form onSubmit={submitDept} className="space-y-4">
             <div>
-              <label className="block text-xs font-bold text-[#5b7a8a] mb-1.5 tracking-wide">รหัสแผนก</label>
+              <label className="block text-xs font-bold text-[#5b7a8a] mb-1.5 tracking-wide">Username แผนก</label>
               <div className="relative">
                 <Building2 className="w-4 h-4 text-teal-500 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" aria-hidden />
                 <input
@@ -98,12 +98,12 @@ export default function LoginScreen({
                 />
               </div>
               <p className="text-[11px] text-[#8aa3b0] font-medium mt-1.5">
-                ไม่ต้องใส่รหัสผ่าน — ต่อไปเลือกชื่อตัวเองภายในแผนก
+                1 แผนก = 1 Username · ไม่มีรหัสผ่าน · จากนั้นเลือกชื่อตัวเอง
               </p>
               <div className="mt-3 rounded-2xl bg-[#f3f9fc] border border-slate-100 px-3.5 py-2.5 text-[11px] text-[#5b7a8a] font-medium leading-relaxed">
-                <p className="font-extrabold text-[#1e3a4c] mb-1">รหัสแผนกทดลอง</p>
+                <p className="font-extrabold text-[#1e3a4c] mb-1">Username แผนกทดลอง</p>
                 <p><span className="font-mono font-bold">IT</span> · <span className="font-mono font-bold">HR</span> · <span className="font-mono font-bold">FIN</span></p>
-                <p className="mt-1">แอดมินเท่านั้น: ปุ่มมุมขวาบน · <span className="font-mono font-bold">admin / 1234</span></p>
+                <p className="mt-1">แอดมินเท่านั้นใช้รหัสผ่าน: ปุ่มมุมขวาบน · <span className="font-mono font-bold">admin / 1234</span></p>
               </div>
             </div>
 
@@ -126,14 +126,14 @@ export default function LoginScreen({
           <div className="space-y-4">
             <div className="rounded-2xl bg-[#f3f9fc] border border-slate-100 px-4 py-3 flex items-center justify-between gap-3">
               <div>
-                <p className="text-[11px] font-bold text-[#8aa3b0]">แผนก</p>
+                <p className="text-[11px] font-bold text-[#8aa3b0]">Username แผนก</p>
                 <p className="gtp-display font-extrabold text-[#1e3a4c]">
                   {deptInfo?.name}
                   <span className="ml-2 text-xs font-mono font-bold text-teal-700">{deptInfo?.code || deptCode}</span>
                 </p>
               </div>
               <button type="button" disabled={busy} onClick={backToDept} className="text-xs font-bold text-[#5b7a8a] flex items-center gap-1 px-2.5 py-2 rounded-xl hover:bg-white">
-                <ArrowLeft className="w-3.5 h-3.5" /> เปลี่ยนแผนก
+                <ArrowLeft className="w-3.5 h-3.5" /> เปลี่ยน Username แผนก
               </button>
             </div>
 

@@ -194,6 +194,7 @@ function dispatchApi_(fn, payload, hasPayload) {
   if (fn === 'adminGetUsers') return adminGetUsers(payload || {});
   if (fn === 'adminUpdateUser') return adminUpdateUser(payload || {});
   if (fn === 'adminCreateOrgUnit') return adminCreateOrgUnit(payload || {});
+  if (fn === 'adminUpdateOrgUnit') return adminUpdateOrgUnit(payload || {});
   if (fn === 'adminDeleteOrgUnit') return adminDeleteOrgUnit(payload || {});
   if (fn === 'adminSeedDemoData') return adminSeedDemoData(payload || {});
 
@@ -953,10 +954,10 @@ function listDeptUsersForLogin(payload) {
   ensureAdminUser_();
   try { ensureOrgUnitsSeed_(); } catch (e) {}
   var departmentCode = String(payload.departmentCode || '').trim();
-  if (!departmentCode) throw new Error('กรอกรหัสแผนก');
+  if (!departmentCode) throw new Error('กรอก Username แผนก');
 
   var dept = findDeptByCode_(departmentCode);
-  if (!dept) throw new Error('รหัสแผนกไม่ถูกต้อง');
+  if (!dept) throw new Error('Username แผนกไม่ถูกต้อง');
 
   var deptName = String(dept.name || '').trim().toLowerCase();
   var users = [];
@@ -995,11 +996,11 @@ function loginDeptPick(payload) {
   try { ensureOrgUnitsSeed_(); } catch (e) {}
   var departmentCode = String(payload.departmentCode || '').trim();
   var userId = String(payload.userId || '').trim();
-  if (!departmentCode) throw new Error('กรอกรหัสแผนก');
+  if (!departmentCode) throw new Error('กรอก Username แผนก');
   if (!userId) throw new Error('เลือกชื่อผู้ใช้');
 
   var dept = findDeptByCode_(departmentCode);
-  if (!dept) throw new Error('รหัสแผนกไม่ถูกต้อง');
+  if (!dept) throw new Error('Username แผนกไม่ถูกต้อง');
 
   var raw = listUsersRaw_();
   for (var i = 0; i < raw.length; i++) {
@@ -1119,25 +1120,46 @@ function adminGetUsers(payload) {
 function adminCreateUser(payload) {
   openDatabase_(false);
   requireAdmin_(payload.adminId);
-  var username = String(payload.username || '').trim();
-  var password = String(payload.password || '');
   var name = String(payload.name || '').trim();
   var role = String(payload.role || 'Staff');
   var department = String(payload.department || '').trim();
-  if (!username || !password || !name) throw new Error('กรอกชื่อผู้ใช้ รหัสผ่าน และชื่อแสดง');
+  var username = String(payload.username || '').trim();
+  var password = String(payload.password || '');
+  if (!name) throw new Error('กรอกชื่อแสดง');
   if (['Staff', 'Head', 'Admin'].indexOf(role) < 0) throw new Error('บทบาทไม่ถูกต้อง');
-  if (password.length < 4) throw new Error('รหัสผ่านต้องมีอย่างน้อย 4 ตัวอักษร');
   if (!department) {
     department = role === 'Admin' ? 'SYSTEM' : '';
   }
-  if (!department) throw new Error('ต้องระบุแผนก (1 Username ต่อ 1 แผนก)');
+  if (!department) throw new Error('ต้องระบุแผนก');
+
+  // พนักงาน/หัวหน้า: ไม่ใช้รหัสผ่านล็อกอิน — แอดมินเท่านั้นที่ต้องมี username+password
+  if (role === 'Admin') {
+    if (!username || !password) throw new Error('แอดมินต้องมี Username และรหัสผ่าน');
+    if (password.length < 4) throw new Error('รหัสผ่านต้องมีอย่างน้อย 4 ตัวอักษร');
+  } else {
+    if (!username) {
+      username = String(name).replace(/\s+/g, '').toLowerCase() || ('user' + Date.now());
+    }
+    if (!password) password = '-';
+  }
 
   var raw = listUsersRaw_();
+  if (!username) username = 'user' + Date.now();
   var lower = username.toLowerCase();
-  for (var i = 0; i < raw.length; i++) {
-    var existing = String(raw[i].username || raw[i].id || '').trim().toLowerCase();
-    if (existing === lower) throw new Error('Username นี้ถูกใช้แล้ว (ใช้ได้คนเดียวทั้งระบบ / 1 Username = 1 แผนก)');
+  var guard = 0;
+  while (guard < 20) {
+    var clash = false;
+    for (var i = 0; i < raw.length; i++) {
+      var existing = String(raw[i].username || raw[i].id || '').trim().toLowerCase();
+      if (existing === lower) { clash = true; break; }
+    }
+    if (!clash) break;
+    if (role === 'Admin') throw new Error('Username นี้ถูกใช้แล้ว');
+    username = username + '_' + String(Date.now() + guard).slice(-4);
+    lower = username.toLowerCase();
+    guard++;
   }
+  if (guard >= 20) throw new Error('สร้าง Username อ้างอิงไม่สำเร็จ');
 
   var row = {
     id: 'u_' + Date.now(),
@@ -1360,6 +1382,49 @@ function adminCreateOrgUnit(payload) {
     code: type === 'department' ? code : ''
   };
   appendObject_(ORG_UNITS_SHEET, ORG_HEADERS, row);
+  invalidateBootstrapCache_();
+  return normalizeOrgUnit_(row);
+}
+
+/** แก้ Username แผนก (1 แผนก = 1 username) — ทุกคนในแผนกใช้รหัสนี้เข้า */
+function adminUpdateOrgUnit(payload) {
+  openDatabase_(false);
+  requireAdmin_(payload.adminId);
+  var id = String(payload.id || '');
+  if (!id) throw new Error('ไม่พบแผนก');
+  var raw = listOrgUnitsRaw_();
+  var found = null;
+  for (var i = 0; i < raw.length; i++) {
+    if (String(raw[i].id) === id) {
+      found = raw[i];
+      break;
+    }
+  }
+  if (!found) throw new Error('ไม่พบแผนก');
+  if (String(found.type) !== 'department') throw new Error('แก้ Username ได้เฉพาะแผนก');
+
+  var updates = {};
+  if (payload.name !== undefined) {
+    var name = String(payload.name || '').trim();
+    if (!name) throw new Error('ชื่อแผนกจำเป็น');
+    updates.name = name;
+  }
+  if (payload.code !== undefined) {
+    var code = String(payload.code || '').trim().replace(/\s+/g, '').toUpperCase();
+    if (!code) throw new Error('Username แผนกจำเป็น');
+    for (var j = 0; j < raw.length; j++) {
+      if (String(raw[j].id) === id) continue;
+      if (String(raw[j].type) !== 'department') continue;
+      if (String(raw[j].active).toUpperCase() === 'FALSE') continue;
+      var existingCode = String(raw[j].code || raw[j].name || '').replace(/\s+/g, '').toUpperCase();
+      if (existingCode === code) throw new Error('Username แผนกนี้ถูกใช้แล้ว');
+    }
+    updates.code = code;
+  }
+  if (!Object.keys(updates).length) throw new Error('ไม่มีข้อมูลที่ต้องอัปเดต');
+
+  var row = updateRowById_(ORG_UNITS_SHEET, id, updates);
+  if (!row) throw new Error('ไม่พบแผนก');
   invalidateBootstrapCache_();
   return normalizeOrgUnit_(row);
 }

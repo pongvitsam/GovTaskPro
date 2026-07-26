@@ -444,6 +444,21 @@ export default function App() {
     }
   };
 
+  const handleAdminUpdateOrg = async (payload) => {
+    if (busy) return null;
+    setBusy(true);
+    try {
+      const row = await api('adminUpdateOrgUnit', payload);
+      setOrgUnits((prev) => prev.map((o) => (String(o.id) === String(row.id) ? { ...o, ...row } : o)));
+      return row;
+    } catch (err) {
+      showToast('❌ ' + (err?.message || String(err)));
+      return null;
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const handleAdminDeleteOrg = async (payload) => {
     if (busy) return;
     setBusy(true);
@@ -1271,6 +1286,7 @@ export default function App() {
             onUpdateUser={handleAdminUpdateUser}
             onToggleActive={handleAdminToggleActive}
             onCreateOrg={handleAdminCreateOrg}
+            onUpdateOrg={handleAdminUpdateOrg}
             onDeleteOrg={handleAdminDeleteOrg}
             onSeedDemo={handleAdminSeedDemo}
             showToast={showToast}
