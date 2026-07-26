@@ -223,3 +223,165 @@ export function toTimelinePoints(periods, key, width, height, start, end, padY =
     label: p.label,
   }));
 }
+
+function csvEscape(v) {
+  const s = String(v ?? '');
+  if (/[",\n\r]/.test(s)) return `"${s.replace(/"/g, '""')}"`;
+  return s;
+}
+
+function safeFilePart(name) {
+  return String(name || 'project')
+    .replace(/[\\/:*?"<>|]+/g, '_')
+    .replace(/\s+/g, '_')
+    .slice(0, 60) || 'project';
+}
+
+function triggerDownload(blob, filename) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1500);
+}
+
+function isoDate(msOrIso) {
+  if (msOrIso == null || msOrIso === '') return '';
+  const d = typeof msOrIso === 'number' ? new Date(msOrIso) : new Date(msOrIso);
+  if (Number.isNaN(d.getTime())) return String(msOrIso).slice(0, 10);
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
+/** Build Excel-friendly CSV (UTF-8 BOM) from S-Curve sheet */
+export function buildSCurveCsv(project, sheet) {
+  if (!sheet) return '';
+  const lines = [];
+  const push = (cols) => lines.push(cols.map(csvEscape).join(','));
+
+  push(['GovTaskPro S-Curve']);
+  push(['โปรเจกต์', project?.name || '']);
+  push(['ช่วงเวลา', isoDate(sheet.start), isoDate(sheet.end)]);
+  push(['วันที่ส่งออก', isoDate(Date.now())]);
+  push(['ความคืบหน้าจริง %', sheet.actualPct]);
+  push(['ตามแผน (ถึงวันนี้) %', sheet.plannedPct]);
+  push(['ส่วนต่าง %', Math.round((sheet.actualPct - sheet.plannedPct) * 10) / 10]);
+  push(['จำนวนสัปดาห์', (sheet.weeks || []).length]);
+  lines.push('');
+
+  push(['ขั้นตอน']);
+  push([
+    '#', 'รายการ', 'รายละเอียด', 'น้ำหนัก', 'น้ำหนัก %',
+    'เริ่มแผน', 'สิ้นสุดแผน', 'วันที่เสร็จจริง', 'ความคืบหน้า %',
+    'สถานะแผน', 'สถานะจริง', 'สะสมแผน %', 'สะสมจริง %',
+  ]);
+  (sheet.rows || []).forEach((row) => {
+    push([
+      row.no,
+      row.title,
+      row.description || '',
+      row.weight,
+      row.weightPct,
+      isoDate(row.plannedStart),
+      isoDate(row.plannedEnd),
+      isoDate(row.completedAt),
+      row.progress,
+      row.planStatus,
+      row.actualStatus,
+      row.cumPlan,
+      row.cumActual,
+    ]);
+  });
+  push([
+    '', 'รวม', '', '', 100,
+    '', '', '', sheet.actualPct,
+    '', '', sheet.plannedPct, sheet.actualPct,
+  ]);
+  lines.push('');
+
+  push(['สะสมรายสัปดาห์ (S-Curve)']);
+  push(['สัปดาห์', 'วันที่', 'สะสมแผน %', 'สะสมจริง %']);
+  const weeks = sheet.weeks || [];
+  const periods = sheet.densePeriods || [];
+  weeks.forEach((w, i) => {
+    let period = periods.find((p) => p.t === w.t);
+    if (!period) {
+      period = [...periods].reverse().find((p) => p.t <= w.t) || periods[0];
+    }
+    push([
+      w.label || `W${w.weekNo || i + 1}`,
+      isoDate(w.t),
+      period?.planned ?? '',
+      period?.actual ?? '',
+    ]);
+  });
+  // Ensure final end point is included if different from last week tick
+  const lastWeek = weeks[weeks.length - 1];
+  const endPeriod = periods[periods.length - 1];
+  if (endPeriod && lastWeek && endPeriod.t !== lastWeek.t) {
+    push(['สิ้นสุดโครงการ', isoDate(endPeriod.t), endPeriod.planned, endPeriod.actual]);
+  }
+
+  return lines.join('\r\n');
+}
+
+/** Download S-Curve as .csv (opens in Excel) */
+export function downloadSCurveExcel(project, sheet) {
+  const csv = buildSCurveCsv(project, sheet);
+  if (!csv) throw new Error('ไม่มีข้อมูล S-Curve ให้ส่งออก');
+  const stamp = isoDate(Date.now()).replace(/-/g, '');
+  const filename = `SCurve_${safeFilePart(project?.name)}_${stamp}.csv`;
+  const blob = new Blob([`\uFEFF${csv}`], { type: 'text/csv;charset=utf-8' });
+  triggerDownload(blob, filename);
+  return filename;
+}
+
+/** Download SVG chart as PNG */
+export async function downloadSCurvePng(svgEl, project) {
+  if (!svgEl) throw new Error('ไม่พบกราฟ S-Curve');
+  const vb = svgEl.viewBox?.baseVal;
+  const width = Math.max(1, Math.round(vb?.width || svgEl.clientWidth || 960));
+  const height = Math.max(1, Math.round(vb?.height || svgEl.clientHeight || 400));
+  const clone = svgEl.cloneNode(true);
+  clone.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
+  clone.setAttribute('width', String(width));
+  clone.setAttribute('height', String(height));
+  const xml = new XMLSerializer().serializeToString(clone);
+  const svgUrl = URL.createObjectURL(new Blob([xml], { type: 'image/svg+xml;charset=utf-8' }));
+  try {
+    const img = new Image();
+    img.decoding = 'sync';
+    await new Promise((resolve, reject) => {
+      img.onload = resolve;
+      img.onerror = () => reject(new Error('สร้างภาพกราฟไม่สำเร็จ'));
+      img.src = svgUrl;
+    });
+    const canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = height;
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, width, height);
+    ctx.drawImage(img, 0, 0, width, height);
+    const stamp = isoDate(Date.now()).replace(/-/g, '');
+    const filename = `SCurve_${safeFilePart(project?.name)}_${stamp}.png`;
+    await new Promise((resolve, reject) => {
+      canvas.toBlob((blob) => {
+        if (!blob) {
+          reject(new Error('สร้างไฟล์ภาพไม่สำเร็จ'));
+          return;
+        }
+        triggerDownload(blob, filename);
+        resolve(filename);
+      }, 'image/png');
+    });
+    return filename;
+  } finally {
+    URL.revokeObjectURL(svgUrl);
+  }
+}

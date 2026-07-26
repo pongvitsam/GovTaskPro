@@ -1,9 +1,12 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ArrowLeft, Calendar as CalendarIcon, CheckCircle2, Plus, Trash2,
-  Settings2, LineChart, ListChecks, KanbanSquare, Loader2, Save
+  Settings2, LineChart, ListChecks, KanbanSquare, Loader2, Save, Download, ImageDown
 } from 'lucide-react';
-import { buildSCurve, buildSCurveSheet, toTimelinePolyline, toTimelinePoints, timeToRatio } from './sCurve';
+import {
+  buildSCurve, buildSCurveSheet, toTimelinePolyline, toTimelinePoints, timeToRatio,
+  downloadSCurveExcel, downloadSCurvePng,
+} from './sCurve';
 import { formatThaiDate } from './formatThaiDate';
 import ProjectTimeBar from './ProjectTimeBar';
 
@@ -190,6 +193,8 @@ export default function ProjectDetail({
   showToast,
 }) {
   const [tab, setTab] = useState('plan');
+  const [exportBusy, setExportBusy] = useState(false);
+  const scurveSvgRef = useRef(null);
   const [settings, setSettings] = useState({
     name: project?.name || '',
     description: project?.description || '',
@@ -250,6 +255,29 @@ export default function ProjectDetail({
 
   const canEdit = !!currentUser;
   const doneCount = projectMilestones.filter((m) => m.completed).length;
+
+  const handleExportExcel = () => {
+    if (!sheet || exportBusy) return;
+    try {
+      const name = downloadSCurveExcel(project, sheet);
+      showToast(`📥 ส่งออก ${name} แล้ว`);
+    } catch (err) {
+      showToast('❌ ' + (err?.message || String(err)));
+    }
+  };
+
+  const handleExportPng = async () => {
+    if (!sheet || exportBusy) return;
+    setExportBusy(true);
+    try {
+      const name = await downloadSCurvePng(scurveSvgRef.current, project);
+      showToast(`📥 ส่งออก ${name} แล้ว`);
+    } catch (err) {
+      showToast('❌ ' + (err?.message || String(err)));
+    } finally {
+      setExportBusy(false);
+    }
+  };
 
   const handleSaveSettings = async (e) => {
     e.preventDefault();
@@ -479,10 +507,29 @@ export default function ProjectDetail({
                 <h3 className="font-extrabold text-slate-800 text-sm">แผนงาน · Gantt · S-Curve (รายสัปดาห์)</h3>
                 <p className="text-[11px] text-slate-500 font-medium mt-0.5">คอลัมน์แกนเวลา = สัปดาห์ (W1, W2, …) · แท่งแผน + เส้นสะสม</p>
               </div>
-              <div className="flex flex-wrap gap-3 text-[11px] font-bold">
-                <span className="flex items-center text-blue-700"><span className="w-5 h-2.5 rounded-sm bg-blue-500 mr-1.5" />ระยะแผน</span>
-                <span className="flex items-center text-rose-600"><span className="w-5 h-0.5 bg-rose-500 mr-1.5" />สะสมจริง</span>
-                <span className="flex items-center text-slate-500"><span className="w-5 border-t border-dashed border-teal-400 mr-1.5" />สะสมแผน</span>
+              <div className="flex flex-wrap items-center gap-2">
+                <div className="flex flex-wrap gap-3 text-[11px] font-bold mr-1">
+                  <span className="flex items-center text-blue-700"><span className="w-5 h-2.5 rounded-sm bg-blue-500 mr-1.5" />ระยะแผน</span>
+                  <span className="flex items-center text-rose-600"><span className="w-5 h-0.5 bg-rose-500 mr-1.5" />สะสมจริง</span>
+                  <span className="flex items-center text-slate-500"><span className="w-5 border-t border-dashed border-teal-400 mr-1.5" />สะสมแผน</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleExportExcel}
+                  disabled={!sheet?.rows?.length || exportBusy}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[11px] font-bold bg-emerald-500 text-white hover:bg-emerald-600 disabled:opacity-40 disabled:cursor-not-allowed shadow-sm"
+                >
+                  <Download className="w-3.5 h-3.5" /> Excel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleExportPng}
+                  disabled={!sheet?.rows?.length || exportBusy}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[11px] font-bold bg-white text-slate-700 border border-slate-200 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed shadow-sm"
+                >
+                  {exportBusy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ImageDown className="w-3.5 h-3.5" />}
+                  ภาพ PNG
+                </button>
               </div>
             </div>
 
@@ -545,6 +592,7 @@ export default function ProjectDetail({
 
                   <div className="flex-1 min-w-[480px] relative bg-slate-50/40">
                     <svg
+                      ref={scurveSvgRef}
                       viewBox={`0 0 ${timelineW} ${timelineH}`}
                       className="w-full h-auto block"
                       style={{ minHeight: timelineH, minWidth: timelineW }}
