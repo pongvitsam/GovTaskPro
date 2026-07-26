@@ -262,30 +262,38 @@ export default function Settings({
           </button>
         </form>
 
-        <form onSubmit={handlePassword} className="gtp-card p-6 md:p-8 shadow-sm space-y-4">
-          <div className="flex items-center gap-2 mb-1">
-            <KeyRound className="w-5 h-5 text-slate-700" />
-            <h3 className="font-extrabold text-slate-800">เปลี่ยนรหัสผ่าน</h3>
-          </div>
-          <div>
-            <label className="block text-xs font-bold text-slate-500 mb-1">รหัสผ่านปัจจุบัน</label>
-            <input type="password" value={pw.currentPassword} disabled={busy} onChange={(e) => setPw({ ...pw, currentPassword: e.target.value })} className="w-full border border-slate-100 rounded-2xl p-3 font-bold outline-none focus:border-teal-400" autoComplete="current-password" />
-          </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-xs font-bold text-slate-500 mb-1">รหัสผ่านใหม่</label>
-              <input type="password" value={pw.newPassword} disabled={busy} onChange={(e) => setPw({ ...pw, newPassword: e.target.value })} className="w-full border border-slate-100 rounded-2xl p-3 font-bold outline-none focus:border-teal-400" autoComplete="new-password" />
+        {currentUser.role === 'Admin' ? (
+          <form onSubmit={handlePassword} className="gtp-card p-6 md:p-8 shadow-sm space-y-4">
+            <div className="flex items-center gap-2 mb-1">
+              <KeyRound className="w-5 h-5 text-slate-700" />
+              <h3 className="font-extrabold text-slate-800">เปลี่ยนรหัสผ่านแอดมิน</h3>
             </div>
             <div>
-              <label className="block text-xs font-bold text-slate-500 mb-1">ยืนยันรหัสใหม่</label>
-              <input type="password" value={pw.confirmPassword} disabled={busy} onChange={(e) => setPw({ ...pw, confirmPassword: e.target.value })} className="w-full border border-slate-100 rounded-2xl p-3 font-bold outline-none focus:border-teal-400" autoComplete="new-password" />
+              <label className="block text-xs font-bold text-slate-500 mb-1">รหัสผ่านปัจจุบัน</label>
+              <input type="password" value={pw.currentPassword} disabled={busy} onChange={(e) => setPw({ ...pw, currentPassword: e.target.value })} className="w-full border border-slate-100 rounded-2xl p-3 font-bold outline-none focus:border-teal-400" autoComplete="current-password" />
             </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-xs font-bold text-slate-500 mb-1">รหัสผ่านใหม่</label>
+                <input type="password" value={pw.newPassword} disabled={busy} onChange={(e) => setPw({ ...pw, newPassword: e.target.value })} className="w-full border border-slate-100 rounded-2xl p-3 font-bold outline-none focus:border-teal-400" autoComplete="new-password" />
+              </div>
+              <div>
+                <label className="block text-xs font-bold text-slate-500 mb-1">ยืนยันรหัสใหม่</label>
+                <input type="password" value={pw.confirmPassword} disabled={busy} onChange={(e) => setPw({ ...pw, confirmPassword: e.target.value })} className="w-full border border-slate-100 rounded-2xl p-3 font-bold outline-none focus:border-teal-400" autoComplete="new-password" />
+              </div>
+            </div>
+            <button type="submit" disabled={busy} className="bg-slate-800 text-white px-5 py-3 rounded-2xl font-extrabold disabled:opacity-50">
+              {busy ? <Loader2 className="w-4 h-4 inline animate-spin mr-2" /> : null}
+              เปลี่ยนรหัสผ่าน
+            </button>
+          </form>
+        ) : (
+          <div className="gtp-card p-6 md:p-8 shadow-sm">
+            <p className="text-sm font-bold text-[#5b7a8a]">
+              พนักงาน/หัวหน้าล็อกอินด้วย Username แผนก แล้วเลือกชื่อ — ไม่ใช้รหัสผ่านรายคน
+            </p>
           </div>
-          <button type="submit" disabled={busy} className="bg-slate-800 text-white px-5 py-3 rounded-2xl font-extrabold disabled:opacity-50">
-            {busy ? <Loader2 className="w-4 h-4 inline animate-spin mr-2" /> : null}
-            เปลี่ยนรหัสผ่าน
-          </button>
-        </form>
+        )}
       </div>
     </div>
   );
