@@ -11,6 +11,7 @@ import LoginScreen from './LoginScreen';
 import { formatThaiDate, formatThaiMonthYear } from './formatThaiDate';
 import ProjectTimeBar from './ProjectTimeBar';
 import { readSession, saveSession, clearSession } from './session';
+import ThaiDateField from './ThaiDateField';
 
 const ProjectDetail = lazy(() => import('./ProjectDetail'));
 const StickyNotes = lazy(() => import('./StickyNotes'));
@@ -1582,11 +1583,11 @@ export default function App() {
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
                     <div>
                       <label className="block text-sm font-extrabold text-slate-700 mb-2">วันเริ่มบริหารโครงการ</label>
-                      <input type="date" name="startDate" className="w-full border border-slate-100 rounded-2xl p-3.5 text-slate-800 font-bold outline-none bg-white focus:border-teal-400" />
+                      <ThaiDateField clearable inputName="startDate" placeholder="วันเริ่ม พ.ศ." />
                     </div>
                     <div>
                       <label className="block text-sm font-extrabold text-slate-700 mb-2">วันสิ้นสุดโครงการ</label>
-                      <input type="date" name="endDate" className="w-full border border-slate-100 rounded-2xl p-3.5 text-slate-800 font-bold outline-none bg-white focus:border-teal-400" />
+                      <ThaiDateField clearable inputName="endDate" placeholder="วันสิ้นสุด พ.ศ." />
                     </div>
                   </div>
                 )}
@@ -1610,7 +1611,7 @@ export default function App() {
                         <label className="block text-sm font-extrabold text-slate-700 mb-2">
                           กำหนดส่ง (Deadline) <span className="text-slate-400 font-bold">(ไม่บังคับ)</span>
                         </label>
-                        <input type="date" name="dueDate" className="w-full border border-slate-100 rounded-2xl p-3.5 text-slate-800 font-bold outline-none bg-white focus:border-teal-400" />
+                        <ThaiDateField clearable inputName="dueDate" placeholder="วันกำหนดส่ง พ.ศ." />
                         <p className="text-[11px] text-slate-400 font-medium mt-1.5">เว้นว่างได้ — ระบบจะแสดงเป็น “ไม่ระบุ”</p>
                       </div>
                     </div>

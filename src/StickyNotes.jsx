@@ -5,6 +5,8 @@ import {
   Copy, Tag, Image as ImageIcon, RotateCcw, AlarmClock
 } from 'lucide-react';
 import { api } from './api';
+import ThaiDateField from './ThaiDateField';
+import { formatThaiDateLong, toDateInputValue, fromDateInputValue } from './formatThaiDate';
 
 const COLORS = [
   { id: 'yellow', label: 'เหลือง', bg: '#fef08a', ink: '#713f12', tape: 'rgba(253,224,71,0.85)' },
@@ -56,18 +58,18 @@ function normalizeNote(n) {
   };
 }
 
-function toDatetimeLocal(iso) {
-  if (!iso) return '';
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return '';
-  const pad = (n) => String(n).padStart(2, '0');
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
-}
-
-function fromDatetimeLocal(v) {
-  if (!v) return null;
-  const d = new Date(v);
-  return Number.isNaN(d.getTime()) ? null : d.toISOString();
+function normalizeNote(n) {
+  return {
+    ...n,
+    noteType: n.noteType === 'list' ? 'list' : 'text',
+    items: Array.isArray(n.items) ? n.items : [],
+    labels: Array.isArray(n.labels) ? n.labels : [],
+    pinned: !!n.pinned,
+    archived: !!n.archived,
+    trashed: !!n.trashed,
+    reminderAt: n.reminderAt || null,
+    imageUrl: n.imageUrl || '',
+  };
 }
 
 function newItem(text = '') {
@@ -705,7 +707,7 @@ export default function StickyNotes({ currentUser, showToast, onRemindersChange 
                     <div className="flex flex-wrap gap-1 mt-1" data-no-drag>
                       {note.reminderAt && (
                         <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full ${overdue ? 'bg-rose-500/20 text-rose-800' : 'bg-black/10'}`}>
-                          ⏰ {new Date(note.reminderAt).toLocaleString('th-TH', { dateStyle: 'short', timeStyle: 'short' })}
+                          ⏰ {formatThaiDateLong(note.reminderAt)}
                         </span>
                       )}
                       {(note.labels || []).map((l) => (
@@ -808,21 +810,19 @@ export default function StickyNotes({ currentUser, showToast, onRemindersChange 
                         })}
                       </div>
 
-                      <div className="flex flex-wrap items-center gap-1.5 text-[10px]">
-                        {note.reminderAt ? <Bell className="w-3 h-3 opacity-60" /> : <BellOff className="w-3 h-3 opacity-40" />}
-                        <input
-                          type="datetime-local"
+                      <div className="flex flex-wrap items-center gap-1.5 w-full" data-no-drag>
+                        {note.reminderAt ? <Bell className="w-3 h-3 opacity-60 shrink-0" /> : <BellOff className="w-3 h-3 opacity-40 shrink-0" />}
+                        <ThaiDateField
+                          size="sm"
+                          clearable
                           disabled={note.trashed}
-                          value={toDatetimeLocal(note.reminderAt)}
-                          onChange={(e) => patchNote(note.id, { reminderAt: fromDatetimeLocal(e.target.value) })}
-                          className="bg-black/5 rounded-md px-1.5 py-0.5 outline-none font-bold disabled:opacity-40"
-                          style={{ color: meta.ink }}
+                          className="thai-date-field--on-sticky flex-1 min-w-[9.5rem]"
+                          placeholder="ตั้งวันเตือน (พ.ศ.)"
+                          value={toDateInputValue(note.reminderAt)}
+                          onChange={(dateStr) => patchNote(note.id, {
+                            reminderAt: dateStr ? fromDateInputValue(dateStr) : null,
+                          })}
                         />
-                        {note.reminderAt && !note.trashed && (
-                          <button type="button" className="font-bold opacity-60 hover:opacity-100" onClick={() => patchNote(note.id, { reminderAt: null })}>
-                            ล้าง
-                          </button>
-                        )}
                       </div>
 
                       <div className="flex items-center gap-1.5">

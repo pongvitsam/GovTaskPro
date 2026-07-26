@@ -7,8 +7,9 @@ import {
   buildSCurve, buildSCurveSheet, toTimelinePolyline, toTimelinePoints, timeToRatio,
   downloadSCurveExcel, downloadSCurvePng,
 } from './sCurve';
-import { formatThaiDate } from './formatThaiDate';
+import { formatThaiDate, formatThaiDateLong } from './formatThaiDate';
 import ProjectTimeBar from './ProjectTimeBar';
+import ThaiDateField from './ThaiDateField';
 
 const TABS = [
   { id: 'plan', label: 'แผนงาน / ขั้นตอน', icon: ListChecks },
@@ -122,22 +123,24 @@ function MilestoneEditor({ m, idx, busy, onUpdate, onDelete }) {
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         <div>
           <label className="text-[10px] font-bold text-slate-500 mb-1 block">วันเริ่ม (แผน)</label>
-          <input
-            type="date"
-            value={draft.plannedStart}
+          <ThaiDateField
+            size="sm"
+            clearable
             disabled={busy}
-            onChange={(e) => setField('plannedStart', e.target.value)}
-            className="w-full border border-slate-100 rounded-2xl px-2 py-2 text-xs font-bold outline-none focus:border-teal-400"
+            placeholder="วันเริ่ม พ.ศ."
+            value={draft.plannedStart}
+            onChange={(v) => setField('plannedStart', v)}
           />
         </div>
         <div>
           <label className="text-[10px] font-bold text-slate-500 mb-1 block">วันสิ้นสุด (แผน)</label>
-          <input
-            type="date"
-            value={draft.plannedEnd}
+          <ThaiDateField
+            size="sm"
+            clearable
             disabled={busy}
-            onChange={(e) => setField('plannedEnd', e.target.value)}
-            className="w-full border border-slate-100 rounded-2xl px-2 py-2 text-xs font-bold outline-none focus:border-teal-400"
+            placeholder="วันสิ้นสุด พ.ศ."
+            value={draft.plannedEnd}
+            onChange={(v) => setField('plannedEnd', v)}
           />
         </div>
         <div>
@@ -154,12 +157,13 @@ function MilestoneEditor({ m, idx, busy, onUpdate, onDelete }) {
         </div>
         <div>
           <label className="text-[10px] font-bold text-slate-500 mb-1 block">วันเสร็จจริง</label>
-          <input
-            type="date"
-            value={draft.completedAt}
+          <ThaiDateField
+            size="sm"
+            clearable
             disabled={busy || !draft.completed}
-            onChange={(e) => setField('completedAt', e.target.value)}
-            className="w-full border border-slate-100 rounded-2xl px-2 py-2 text-xs font-bold outline-none focus:border-teal-400 disabled:bg-slate-50"
+            placeholder="วันเสร็จ พ.ศ."
+            value={draft.completedAt}
+            onChange={(v) => setField('completedAt', v)}
           />
         </div>
       </div>
@@ -395,22 +399,22 @@ export default function ProjectDetail({
           <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
             <div>
               <label className="block text-sm font-extrabold text-slate-700 mb-2">วันเริ่มบริหารโครงการ</label>
-              <input
-                type="date"
+              <ThaiDateField
+                clearable
                 disabled={!canEdit || busy}
+                placeholder="วันเริ่ม พ.ศ."
                 value={settings.startDate}
-                onChange={(e) => setSettings({ ...settings, startDate: e.target.value })}
-                className="w-full border border-slate-100 rounded-2xl p-3.5 font-bold outline-none focus:border-teal-400 disabled:bg-slate-50"
+                onChange={(v) => setSettings({ ...settings, startDate: v })}
               />
             </div>
             <div>
               <label className="block text-sm font-extrabold text-slate-700 mb-2">วันสิ้นสุดโครงการ</label>
-              <input
-                type="date"
+              <ThaiDateField
+                clearable
                 disabled={!canEdit || busy}
+                placeholder="วันสิ้นสุด พ.ศ."
                 value={settings.endDate}
-                onChange={(e) => setSettings({ ...settings, endDate: e.target.value })}
-                className="w-full border border-slate-100 rounded-2xl p-3.5 font-bold outline-none focus:border-teal-400 disabled:bg-slate-50"
+                onChange={(v) => setSettings({ ...settings, endDate: v })}
               />
             </div>
           </div>
@@ -441,11 +445,21 @@ export default function ProjectDetail({
               />
               <div>
                 <label className="text-xs font-bold text-slate-500 mb-1 block">วันเริ่ม (แผน)</label>
-                <input type="date" value={newMs.plannedStart} onChange={(e) => setNewMs({ ...newMs, plannedStart: e.target.value })} className="w-full border border-slate-100 rounded-2xl p-3 font-bold outline-none focus:border-teal-400" />
+                <ThaiDateField
+                  clearable
+                  placeholder="วันเริ่ม พ.ศ."
+                  value={newMs.plannedStart}
+                  onChange={(v) => setNewMs({ ...newMs, plannedStart: v })}
+                />
               </div>
               <div>
                 <label className="text-xs font-bold text-slate-500 mb-1 block">วันสิ้นสุด (แผน)</label>
-                <input type="date" value={newMs.plannedEnd} onChange={(e) => setNewMs({ ...newMs, plannedEnd: e.target.value })} className="w-full border border-slate-100 rounded-2xl p-3 font-bold outline-none focus:border-teal-400" />
+                <ThaiDateField
+                  clearable
+                  placeholder="วันสิ้นสุด พ.ศ."
+                  value={newMs.plannedEnd}
+                  onChange={(v) => setNewMs({ ...newMs, plannedEnd: v })}
+                />
               </div>
               <div>
                 <label className="text-xs font-bold text-slate-500 mb-1 block">น้ำหนัก (%) สำหรับ S-Curve</label>
@@ -566,11 +580,11 @@ export default function ProjectDetail({
                           </p>
                         </div>
                         <div className="flex items-center justify-end px-1 font-extrabold text-teal-700">{row.weightPct}%</div>
-                        <div className="flex items-center px-1 font-bold text-slate-600 leading-tight">
-                          {formatThaiDate(row.plannedStart, { localeOptions: { day: 'numeric', month: 'short', year: '2-digit' } })}
+                        <div className="flex items-center px-1 font-bold text-slate-600 leading-tight text-[10px]">
+                          {formatThaiDateLong(row.plannedStart, { emptyLabel: '—' })}
                         </div>
-                        <div className="flex items-center px-1 font-bold text-slate-600 leading-tight">
-                          {formatThaiDate(row.plannedEnd, { localeOptions: { day: 'numeric', month: 'short', year: '2-digit' } })}
+                        <div className="flex items-center px-1 font-bold text-slate-600 leading-tight text-[10px]">
+                          {formatThaiDateLong(row.plannedEnd, { emptyLabel: '—' })}
                         </div>
                         <div className={`flex items-center justify-end px-2 font-black ${row.progress === 100 ? 'text-emerald-600' : 'text-slate-400'}`}>
                           {row.progress}

@@ -330,3 +330,170 @@ h1, h2, h3, h4, .gtp-display {
   cursor: se-resize !important;
   transition: none !important;
 }
+
+/* Thai Buddhist date field — display วัน เดือน ปี พ.ศ. */
+.thai-date-field {
+  position: relative;
+  display: block;
+  cursor: pointer;
+  user-select: none;
+}
+
+.thai-date-field__face {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  min-height: 2.75rem;
+  padding: 0.55rem 0.85rem;
+  border-radius: 1rem;
+  border: 1px solid #e2e8f0;
+  background:
+    linear-gradient(180deg, #ffffff 0%, #f7fbfc 100%);
+  box-shadow: 0 1px 2px rgba(22, 53, 66, 0.04);
+  transition: border-color 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
+}
+
+.thai-date-field:hover .thai-date-field__face {
+  border-color: #5eead4;
+  box-shadow: 0 0 0 3px rgba(45, 212, 191, 0.12);
+}
+
+.thai-date-field--filled .thai-date-field__face {
+  border-color: #99f6e4;
+  background: linear-gradient(135deg, #f0fdfa 0%, #ffffff 55%, #ecfeff 100%);
+}
+
+.thai-date-field--disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+  pointer-events: none;
+}
+
+.thai-date-field__icon-wrap {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.85rem;
+  height: 1.85rem;
+  border-radius: 0.65rem;
+  background: linear-gradient(145deg, #2dd4bf, #0891b2);
+  color: #fff;
+  flex-shrink: 0;
+  box-shadow: 0 4px 10px rgba(8, 145, 178, 0.28);
+}
+
+.thai-date-field__icon {
+  width: 0.95rem;
+  height: 0.95rem;
+}
+
+.thai-date-field__text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.35rem 0.45rem;
+  line-height: 1.2;
+}
+
+.thai-date-field__day {
+  font-family: Manrope, Sarabun, sans-serif;
+  font-weight: 800;
+  font-size: 1.15rem;
+  color: #0f766e;
+  letter-spacing: -0.02em;
+}
+
+.thai-date-field__rest {
+  font-family: Sarabun, sans-serif;
+  font-weight: 700;
+  font-size: 0.92rem;
+  color: #1e3a4c;
+}
+
+.thai-date-field__placeholder {
+  font-family: Sarabun, sans-serif;
+  font-weight: 600;
+  font-size: 0.88rem;
+  color: #94a3b8;
+}
+
+.thai-date-field__clear {
+  border: 0;
+  background: rgba(15, 23, 42, 0.06);
+  color: #64748b;
+  width: 1.35rem;
+  height: 1.35rem;
+  border-radius: 999px;
+  font-size: 0.95rem;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.thai-date-field__clear:hover {
+  background: rgba(244, 63, 94, 0.12);
+  color: #e11d48;
+}
+
+.thai-date-field__input {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  width: 100%;
+  height: 100%;
+  cursor: pointer;
+  font-size: 1rem;
+  border: 0;
+}
+
+.thai-date-field--sm .thai-date-field__face {
+  min-height: 1.85rem;
+  padding: 0.28rem 0.55rem;
+  gap: 0.35rem;
+  border-radius: 0.65rem;
+}
+
+.thai-date-field--sm .thai-date-field__icon-wrap {
+  width: 1.35rem;
+  height: 1.35rem;
+  border-radius: 0.45rem;
+}
+
+.thai-date-field--sm .thai-date-field__icon {
+  width: 0.75rem;
+  height: 0.75rem;
+}
+
+.thai-date-field--sm .thai-date-field__day {
+  font-size: 0.92rem;
+}
+
+.thai-date-field--sm .thai-date-field__rest {
+  font-size: 0.72rem;
+}
+
+.thai-date-field--sm .thai-date-field__placeholder {
+  font-size: 0.7rem;
+}
+
+.thai-date-field--on-sticky .thai-date-field__face {
+  background: rgba(0, 0, 0, 0.06);
+  border-color: rgba(0, 0, 0, 0.08);
+  box-shadow: none;
+}
+
+.thai-date-field--on-sticky .thai-date-field__icon-wrap {
+  background: rgba(0, 0, 0, 0.18);
+  box-shadow: none;
+}
+
+.thai-date-field--on-sticky .thai-date-field__day,
+.thai-date-field--on-sticky .thai-date-field__rest {
+  color: inherit;
+}
+
