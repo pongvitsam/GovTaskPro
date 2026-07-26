@@ -28,6 +28,14 @@ export default defineConfig(({ mode }) => {
       : {
           outDir: 'dist',
           emptyOutDir: true,
+          // Stable filenames so cached index.html does not 404 after redeploy
+          rollupOptions: {
+            output: {
+              entryFileNames: 'assets/app.js',
+              chunkFileNames: 'assets/[name].js',
+              assetFileNames: 'assets/[name][extname]',
+            },
+          },
         },
   };
 });
