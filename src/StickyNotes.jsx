@@ -58,20 +58,6 @@ function normalizeNote(n) {
   };
 }
 
-function normalizeNote(n) {
-  return {
-    ...n,
-    noteType: n.noteType === 'list' ? 'list' : 'text',
-    items: Array.isArray(n.items) ? n.items : [],
-    labels: Array.isArray(n.labels) ? n.labels : [],
-    pinned: !!n.pinned,
-    archived: !!n.archived,
-    trashed: !!n.trashed,
-    reminderAt: n.reminderAt || null,
-    imageUrl: n.imageUrl || '',
-  };
-}
-
 function newItem(text = '') {
   return { id: `i_${Date.now()}_${Math.floor(Math.random() * 1000)}`, text, done: false };
 }
