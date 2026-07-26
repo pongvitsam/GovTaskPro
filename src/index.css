@@ -147,12 +147,20 @@ h1, h2, h3, h4, .gtp-display {
   width: 100%;
   border: 1.5px solid #d4e4eb;
   border-radius: 1.15rem;
-  padding: 0.85rem 1.1rem;
+  /* Separate sides so Tailwind pl-* / pr-* can override */
+  padding-top: 0.85rem;
+  padding-bottom: 0.85rem;
+  padding-left: 1.1rem;
+  padding-right: 1.1rem;
   background: rgba(255, 255, 255, 0.92);
   color: var(--gtp-ink);
   font-weight: 600;
   outline: none;
   transition: border-color 0.18s ease, box-shadow 0.18s ease, background 0.18s ease;
+}
+
+.gtp-input.gtp-input--icon {
+  padding-left: 2.75rem;
 }
 
 .gtp-input:focus {

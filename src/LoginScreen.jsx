@@ -67,13 +67,13 @@ export default function LoginScreen({
           <div>
             <label className="block text-xs font-bold text-[#5b7a8a] mb-1.5 tracking-wide">ชื่อผู้ใช้ (Username)</label>
             <div className="relative">
-              <User className="w-4 h-4 text-teal-500 absolute left-3.5 top-1/2 -translate-y-1/2" />
+              <User className="w-4 h-4 text-teal-500 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" aria-hidden />
               <input
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
                 disabled={busy || adminOpen}
                 autoFocus
-                className="gtp-input pl-10"
+                className="gtp-input gtp-input--icon"
                 placeholder="เช่น somchai / boss"
                 autoComplete="username"
               />
@@ -136,13 +136,13 @@ export default function LoginScreen({
               <div>
                 <label className="block text-xs font-bold text-[#5b7a8a] mb-1.5">รหัสผ่าน</label>
                 <div className="relative">
-                  <KeyRound className="w-4 h-4 text-amber-600 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                  <KeyRound className="w-4 h-4 text-amber-600 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" aria-hidden />
                   <input
                     type="password"
                     value={adminPass}
                     onChange={(e) => setAdminPass(e.target.value)}
                     disabled={busy}
-                    className="gtp-input pl-10"
+                    className="gtp-input gtp-input--icon"
                     placeholder="••••••••"
                     autoComplete="current-password"
                   />
