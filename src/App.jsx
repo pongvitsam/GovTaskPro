@@ -260,6 +260,15 @@ export default function App() {
   }, [activeUsers, currentUser]);
   const isManager = currentUser?.role === 'Head' || currentUser?.role === 'Admin';
   const isStaff = currentUser?.role === 'Staff';
+  const selectedAssignee = selectedTask ? usersById.get(selectedTask.assignedTo) : null;
+  /** หัวหน้าแผนก/แอดมิน ควบคุมงานลูกน้องได้ตลอด — ดึงงาน · อัปเดตสถานะ · ส่งต่อ */
+  const canControlSelectedTask = !!(
+    selectedTask && currentUser && (
+      currentUser.id === selectedTask.assignedTo
+      || currentUser.role === 'Admin'
+      || (currentUser.role === 'Head' && selectedAssignee?.department === currentUser.department)
+    )
+  );
 
   const finishLogin = (user) => {
     if (!user?.id) throw new Error('เข้าสู่ระบบไม่สำเร็จ');
@@ -581,12 +590,16 @@ export default function App() {
     if (busy || !currentUser) return;
     setBusy(true);
     try {
+      const task = tasks.find((t) => String(t.id) === String(taskId));
+      const actingAsHead = currentUser.role === 'Head' && task && String(task.assignedTo) !== String(currentUser.id);
       const result = await api('updateTaskStatus', {
         taskId,
         status: newStatus,
         userId: currentUser.id,
         notifyLine,
-        logDetail: `เปลี่ยนสถานะเป็น "${getStatusText(newStatus)}"`,
+        logDetail: actingAsHead
+          ? `หัวหน้าอัปเดตสถานะเป็น "${getStatusText(newStatus)}" (แทนผู้รับผิดชอบ)`
+          : `เปลี่ยนสถานะเป็น "${getStatusText(newStatus)}"`,
       });
       patchTask(result?.task || result, result?.log);
       if (notifyLine) showToast(`📱 อัปเดตเป็น ${getStatusText(newStatus)} และแจ้งเตือน LINE แล้ว`);
@@ -1573,11 +1586,17 @@ export default function App() {
                         </span>
                       </div>
 
-                      {(currentUser.id === selectedTask.assignedTo || currentUser.role === 'Admin') && (
+                      {currentUser.role === 'Head' && currentUser.id !== selectedTask.assignedTo && canControlSelectedTask && (
+                        <p className="text-[11px] font-bold text-sky-700 bg-sky-50 border border-sky-100 rounded-xl px-3 py-2 mb-3">
+                          สิทธิ์หัวหน้า: ดึงงานมาทำ · เปลี่ยนสถานะ · ส่งต่อให้คนอื่น ได้ตลอด
+                        </p>
+                      )}
+
+                      {canControlSelectedTask && (
                         <div className="space-y-3">
                           {selectedTask.status === 'Pending' && (
                             <button disabled={busy} onClick={() => handleUpdateStatus(selectedTask.id, 'In Progress')} className="w-full bg-teal-500 hover:bg-teal-600 text-white py-3.5 rounded-2xl font-extrabold text-sm shadow-lg disabled:opacity-60">
-                              ① กดรับงาน (เริ่มดำเนินการ)
+                              {currentUser.id === selectedTask.assignedTo ? '① กดรับงาน (เริ่มดำเนินการ)' : 'ตั้งเป็นกำลังทำ'}
                             </button>
                           )}
                           {selectedTask.status === 'In Progress' && (
@@ -1589,49 +1608,46 @@ export default function App() {
                                 </label>
                               )}
                               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                                {(isStaff || currentUser.role === 'Admin') && (
-                                  <button disabled={busy} onClick={() => handleUpdateStatus(selectedTask.id, 'Review', document.getElementById('notifyHeadToggle')?.checked)} className="bg-sky-600 hover:bg-sky-700 text-white py-3.5 rounded-2xl font-extrabold text-sm shadow-lg disabled:opacity-60">
-                                    ② ส่งงาน (รอตรวจ)
-                                  </button>
-                                )}
+                                <button disabled={busy} onClick={() => handleUpdateStatus(selectedTask.id, 'Review', document.getElementById('notifyHeadToggle')?.checked)} className="bg-sky-600 hover:bg-sky-700 text-white py-3.5 rounded-2xl font-extrabold text-sm shadow-lg disabled:opacity-60">
+                                  ส่งงาน (รอตรวจ)
+                                </button>
                                 <button disabled={busy} onClick={() => handleUpdateStatus(selectedTask.id, 'Completed')} className="bg-emerald-500 hover:bg-emerald-600 text-white py-3.5 rounded-2xl font-extrabold text-sm shadow-lg disabled:opacity-60">
-                                  {isManager ? 'เสร็จสิ้น (ปิดงาน)' : 'เสร็จสิ้น (ปิดจบเอง)'}
+                                  เสร็จสิ้น (ปิดงาน)
                                 </button>
                               </div>
                             </div>
                           )}
-                          {selectedTask.status === 'Review' && currentUser.role === 'Admin' && currentUser.id === selectedTask.assignedTo && (
-                            <button disabled={busy} onClick={() => handleUpdateStatus(selectedTask.id, 'Completed')} className="w-full bg-emerald-500 text-white py-3.5 rounded-2xl font-extrabold text-sm shadow-lg disabled:opacity-60">
-                              ตรวจผ่าน / ปิดงาน
-                            </button>
+                          {selectedTask.status === 'Review' && (
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                              <button disabled={busy} onClick={() => handleUpdateStatus(selectedTask.id, 'Completed')} className="bg-emerald-500 text-white py-3.5 rounded-2xl font-extrabold text-sm shadow-lg flex justify-center items-center disabled:opacity-60">
+                                <CheckCircle className="w-4 h-4 mr-2" /> ตรวจผ่าน (ปิดงาน)
+                              </button>
+                              <button disabled={busy} onClick={() => handleUpdateStatus(selectedTask.id, 'In Progress', true)} className="bg-white text-rose-600 border-2 border-rose-200 py-3.5 rounded-2xl font-extrabold text-sm shadow-sm flex justify-center items-center disabled:opacity-60">
+                                <ArrowRightLeft className="w-4 h-4 mr-2" /> ตีกลับให้แก้
+                              </button>
+                            </div>
                           )}
                           {selectedTask.status === 'Completed' && (
-                            <p className="text-sm font-bold text-emerald-700 bg-emerald-50 border border-emerald-100 rounded-2xl px-4 py-3">
-                              งานนี้เสร็จสิ้นแล้ว
-                            </p>
+                            <div className="space-y-3">
+                              <p className="text-sm font-bold text-emerald-700 bg-emerald-50 border border-emerald-100 rounded-2xl px-4 py-3">
+                                งานนี้เสร็จสิ้นแล้ว
+                              </p>
+                              {isManager && (
+                                <button disabled={busy} onClick={() => handleUpdateStatus(selectedTask.id, 'In Progress')} className="w-full bg-white text-sky-700 border-2 border-sky-200 py-3 rounded-2xl font-extrabold text-sm disabled:opacity-60">
+                                  เปิดงานใหม่ (กลับไปกำลังทำ)
+                                </button>
+                              )}
+                            </div>
                           )}
                         </div>
                       )}
 
-                      {isManager && currentUser.id !== selectedTask.assignedTo && selectedTask.status === 'Review' && (
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                          <button disabled={busy} onClick={() => handleUpdateStatus(selectedTask.id, 'Completed')} className="bg-emerald-500 text-white py-3.5 rounded-2xl font-extrabold text-sm shadow-lg flex justify-center items-center disabled:opacity-60">
-                            <CheckCircle className="w-4 h-4 mr-2" /> ตรวจผ่าน (ปิดงาน)
-                          </button>
-                          <button disabled={busy} onClick={() => handleUpdateStatus(selectedTask.id, 'In Progress', true)} className="bg-white text-rose-600 border-2 border-rose-200 py-3.5 rounded-2xl font-extrabold text-sm shadow-sm flex justify-center items-center disabled:opacity-60">
-                            <ArrowRightLeft className="w-4 h-4 mr-2" /> ตีกลับให้แก้
-                          </button>
-                        </div>
-                      )}
-
-                      {currentUser.id !== selectedTask.assignedTo && currentUser.role !== 'Admin' && !(isManager && selectedTask.status === 'Review') && (
+                      {!canControlSelectedTask && (
                         <div className="rounded-2xl border border-dashed border-slate-200 bg-white px-4 py-3 text-sm font-bold text-[#5b7a8a]">
                           {isStaff && selectedTask.status !== 'Completed' ? (
-                            <span>งานนี้อยู่กับ <strong>{users.find((u) => u.id === selectedTask.assignedTo)?.name}</strong> — ใช้ปุ่ม &quot;ดึงงานมาทำ&quot; ด้านล่าง หรือให้ผู้รับผิดชอบอัปเดตสถานะ</span>
-                          ) : isManager ? (
-                            <span>หัวหน้าตรวจได้เมื่อสถานะเป็น &quot;รอตรวจ&quot; — ตอนนี้ยังเป็น {getStatusText(selectedTask.status)}</span>
+                            <span>งานนี้อยู่กับ <strong>{users.find((u) => u.id === selectedTask.assignedTo)?.name}</strong> — ใช้ปุ่ม &quot;ดึงงานมาทำ&quot; ด้านล่างได้</span>
                           ) : (
-                            <span>เฉพาะผู้รับผิดชอบงานนี้ถึงจะเปลี่ยนสถานะได้</span>
+                            <span>คุณไม่มีสิทธิ์จัดการงานนี้</span>
                           )}
                         </div>
                       )}
@@ -1653,26 +1669,39 @@ export default function App() {
                     </div>
 
                     <div className="pt-4 border-t border-slate-100 space-y-4">
-                      {(currentUser.id === selectedTask.assignedTo || currentUser.role === 'Admin') && (selectedTask.status === 'Pending' || selectedTask.status === 'In Progress') && (
+                      {canControlSelectedTask && selectedTask.status !== 'Completed' && (
                         <div className="p-5 bg-white border-2 border-dashed border-slate-200 rounded-3xl">
-                          <p className="text-xs font-bold text-slate-500 mb-3 uppercase tracking-wider">โอนงานให้เพื่อนร่วมทีม</p>
+                          <p className="text-xs font-bold text-slate-500 mb-3 uppercase tracking-wider">
+                            {currentUser.role === 'Head' && currentUser.id !== selectedTask.assignedTo
+                              ? 'หัวหน้าส่งต่องานให้คนอื่น'
+                              : 'โอนงานให้เพื่อนร่วมทีม'}
+                          </p>
                           <div className="flex space-x-3">
                             <select id="forwardSelect" className="flex-1 border border-slate-100 rounded-xl p-2.5 text-sm font-bold outline-none bg-slate-50">
                               <option value="">-- เลือกผู้รับงาน --</option>
-                              {deptUsers.filter((u) => u.id !== currentUser.id && (u.role === 'Staff' || u.role === 'Head')).map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
+                              {deptUsers.filter((u) => u.id !== selectedTask.assignedTo && (u.role === 'Staff' || u.role === 'Head')).map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
                             </select>
                             <button disabled={busy} onClick={() => { const s = document.getElementById('forwardSelect').value; if (s) handleForward(selectedTask.id, s); }} className="bg-slate-800 text-white px-5 py-2.5 rounded-xl text-sm font-bold disabled:opacity-60">ส่งต่อ</button>
                           </div>
                         </div>
                       )}
 
-                      {isStaff && currentUser.id !== selectedTask.assignedTo && selectedTask.status !== 'Completed' && (
+                      {(isStaff || currentUser.role === 'Head' || currentUser.role === 'Admin')
+                        && currentUser.id !== selectedTask.assignedTo
+                        && selectedTask.status !== 'Completed'
+                        && (currentUser.role !== 'Head' || selectedAssignee?.department === currentUser.department || currentUser.role === 'Admin')
+                        && (
                         <div className="bg-teal-50 border-2 border-teal-100 rounded-3xl p-6 shadow-sm">
                           <div className="flex flex-col sm:flex-row items-start sm:items-center space-y-4 sm:space-y-0">
                             <div className="bg-teal-100 p-3 rounded-2xl mr-4 shrink-0"><Grab className="w-6 h-6 text-teal-700" /></div>
                             <div className="flex-1 pr-4">
-                              <h5 className="font-extrabold text-teal-900 text-base mb-1">ดึงงานนี้มาทำแทน (Takeover)</h5>
-                              <p className="text-xs text-teal-700/80 font-medium leading-relaxed">งานนี้อยู่กับ <strong>{users.find((u) => u.id === selectedTask.assignedTo)?.name}</strong> คุณสามารถดึงมาทำเองได้กรณีฉุกเฉิน</p>
+                              <h5 className="font-extrabold text-teal-900 text-base mb-1">
+                                {currentUser.role === 'Head' ? 'ดึงงานลูกน้องมาทำเอง' : 'ดึงงานนี้มาทำแทน (Takeover)'}
+                              </h5>
+                              <p className="text-xs text-teal-700/80 font-medium leading-relaxed">
+                                งานนี้อยู่กับ <strong>{users.find((u) => u.id === selectedTask.assignedTo)?.name}</strong>
+                                {currentUser.role === 'Head' ? ' — หัวหน้าดึงมาทำเองได้ตลอด' : ' คุณสามารถดึงมาทำเองได้กรณีฉุกเฉิน'}
+                              </p>
                             </div>
                             <button disabled={busy} onClick={() => handleTakeover(selectedTask.id)} className="bg-teal-600 hover:bg-teal-700 text-white px-6 py-3 rounded-xl text-sm font-black shadow-lg shrink-0 w-full sm:w-auto disabled:opacity-60">ดึงงานมาทำ</button>
                           </div>
