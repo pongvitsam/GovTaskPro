@@ -103,7 +103,6 @@ export default function LoginScreen({
               <div className="mt-3 rounded-2xl bg-[#f3f9fc] border border-slate-100 px-3.5 py-2.5 text-[11px] text-[#5b7a8a] font-medium leading-relaxed">
                 <p className="font-extrabold text-[#1e3a4c] mb-1">Username แผนกทดลอง</p>
                 <p><span className="font-mono font-bold">IT</span> · <span className="font-mono font-bold">HR</span> · <span className="font-mono font-bold">FIN</span></p>
-                <p className="mt-1">แอดมินเท่านั้นใช้รหัสผ่าน: ปุ่มมุมขวาบน · <span className="font-mono font-bold">admin / 1234</span></p>
               </div>
             </div>
 
