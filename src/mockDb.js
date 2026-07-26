@@ -1,6 +1,6 @@
 /** Local mock DB for Vite DEV only (stripped from production bundle) */
 
-const SEED_VERSION = 3;
+const SEED_VERSION = 4;
 
 function buildDemoSeed() {
   const NOW = Date.now();
@@ -95,11 +95,11 @@ function buildDemoSeed() {
       { id: 'c5', taskId: 12, timestamp: t(-2), authorId: 'u8', text: 'รอตัวเลขจาก IT อีกชุดครับ' },
     ],
     stickyNotes: [
-      { id: 'sn1', userId: 'u1', title: 'ประชุมทีม IT', body: 'เตรียมสไลด์รายงานประจำเดือน', color: 'yellow', emoji: '📌', x: 48, y: 56, width: 220, height: 200, zIndex: 1, createdAt: t(-1), updatedAt: t(-1) },
-      { id: 'sn2', userId: 'u2', title: 'ของตัวเอง', body: 'โน้ตส่วนตัวของสมชาย — คนอื่นไม่เห็น', color: 'mint', emoji: '✨', x: 80, y: 80, width: 220, height: 200, zIndex: 1, createdAt: t(0, -1), updatedAt: t(0, -1) },
-      { id: 'sn3', userId: 'admin', title: 'เช็คลิสต์แอดมิน', body: 'ดูสิทธิ์ตามแผนก · โหลด mock · ตั้ง username', color: 'lavender', emoji: '🛠', x: 120, y: 100, width: 240, height: 210, zIndex: 2, createdAt: t(-1), updatedAt: t(-1) },
-      { id: 'sn4', userId: 'u5', title: 'รอบประเมิน', body: 'ปิดรับแบบฟอร์มวันศุกร์', color: 'pink', emoji: '📋', x: 60, y: 70, width: 220, height: 190, zIndex: 1, createdAt: t(-2), updatedAt: t(-2) },
-      { id: 'sn5', userId: 'u7', title: 'งบ 69', body: 'นัดประชุมผอ. สัปดาห์หน้า', color: 'blue', emoji: '💰', x: 90, y: 90, width: 220, height: 190, zIndex: 1, createdAt: t(-1), updatedAt: t(-1) },
+      { id: 'sn1', userId: 'u1', title: 'ประชุมทีม IT', body: 'เตรียมสไลด์รายงานประจำเดือน', color: 'yellow', emoji: '📌', x: 48, y: 56, width: 240, height: 220, zIndex: 1, createdAt: t(-1), updatedAt: t(-1), noteType: 'text', items: [], labels: ['งาน'], pinned: true, archived: false, trashed: false, reminderAt: t(1), imageUrl: '' },
+      { id: 'sn2', userId: 'u2', title: 'ของตัวเอง', body: 'โน้ตส่วนตัวของสมชาย — คนอื่นไม่เห็น', color: 'mint', emoji: '✨', x: 80, y: 80, width: 240, height: 220, zIndex: 1, createdAt: t(0, -1), updatedAt: t(0, -1), noteType: 'text', items: [], labels: [], pinned: false, archived: false, trashed: false, reminderAt: null, imageUrl: '' },
+      { id: 'sn3', userId: 'admin', title: 'เช็คลิสต์แอดมิน', body: '', color: 'lavender', emoji: '🛠', x: 120, y: 100, width: 260, height: 240, zIndex: 2, createdAt: t(-1), updatedAt: t(-1), noteType: 'list', items: [{ id: 'i1', text: 'ดูสิทธิ์ตามแผนก', done: true }, { id: 'i2', text: 'โหลด mock', done: false }, { id: 'i3', text: 'ตั้ง username', done: false }], labels: ['แอดมิน'], pinned: false, archived: false, trashed: false, reminderAt: null, imageUrl: '' },
+      { id: 'sn4', userId: 'u5', title: 'รอบประเมิน', body: 'ปิดรับแบบฟอร์มวันศุกร์', color: 'pink', emoji: '📋', x: 60, y: 70, width: 240, height: 200, zIndex: 1, createdAt: t(-2), updatedAt: t(-2), noteType: 'text', items: [], labels: ['HR'], pinned: false, archived: false, trashed: false, reminderAt: null, imageUrl: '' },
+      { id: 'sn5', userId: 'u7', title: 'งบ 69', body: 'นัดประชุมผอ. สัปดาห์หน้า', color: 'blue', emoji: '💰', x: 90, y: 90, width: 240, height: 200, zIndex: 1, createdAt: t(-1), updatedAt: t(-1), noteType: 'text', items: [], labels: ['งบ'], pinned: false, archived: false, trashed: false, reminderAt: null, imageUrl: '' },
     ],
     orgUnits: [
       { id: 'org_d1', type: 'department', name: 'IT', parent: '', active: true, code: 'IT' },
@@ -656,7 +656,21 @@ const localHandlers = {
     if (!db.stickyNotes) db.stickyNotes = [];
     return db.stickyNotes
       .filter((n) => String(n.userId) === userId)
-      .sort((a, b) => (a.zIndex || 0) - (b.zIndex || 0));
+      .map((n) => ({
+        ...n,
+        noteType: n.noteType === 'list' ? 'list' : 'text',
+        items: Array.isArray(n.items) ? n.items : [],
+        labels: Array.isArray(n.labels) ? n.labels : [],
+        pinned: !!n.pinned,
+        archived: !!n.archived,
+        trashed: !!n.trashed,
+        reminderAt: n.reminderAt || null,
+        imageUrl: n.imageUrl || '',
+      }))
+      .sort((a, b) => {
+        if (!!a.pinned !== !!b.pinned) return a.pinned ? -1 : 1;
+        return (a.zIndex || 0) - (b.zIndex || 0);
+      });
   },
   createStickyNote(payload) {
     const db = getLocalDb();
@@ -666,23 +680,34 @@ const localHandlers = {
     const mine = db.stickyNotes.filter((n) => String(n.userId) === userId);
     const maxZ = mine.reduce((m, n) => Math.max(m, n.zIndex || 0), 1);
     const offset = (mine.length % 8) * 28;
-    const colors = ['yellow', 'pink', 'mint', 'blue', 'lavender'];
+    const colors = ['yellow', 'orange', 'pink', 'mint', 'teal', 'blue', 'lavender', 'white'];
     const color = colors.includes(payload.color) ? payload.color : 'yellow';
+    const noteType = payload.noteType === 'list' ? 'list' : 'text';
     const now = new Date().toISOString();
     const row = {
       id: `sn_${Date.now()}`,
       userId,
       title: String(payload.title || '').trim(),
-      body: String(payload.body || ''),
+      body: noteType === 'list' ? '' : String(payload.body || ''),
       color,
       emoji: String(payload.emoji || '').trim().slice(0, 8),
       x: payload.x !== undefined ? Number(payload.x) : 40 + offset,
       y: payload.y !== undefined ? Number(payload.y) : 40 + offset,
-      width: payload.width !== undefined ? Number(payload.width) : 220,
-      height: payload.height !== undefined ? Number(payload.height) : 200,
+      width: payload.width !== undefined ? Number(payload.width) : 240,
+      height: payload.height !== undefined ? Number(payload.height) : 220,
       zIndex: payload.zIndex !== undefined ? Number(payload.zIndex) : maxZ + 1,
       createdAt: now,
       updatedAt: now,
+      noteType,
+      items: Array.isArray(payload.items) ? payload.items : [],
+      labels: Array.isArray(payload.labels)
+        ? payload.labels
+        : String(payload.labels || '').split(/[,|]/).map((x) => x.trim()).filter(Boolean),
+      pinned: !!payload.pinned,
+      archived: !!payload.archived,
+      trashed: false,
+      reminderAt: payload.reminderAt || null,
+      imageUrl: String(payload.imageUrl || '').trim(),
     };
     db.stickyNotes = [...db.stickyNotes, row];
     return row;
@@ -695,7 +720,7 @@ const localHandlers = {
     if (!id || !userId) throw new Error('ไม่พบโน้ต');
     const idx = db.stickyNotes.findIndex((n) => String(n.id) === id && String(n.userId) === userId);
     if (idx < 0) throw new Error('ไม่พบโน้ต หรือไม่มีสิทธิ์แก้ไข');
-    const colors = ['yellow', 'pink', 'mint', 'blue', 'lavender'];
+    const colors = ['yellow', 'orange', 'pink', 'mint', 'teal', 'blue', 'lavender', 'white'];
     const prev = db.stickyNotes[idx];
     const next = {
       ...prev,
@@ -708,6 +733,16 @@ const localHandlers = {
       width: payload.width !== undefined ? Math.max(160, Number(payload.width) || 220) : prev.width,
       height: payload.height !== undefined ? Math.max(140, Number(payload.height) || 200) : prev.height,
       zIndex: payload.zIndex !== undefined ? Number(payload.zIndex) || 1 : prev.zIndex,
+      noteType: payload.noteType !== undefined ? (payload.noteType === 'list' ? 'list' : 'text') : (prev.noteType || 'text'),
+      items: payload.items !== undefined ? (Array.isArray(payload.items) ? payload.items : []) : (prev.items || []),
+      labels: payload.labels !== undefined
+        ? (Array.isArray(payload.labels) ? payload.labels : String(payload.labels || '').split(/[,|]/).map((x) => x.trim()).filter(Boolean))
+        : (prev.labels || []),
+      pinned: payload.pinned !== undefined ? !!payload.pinned : !!prev.pinned,
+      archived: payload.archived !== undefined ? !!payload.archived : !!prev.archived,
+      trashed: payload.trashed !== undefined ? !!payload.trashed : !!prev.trashed,
+      reminderAt: payload.reminderAt !== undefined ? (payload.reminderAt || null) : (prev.reminderAt || null),
+      imageUrl: payload.imageUrl !== undefined ? String(payload.imageUrl || '').trim() : (prev.imageUrl || ''),
       updatedAt: new Date().toISOString(),
     };
     db.stickyNotes = db.stickyNotes.map((n, i) => (i === idx ? next : n));
@@ -726,10 +761,46 @@ const localHandlers = {
     if (!db.stickyNotes) db.stickyNotes = [];
     const id = String(payload.id || '');
     const userId = String(payload.userId || '');
-    const before = db.stickyNotes.length;
+    const idx = db.stickyNotes.findIndex((n) => String(n.id) === id && String(n.userId) === userId);
+    if (idx < 0) throw new Error('ไม่พบโน้ต หรือไม่มีสิทธิ์ลบ');
+    const prev = db.stickyNotes[idx];
+    const permanent = !!payload.permanent || !!prev.trashed;
+    if (!permanent) {
+      const next = { ...prev, trashed: true, archived: false, updatedAt: new Date().toISOString() };
+      db.stickyNotes = db.stickyNotes.map((n, i) => (i === idx ? next : n));
+      return { ok: true, id, trashed: true, note: next };
+    }
     db.stickyNotes = db.stickyNotes.filter((n) => !(String(n.id) === id && String(n.userId) === userId));
-    if (db.stickyNotes.length === before) throw new Error('ไม่พบโน้ต หรือไม่มีสิทธิ์ลบ');
-    return { ok: true, id };
+    return { ok: true, id, deleted: true };
+  },
+  emptyStickyTrash(payload) {
+    const db = getLocalDb();
+    if (!db.stickyNotes) db.stickyNotes = [];
+    const userId = String(payload?.userId || '');
+    if (!userId) throw new Error('ต้องระบุผู้ใช้');
+    const before = db.stickyNotes.length;
+    db.stickyNotes = db.stickyNotes.filter((n) => !(String(n.userId) === userId && n.trashed));
+    return { ok: true, removed: before - db.stickyNotes.length };
+  },
+  duplicateStickyNote(payload) {
+    const existing = localHandlers.listStickyNotes(payload).find((n) => String(n.id) === String(payload.id));
+    if (!existing) throw new Error('ไม่พบโน้ต หรือไม่มีสิทธิ์');
+    return localHandlers.createStickyNote({
+      userId: payload.userId,
+      title: `${existing.title || 'โน้ต'} (สำเนา)`,
+      body: existing.body,
+      color: existing.color,
+      emoji: existing.emoji,
+      noteType: existing.noteType,
+      items: existing.items,
+      labels: existing.labels,
+      reminderAt: existing.reminderAt,
+      imageUrl: existing.imageUrl,
+      x: (existing.x || 40) + 24,
+      y: (existing.y || 40) + 24,
+      width: existing.width,
+      height: existing.height,
+    });
   },
   updateUserProfile(payload) {
     const db = getLocalDb();

@@ -29,7 +29,9 @@ var MILESTONE_HEADERS = [
 ];
 var STICKY_NOTE_HEADERS = [
   'id', 'userId', 'title', 'body', 'color', 'emoji',
-  'x', 'y', 'width', 'height', 'zIndex', 'createdAt', 'updatedAt'
+  'x', 'y', 'width', 'height', 'zIndex', 'createdAt', 'updatedAt',
+  'noteType', 'items', 'labels', 'pinned', 'archived', 'trashed',
+  'reminderAt', 'imageUrl'
 ];
 var ORG_HEADERS = ['id', 'type', 'name', 'parent', 'active', 'code'];
 
@@ -180,6 +182,8 @@ function dispatchApi_(fn, payload, hasPayload) {
   if (fn === 'createStickyNote') return createStickyNote(payload || {});
   if (fn === 'updateStickyNote') return updateStickyNote(payload || {});
   if (fn === 'deleteStickyNote') return deleteStickyNote(payload || {});
+  if (fn === 'emptyStickyTrash') return emptyStickyTrash(payload || {});
+  if (fn === 'duplicateStickyNote') return duplicateStickyNote(payload || {});
   if (fn === 'updateUserProfile') return updateUserProfile(payload || {});
   if (fn === 'login') return login(payload || {});
   if (fn === 'loginDept') return loginDept(payload || {});
@@ -210,12 +214,12 @@ function include_(filename) {
   return include(filename);
 }
 
-var SCHEMA_VERSION = '9';
+var SCHEMA_VERSION = '10';
 var BOOT_CACHE_KEY = 'gtp_boot_v7';
 var BOOT_CACHE_TTL = 90;
 var _ssCache = null;
 var _sheetHeaderCache = {};
-var STICKY_COLORS = ['yellow', 'pink', 'mint', 'blue', 'lavender'];
+var STICKY_COLORS = ['yellow', 'orange', 'pink', 'mint', 'teal', 'blue', 'lavender', 'white'];
 
 function invalidateBootstrapCache_() {
   try {
@@ -555,12 +559,67 @@ function addComment(payload) {
   };
 }
 
-/** Personal sticky notes — always scoped to payload.userId */
+/** Personal sticky notes — Google Keep–style fields, scoped to payload.userId */
 function listStickyNotes(payload) {
   openDatabase_(false);
   var userId = String((payload && payload.userId) || '');
   if (!userId) throw new Error('ต้องระบุผู้ใช้');
   return listStickyNotesForUser_(userId);
+}
+
+function boolFlag_(v, fallback) {
+  if (v === undefined || v === null || v === '') return !!fallback;
+  if (v === true || v === false) return v;
+  var s = String(v).toUpperCase();
+  if (s === 'TRUE' || s === '1' || s === 'YES') return true;
+  if (s === 'FALSE' || s === '0' || s === 'NO') return false;
+  return !!fallback;
+}
+
+function parseStickyItems_(raw) {
+  if (raw === undefined || raw === null || raw === '') return [];
+  if (Object.prototype.toString.call(raw) === '[object Array]') return raw;
+  try {
+    var parsed = JSON.parse(String(raw));
+    if (Object.prototype.toString.call(parsed) === '[object Array]') return parsed;
+  } catch (e) { /* ignore */ }
+  return [];
+}
+
+function stringifyStickyItems_(items) {
+  var list = parseStickyItems_(items);
+  var out = [];
+  for (var i = 0; i < list.length; i++) {
+    var it = list[i] || {};
+    out.push({
+      id: String(it.id || ('i_' + i + '_' + Date.now())),
+      text: String(it.text || ''),
+      done: !!it.done
+    });
+  }
+  return JSON.stringify(out);
+}
+
+function parseStickyLabels_(raw) {
+  if (raw === undefined || raw === null || raw === '') return [];
+  if (Object.prototype.toString.call(raw) === '[object Array]') {
+    return raw.map(function (x) { return String(x || '').trim(); }).filter(Boolean);
+  }
+  var s = String(raw).trim();
+  if (!s) return [];
+  if (s.charAt(0) === '[') {
+    try {
+      var parsed = JSON.parse(s);
+      if (Object.prototype.toString.call(parsed) === '[object Array]') {
+        return parsed.map(function (x) { return String(x || '').trim(); }).filter(Boolean);
+      }
+    } catch (e) { /* fall through */ }
+  }
+  return s.split(/[,|]/).map(function (x) { return String(x || '').trim(); }).filter(Boolean);
+}
+
+function stringifyStickyLabels_(labels) {
+  return parseStickyLabels_(labels).join(',');
 }
 
 function createStickyNote(payload) {
@@ -570,26 +629,46 @@ function createStickyNote(payload) {
   var now = new Date().toISOString();
   var color = String(payload.color || 'yellow');
   if (STICKY_COLORS.indexOf(color) < 0) color = 'yellow';
+  var noteType = String(payload.noteType || 'text') === 'list' ? 'list' : 'text';
   var existing = listStickyNotesForUser_(userId);
   var maxZ = 1;
   for (var i = 0; i < existing.length; i++) {
     if ((existing[i].zIndex || 0) > maxZ) maxZ = existing[i].zIndex;
   }
   var offset = (existing.length % 8) * 28;
+  var itemsJson = stringifyStickyItems_(payload.items);
+  if (noteType === 'list' && itemsJson === '[]' && payload.body) {
+    var lines = String(payload.body || '').split(/\r?\n/);
+    var bootItems = [];
+    for (var li = 0; li < lines.length; li++) {
+      var text = String(lines[li] || '').replace(/^[\-\*\u2022]\s*/, '').trim();
+      if (!text) continue;
+      bootItems.push({ id: 'i_' + Date.now() + '_' + li, text: text, done: false });
+    }
+    itemsJson = stringifyStickyItems_(bootItems);
+  }
   var row = {
     id: 'sn_' + Date.now() + '_' + Math.floor(Math.random() * 1000),
     userId: userId,
     title: String(payload.title || '').trim(),
-    body: String(payload.body || ''),
+    body: noteType === 'list' ? '' : String(payload.body || ''),
     color: color,
     emoji: String(payload.emoji || '').trim().slice(0, 8),
     x: payload.x !== undefined && payload.x !== '' ? Number(payload.x) : 40 + offset,
     y: payload.y !== undefined && payload.y !== '' ? Number(payload.y) : 40 + offset,
-    width: payload.width !== undefined && payload.width !== '' ? Number(payload.width) : 220,
-    height: payload.height !== undefined && payload.height !== '' ? Number(payload.height) : 200,
+    width: payload.width !== undefined && payload.width !== '' ? Number(payload.width) : 240,
+    height: payload.height !== undefined && payload.height !== '' ? Number(payload.height) : 220,
     zIndex: payload.zIndex !== undefined && payload.zIndex !== '' ? Number(payload.zIndex) : maxZ + 1,
     createdAt: now,
-    updatedAt: now
+    updatedAt: now,
+    noteType: noteType,
+    items: itemsJson,
+    labels: stringifyStickyLabels_(payload.labels),
+    pinned: boolFlag_(payload.pinned, false) ? 'TRUE' : 'FALSE',
+    archived: boolFlag_(payload.archived, false) ? 'TRUE' : 'FALSE',
+    trashed: 'FALSE',
+    reminderAt: payload.reminderAt ? String(payload.reminderAt) : '',
+    imageUrl: String(payload.imageUrl || '').trim()
   };
   appendObject_(STICKY_NOTES_SHEET, STICKY_NOTE_HEADERS, row);
   return normalizeStickyNote_(row);
@@ -617,6 +696,14 @@ function updateStickyNote(payload) {
   if (payload.width !== undefined) updates.width = Math.max(160, Number(payload.width) || 220);
   if (payload.height !== undefined) updates.height = Math.max(140, Number(payload.height) || 200);
   if (payload.zIndex !== undefined) updates.zIndex = Number(payload.zIndex) || 1;
+  if (payload.noteType !== undefined) updates.noteType = String(payload.noteType) === 'list' ? 'list' : 'text';
+  if (payload.items !== undefined) updates.items = stringifyStickyItems_(payload.items);
+  if (payload.labels !== undefined) updates.labels = stringifyStickyLabels_(payload.labels);
+  if (payload.pinned !== undefined) updates.pinned = boolFlag_(payload.pinned, false) ? 'TRUE' : 'FALSE';
+  if (payload.archived !== undefined) updates.archived = boolFlag_(payload.archived, false) ? 'TRUE' : 'FALSE';
+  if (payload.trashed !== undefined) updates.trashed = boolFlag_(payload.trashed, false) ? 'TRUE' : 'FALSE';
+  if (payload.reminderAt !== undefined) updates.reminderAt = payload.reminderAt ? String(payload.reminderAt) : '';
+  if (payload.imageUrl !== undefined) updates.imageUrl = String(payload.imageUrl || '').trim();
 
   var found = updateRowById_(STICKY_NOTES_SHEET, id, updates);
   if (!found) throw new Error('ไม่พบโน้ต');
@@ -629,7 +716,18 @@ function deleteStickyNote(payload) {
   var userId = String(payload.userId || '');
   if (!id) throw new Error('ไม่พบโน้ต');
   if (!userId) throw new Error('ต้องระบุผู้ใช้');
-  if (!findStickyNoteOwned_(id, userId)) throw new Error('ไม่พบโน้ต หรือไม่มีสิทธิ์ลบ');
+  var existing = findStickyNoteOwned_(id, userId);
+  if (!existing) throw new Error('ไม่พบโน้ต หรือไม่มีสิทธิ์ลบ');
+
+  var permanent = boolFlag_(payload.permanent, false) || existing.trashed;
+  if (!permanent) {
+    var soft = updateRowById_(STICKY_NOTES_SHEET, id, {
+      trashed: 'TRUE',
+      archived: 'FALSE',
+      updatedAt: new Date().toISOString()
+    });
+    return { ok: true, id: id, trashed: true, note: normalizeStickyNote_(soft) };
+  }
 
   var sheet = getSheet_(STICKY_NOTES_SHEET);
   var data = sheet.getDataRange().getValues();
@@ -638,10 +736,59 @@ function deleteStickyNote(payload) {
   for (var i = 1; i < data.length; i++) {
     if (String(data[i][idIdx]) === id) {
       sheet.deleteRow(i + 1);
-      return { ok: true, id: id };
+      return { ok: true, id: id, deleted: true };
     }
   }
   throw new Error('ไม่พบโน้ต');
+}
+
+function emptyStickyTrash(payload) {
+  openDatabase_(false);
+  var userId = String((payload && payload.userId) || '');
+  if (!userId) throw new Error('ต้องระบุผู้ใช้');
+  var sheet = getSheet_(STICKY_NOTES_SHEET);
+  var data = sheet.getDataRange().getValues();
+  if (data.length < 2) return { ok: true, removed: 0 };
+  var headers = data[0];
+  var idIdx = headers.indexOf('id');
+  var userIdx = headers.indexOf('userId');
+  var trashIdx = headers.indexOf('trashed');
+  var removed = 0;
+  for (var i = data.length - 1; i >= 1; i--) {
+    if (String(data[i][userIdx]) !== String(userId)) continue;
+    var trashed = trashIdx >= 0 ? boolFlag_(data[i][trashIdx], false) : false;
+    if (!trashed) continue;
+    sheet.deleteRow(i + 1);
+    removed++;
+  }
+  return { ok: true, removed: removed };
+}
+
+function duplicateStickyNote(payload) {
+  openDatabase_(false);
+  var id = String(payload.id || '');
+  var userId = String(payload.userId || '');
+  if (!id || !userId) throw new Error('ไม่พบโน้ต');
+  var existing = findStickyNoteOwned_(id, userId);
+  if (!existing) throw new Error('ไม่พบโน้ต หรือไม่มีสิทธิ์');
+  return createStickyNote({
+    userId: userId,
+    title: (existing.title || 'โน้ต') + ' (สำเนา)',
+    body: existing.body,
+    color: existing.color,
+    emoji: existing.emoji,
+    noteType: existing.noteType,
+    items: existing.items,
+    labels: existing.labels,
+    pinned: false,
+    archived: false,
+    reminderAt: existing.reminderAt || '',
+    imageUrl: existing.imageUrl || '',
+    x: (existing.x || 40) + 24,
+    y: (existing.y || 40) + 24,
+    width: existing.width,
+    height: existing.height
+  });
 }
 
 function ping() {
@@ -1859,7 +2006,10 @@ function listStickyNotesForUser_(userId) {
   return listObjects_(STICKY_NOTES_SHEET)
     .filter(function (n) { return String(n.userId) === String(userId); })
     .map(normalizeStickyNote_)
-    .sort(function (a, b) { return (a.zIndex || 0) - (b.zIndex || 0); });
+    .sort(function (a, b) {
+      if (!!a.pinned !== !!b.pinned) return a.pinned ? -1 : 1;
+      return (a.zIndex || 0) - (b.zIndex || 0);
+    });
 }
 
 function findStickyNoteOwned_(id, userId) {
@@ -1875,6 +2025,7 @@ function findStickyNoteOwned_(id, userId) {
 function normalizeStickyNote_(n) {
   var color = String(n.color || 'yellow');
   if (STICKY_COLORS.indexOf(color) < 0) color = 'yellow';
+  var noteType = String(n.noteType || 'text') === 'list' ? 'list' : 'text';
   return {
     id: String(n.id),
     userId: String(n.userId || ''),
@@ -1888,7 +2039,15 @@ function normalizeStickyNote_(n) {
     height: Math.max(140, Number(n.height) || 200),
     zIndex: Number(n.zIndex) || 1,
     createdAt: toIso_(n.createdAt) || new Date().toISOString(),
-    updatedAt: toIso_(n.updatedAt) || toIso_(n.createdAt) || new Date().toISOString()
+    updatedAt: toIso_(n.updatedAt) || toIso_(n.createdAt) || new Date().toISOString(),
+    noteType: noteType,
+    items: parseStickyItems_(n.items),
+    labels: parseStickyLabels_(n.labels),
+    pinned: boolFlag_(n.pinned, false),
+    archived: boolFlag_(n.archived, false),
+    trashed: boolFlag_(n.trashed, false),
+    reminderAt: n.reminderAt ? toIso_(n.reminderAt) : null,
+    imageUrl: String(n.imageUrl || '').trim()
   };
 }
 
