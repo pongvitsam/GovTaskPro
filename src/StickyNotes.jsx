@@ -74,7 +74,7 @@ function newItem(text = '') {
   return { id: `i_${Date.now()}_${Math.floor(Math.random() * 1000)}`, text, done: false };
 }
 
-export default function StickyNotes({ currentUser, showToast }) {
+export default function StickyNotes({ currentUser, showToast, onRemindersChange }) {
   const [notes, setNotes] = useState([]);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -88,6 +88,24 @@ export default function StickyNotes({ currentUser, showToast }) {
   const saveTimerRef = useRef({});
   const topZRef = useRef(1);
   const remindedRef = useRef(new Set());
+
+  const dayKeyLocal = (value) => {
+    const d = new Date(value);
+    if (Number.isNaN(d.getTime())) return '';
+    return `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`;
+  };
+
+  const countDueToday = useCallback((list) => {
+    const today = dayKeyLocal(Date.now());
+    return (list || []).filter((n) => {
+      if (!n || n.trashed || n.archived || !n.reminderAt) return false;
+      return dayKeyLocal(n.reminderAt) === today;
+    }).length;
+  }, []);
+
+  useEffect(() => {
+    onRemindersChange?.(countDueToday(notes));
+  }, [notes, onRemindersChange, countDueToday]);
 
   const loadNotes = useCallback(async () => {
     setLoading(true);

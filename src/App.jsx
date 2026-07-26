@@ -40,6 +40,22 @@ function upsertById(list, row) {
   return next;
 }
 
+function dayKeyLocal(value) {
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return '';
+  return `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`;
+}
+
+/** Sticky reminder badge: show on the calendar day of reminderAt */
+export function countStickyRemindersDueToday(notes) {
+  const today = dayKeyLocal(Date.now());
+  if (!today || !Array.isArray(notes)) return 0;
+  return notes.filter((n) => {
+    if (!n || n.trashed || n.archived || !n.reminderAt) return false;
+    return dayKeyLocal(n.reminderAt) === today;
+  }).length;
+}
+
 export default function App() {
   const [bootLoading, setBootLoading] = useState(() => !!readSession()?.userId);
   const [bootError, setBootError] = useState(null);
@@ -73,6 +89,7 @@ export default function App() {
   const [loginBusy, setLoginBusy] = useState(false);
   const [mobileMoreOpen, setMobileMoreOpen] = useState(false);
   const [syncing, setSyncing] = useState(false);
+  const [stickyRemindersDue, setStickyRemindersDue] = useState(0);
   const softRefreshingRef = useRef(false);
   const lastSyncAtRef = useRef(0);
 
@@ -569,6 +586,35 @@ export default function App() {
     (t) => (t.assignedTo === currentUser?.id && t.status === 'Pending') || (isManager && t.status === 'Review')
   ).length, [visibleTasks, currentUser?.id, isManager]);
 
+  const totalBellNotifications = myNotifications + stickyRemindersDue;
+
+  const refreshStickyReminders = async () => {
+    if (!currentUser?.id) {
+      setStickyRemindersDue(0);
+      return;
+    }
+    try {
+      const rows = await api('listStickyNotes', { userId: currentUser.id });
+      setStickyRemindersDue(countStickyRemindersDueToday(rows));
+    } catch (_) {
+      /* non-fatal — badge just stays as-is */
+    }
+  };
+
+  useEffect(() => {
+    if (!currentUser?.id || bootLoading) return undefined;
+    refreshStickyReminders();
+    const timer = setInterval(refreshStickyReminders, 60000);
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') refreshStickyReminders();
+    };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => {
+      clearInterval(timer);
+      document.removeEventListener('visibilitychange', onVisible);
+    };
+  }, [currentUser?.id, bootLoading]);
+
   const statusCounts = useMemo(() => ({
     all: visibleTasks.length,
     Pending: visibleTasks.filter((t) => t.status === 'Pending').length,
@@ -867,10 +913,20 @@ export default function App() {
               <RefreshCw className={`w-5 h-5 text-teal-100/80 ${syncing ? 'animate-spin' : ''}`} />
             </button>
             <div className="relative">
-              <button type="button" className="p-2 rounded-xl hover:bg-white/10 transition-colors" onClick={() => showToast(myNotifications > 0 ? `🔔 มี ${myNotifications} รายการที่ต้องสนใจ` : '🔔 ไม่มีแจ้งเตือนใหม่')}>
+              <button
+                type="button"
+                className="p-2 rounded-xl hover:bg-white/10 transition-colors"
+                onClick={() => {
+                  const parts = [];
+                  if (myNotifications > 0) parts.push(`${myNotifications} งานที่ต้องสนใจ`);
+                  if (stickyRemindersDue > 0) parts.push(`${stickyRemindersDue} เตือนความจำวันนี้`);
+                  showToast(parts.length ? `🔔 ${parts.join(' · ')}` : '🔔 ไม่มีแจ้งเตือนใหม่');
+                  if (stickyRemindersDue > 0) setCurrentModule('sticky');
+                }}
+              >
                 <Bell className="w-5 h-5 text-teal-100/80" />
               </button>
-              {myNotifications > 0 && <span className="absolute top-1 right-1 bg-rose-400 w-2.5 h-2.5 rounded-full ring-2 ring-[#163542] gtp-soft-pulse" />}
+              {totalBellNotifications > 0 && <span className="absolute top-1 right-1 bg-rose-400 w-2.5 h-2.5 rounded-full ring-2 ring-[#163542] gtp-soft-pulse" />}
             </div>
           </div>
         </div>
@@ -912,8 +968,20 @@ export default function App() {
                 currentModule === menu.id ? 'gtp-nav-item-active' : 'text-teal-100/70 font-medium'
               }`}
             >
-              <menu.icon className={`w-5 h-5 ${currentModule === menu.id ? 'opacity-100' : 'opacity-70'}`} />
-              <span className="text-sm">{menu.label}</span>
+              <span className="relative shrink-0">
+                <menu.icon className={`w-5 h-5 ${currentModule === menu.id ? 'opacity-100' : 'opacity-70'}`} />
+                {menu.id === 'sticky' && stickyRemindersDue > 0 && (
+                  <span className="absolute -top-1 -right-1 min-w-[1rem] h-4 px-1 rounded-full bg-rose-400 text-[9px] font-black text-white flex items-center justify-center ring-2 ring-[#163542] gtp-soft-pulse">
+                    {stickyRemindersDue > 9 ? '9+' : stickyRemindersDue}
+                  </span>
+                )}
+              </span>
+              <span className="text-sm flex-1 text-left">{menu.label}</span>
+              {menu.id === 'sticky' && stickyRemindersDue > 0 && (
+                <span className="text-[10px] font-extrabold text-rose-200 bg-rose-500/25 border border-rose-300/20 px-1.5 py-0.5 rounded-full">
+                  วันนี้
+                </span>
+              )}
             </button>
           ))}
         </div>
@@ -940,9 +1008,19 @@ export default function App() {
           <button type="button" className="p-2.5 rounded-xl hover:bg-white/10" onClick={() => softRefresh({ silent: false })} aria-label="ซิงก์">
             <RefreshCw className={`w-5 h-5 text-teal-100 ${syncing ? 'animate-spin' : ''}`} />
           </button>
-          <button type="button" className="p-2.5 rounded-xl hover:bg-white/10 relative" onClick={() => showToast(myNotifications > 0 ? `🔔 มี ${myNotifications} รายการที่ต้องสนใจ` : '🔔 ไม่มีแจ้งเตือนใหม่')}>
+          <button
+            type="button"
+            className="p-2.5 rounded-xl hover:bg-white/10 relative"
+            onClick={() => {
+              const parts = [];
+              if (myNotifications > 0) parts.push(`${myNotifications} งานที่ต้องสนใจ`);
+              if (stickyRemindersDue > 0) parts.push(`${stickyRemindersDue} เตือนความจำวันนี้`);
+              showToast(parts.length ? `🔔 ${parts.join(' · ')}` : '🔔 ไม่มีแจ้งเตือนใหม่');
+              if (stickyRemindersDue > 0) setCurrentModule('sticky');
+            }}
+          >
             <Bell className="w-5 h-5 text-teal-100" />
-            {myNotifications > 0 && <span className="absolute top-1.5 right-1.5 bg-rose-400 w-2 h-2 rounded-full" />}
+            {totalBellNotifications > 0 && <span className="absolute top-1.5 right-1.5 bg-rose-400 w-2 h-2 rounded-full" />}
           </button>
           <button type="button" className="p-2.5 rounded-xl hover:bg-white/10" onClick={() => setMobileMoreOpen(true)} aria-label="เมนู">
             <Menu className="w-5 h-5 text-teal-100" />
@@ -984,8 +1062,18 @@ export default function App() {
                     currentModule === menu.id ? 'gtp-nav-item-active' : 'text-teal-100/80'
                   }`}
                 >
-                  <menu.icon className="w-5 h-5" />
-                  <span className="text-sm font-bold">{menu.label}</span>
+                  <span className="relative shrink-0">
+                    <menu.icon className="w-5 h-5" />
+                    {menu.id === 'sticky' && stickyRemindersDue > 0 && (
+                      <span className="absolute -top-1 -right-1 min-w-[1rem] h-4 px-1 rounded-full bg-rose-400 text-[9px] font-black text-white flex items-center justify-center">
+                        {stickyRemindersDue > 9 ? '9+' : stickyRemindersDue}
+                      </span>
+                    )}
+                  </span>
+                  <span className="text-sm font-bold flex-1 text-left">{menu.label}</span>
+                  {menu.id === 'sticky' && stickyRemindersDue > 0 && (
+                    <span className="text-[10px] font-extrabold text-rose-200 bg-rose-500/25 px-1.5 py-0.5 rounded-full">วันนี้</span>
+                  )}
                 </button>
               ))}
             </div>
@@ -1344,7 +1432,11 @@ export default function App() {
 
         {currentModule === 'sticky' && (
           <Suspense fallback={<ModuleLoading label="โน้ตติดผนัง" />}>
-            <StickyNotes currentUser={currentUser} showToast={showToast} />
+            <StickyNotes
+              currentUser={currentUser}
+              showToast={showToast}
+              onRemindersChange={setStickyRemindersDue}
+            />
           </Suspense>
         )}
 
@@ -1566,6 +1658,7 @@ export default function App() {
             { id: 'more', icon: MoreHorizontal, label: 'เพิ่มเติม', openMore: true },
           ].map((item) => {
             const active = item.id !== 'more' && currentModule === item.id;
+            const showMoreBadge = item.openMore && stickyRemindersDue > 0;
             return (
               <button
                 key={item.id}
@@ -1587,8 +1680,19 @@ export default function App() {
                       : 'text-teal-100/55'
                 }`}
               >
-                <span className={`flex items-center justify-center ${item.primary ? 'w-11 h-11 -mt-5 mb-0.5 rounded-2xl bg-gradient-to-br from-teal-400 to-cyan-500 shadow-lg shadow-teal-500/40' : ''}`}>
-                  <item.icon className={item.primary ? 'w-5 h-5' : 'w-[1.15rem] h-[1.15rem]'} />
+                <span className="relative">
+                  {item.primary ? (
+                    <span className="flex items-center justify-center w-11 h-11 -mt-5 mb-0.5 rounded-2xl bg-gradient-to-br from-teal-400 to-cyan-600 shadow-lg shadow-teal-500/30">
+                      <item.icon className="w-5 h-5 text-white" />
+                    </span>
+                  ) : (
+                    <item.icon className="w-5 h-5" />
+                  )}
+                  {showMoreBadge && (
+                    <span className="absolute -top-1 -right-2 min-w-[1rem] h-4 px-1 rounded-full bg-rose-400 text-[9px] font-black text-white flex items-center justify-center gtp-soft-pulse">
+                      {stickyRemindersDue > 9 ? '9+' : stickyRemindersDue}
+                    </span>
+                  )}
                 </span>
                 <span className="text-[10px] font-bold mt-0.5">{item.label}</span>
               </button>
