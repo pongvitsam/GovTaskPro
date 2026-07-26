@@ -943,7 +943,7 @@ function loginDept(payload) {
   throw new Error('ไม่พบชื่อผู้ใช้ในแผนกนี้');
 }
 
-/** Staff/Head: กรอกแค่ username */
+/** Staff/Head: กรอกแค่ username (1 username = 1 แผนก) */
 function loginStaff(payload) {
   openDatabase_(false);
   ensureAdminUser_();
@@ -959,6 +959,9 @@ function loginStaff(payload) {
     if (String(u.active).toUpperCase() === 'FALSE') throw new Error('บัญชีถูกปิดการใช้งาน');
     if (String(u.role) === 'Admin') {
       throw new Error('บัญชีแอดมินกดปุ่ม "แอดมิน" มุมบนขวา แล้วใส่รหัสผ่าน');
+    }
+    if (!String(u.department || '').trim()) {
+      throw new Error('บัญชีนี้ยังไม่ได้ผูกแผนก — ติดต่อแอดมิน');
     }
     return normalizeUser_(u);
   }
@@ -981,7 +984,7 @@ function loginAdmin(payload) {
     if (uname !== username) continue;
     if (String(u.active).toUpperCase() === 'FALSE') throw new Error('บัญชีถูกปิดการใช้งาน');
     if (String(u.role) !== 'Admin') {
-      throw new Error('โหมดนี้สำหรับแอดมินเท่านั้น — พนักงานใช้รหัสแผนกเข้าสู่ระบบ');
+      throw new Error('โหมดนี้สำหรับแอดมินเท่านั้น — พนักงาน/หัวหน้ากรอก Username ที่หน้าแรก');
     }
     if (String(u.password || '') !== password) throw new Error('ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง');
     return normalizeUser_(u);
@@ -1046,22 +1049,27 @@ function adminCreateUser(payload) {
   var password = String(payload.password || '');
   var name = String(payload.name || '').trim();
   var role = String(payload.role || 'Staff');
+  var department = String(payload.department || '').trim();
   if (!username || !password || !name) throw new Error('กรอกชื่อผู้ใช้ รหัสผ่าน และชื่อแสดง');
   if (['Staff', 'Head', 'Admin'].indexOf(role) < 0) throw new Error('บทบาทไม่ถูกต้อง');
   if (password.length < 4) throw new Error('รหัสผ่านต้องมีอย่างน้อย 4 ตัวอักษร');
+  if (!department) {
+    department = role === 'Admin' ? 'SYSTEM' : '';
+  }
+  if (!department) throw new Error('ต้องระบุแผนก (1 Username ต่อ 1 แผนก)');
 
   var raw = listUsersRaw_();
   var lower = username.toLowerCase();
   for (var i = 0; i < raw.length; i++) {
     var existing = String(raw[i].username || raw[i].id || '').trim().toLowerCase();
-    if (existing === lower) throw new Error('Username นี้ถูกใช้แล้ว');
+    if (existing === lower) throw new Error('Username นี้ถูกใช้แล้ว (ใช้ได้คนเดียวทั้งระบบ / 1 Username = 1 แผนก)');
   }
 
   var row = {
     id: 'u_' + Date.now(),
     name: name,
     role: role,
-    department: String(payload.department || '').trim() || 'IT',
+    department: department,
     division: String(payload.division || '').trim(),
     active: 'TRUE',
     email: '',
@@ -1100,7 +1108,11 @@ function adminUpdateUser(payload) {
     updates.role = role;
     if (role === 'Head' || role === 'Admin') updates.notifyReview = 'TRUE';
   }
-  if (payload.department !== undefined) updates.department = String(payload.department || '').trim();
+  if (payload.department !== undefined) {
+    var dept = String(payload.department || '').trim();
+    if (!dept) throw new Error('ต้องระบุแผนก (1 Username ต่อ 1 แผนก)');
+    updates.department = dept;
+  }
   if (payload.division !== undefined) updates.division = String(payload.division || '').trim();
   if (payload.username !== undefined) {
     var username = String(payload.username || '').trim();
@@ -1110,7 +1122,7 @@ function adminUpdateUser(payload) {
     for (var i = 0; i < rawUsers.length; i++) {
       if (String(rawUsers[i].id) === userId) continue;
       var existing = String(rawUsers[i].username || rawUsers[i].id || '').trim().toLowerCase();
-      if (existing === lower) throw new Error('Username นี้ถูกใช้แล้ว');
+      if (existing === lower) throw new Error('Username นี้ถูกใช้แล้ว (ใช้ได้คนเดียวทั้งระบบ)');
     }
     updates.username = username;
   }
@@ -1340,6 +1352,9 @@ function updateUserProfile(payload) {
   openDatabase_(false);
   var id = String(payload.id || '');
   if (!id) throw new Error('ไม่พบผู้ใช้');
+  var self = findUserById_(id);
+  if (!self) throw new Error('ไม่พบผู้ใช้');
+
   var updates = {};
   if (payload.name !== undefined) {
     var name = String(payload.name || '').trim();
@@ -1347,8 +1362,21 @@ function updateUserProfile(payload) {
     updates.name = name;
   }
   if (payload.email !== undefined) updates.email = String(payload.email || '').trim();
-  if (payload.department !== undefined) updates.department = String(payload.department || '').trim();
-  if (payload.division !== undefined) updates.division = String(payload.division || '').trim();
+
+  // แผนก/กอง: แก้ได้เฉพาะแอดมิน (หรือแอดมินแก้โปรไฟล์ตัวเอง)
+  // พนักงาน/หัวหน้าเปลี่ยนแผนกเองไม่ได้ — 1 Username ต่อ 1 แผนก โดยแอดมินเป็นผู้กำหนด
+  if (payload.department !== undefined || payload.division !== undefined) {
+    if (self.role !== 'Admin') {
+      throw new Error('เปลี่ยนแผนกได้เฉพาะแอดมิน — ติดต่อผู้ดูแลระบบ');
+    }
+    if (payload.department !== undefined) {
+      var dept = String(payload.department || '').trim();
+      if (!dept) throw new Error('ต้องระบุแผนก');
+      updates.department = dept;
+    }
+    if (payload.division !== undefined) updates.division = String(payload.division || '').trim();
+  }
+
   if (payload.notifyEmail !== undefined) updates.notifyEmail = payload.notifyEmail ? 'TRUE' : 'FALSE';
   if (payload.notifyAssign !== undefined) updates.notifyAssign = payload.notifyAssign ? 'TRUE' : 'FALSE';
   if (payload.notifyStatus !== undefined) updates.notifyStatus = payload.notifyStatus ? 'TRUE' : 'FALSE';
@@ -1357,6 +1385,14 @@ function updateUserProfile(payload) {
 
   var found = updateRowById_(USERS_SHEET, id, updates);
   if (!found) throw new Error('ไม่พบผู้ใช้');
+  try {
+    if (updates.department !== undefined || updates.division !== undefined) {
+      upsertOrgFromUserFields_(
+        updates.department !== undefined ? updates.department : found.department,
+        updates.division !== undefined ? updates.division : found.division
+      );
+    }
+  } catch (orgE) {}
   invalidateBootstrapCache_();
   return normalizeUser_(found);
 }

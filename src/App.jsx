@@ -761,6 +761,7 @@ export default function App() {
             <p className="text-[11px] text-teal-100/70 truncate">
               {currentUser.role === 'Admin' ? 'แอดมินระบบ' : currentUser.role === 'Head' ? 'หัวหน้าแผนก' : 'พนักงานปฏิบัติการ'}
               {currentUser.username ? ` · @${currentUser.username}` : ''}
+              {currentUser.department ? ` · ${currentUser.department}` : ''}
             </p>
           </div>
         </div>

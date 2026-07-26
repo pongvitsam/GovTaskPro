@@ -59,7 +59,7 @@ export default function LoginScreen({
           GovTask<span className="text-teal-600">Pro</span>
         </h1>
         <p className="text-center text-[#5b7a8a] text-sm font-medium mb-1">
-          พนักงาน / หัวหน้าแผนก — กรอกชื่อผู้ใช้เท่านั้น
+          พนักงาน / หัวหน้า — กรอก Username (1 Username = 1 แผนก)
         </p>
         <p className="text-center text-[11px] text-teal-600 font-bold mb-8">● {hostHint}</p>
 
@@ -79,7 +79,7 @@ export default function LoginScreen({
               />
             </div>
             <p className="text-[11px] text-[#8aa3b0] font-medium mt-1.5">
-              ไม่ต้องใส่รหัสแผนกหรือรหัสผ่าน
+              Username ผูกแผนกเดียว — แอดมินเป็นผู้กำหนด/ย้ายแผนก
             </p>
           </div>
 

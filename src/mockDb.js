@@ -173,6 +173,7 @@ const localHandlers = {
     if (!u) throw new Error('ไม่พบชื่อผู้ใช้นี้');
     if (u.active === false) throw new Error('บัญชีถูกปิดการใช้งาน');
     if (u.role === 'Admin') throw new Error('บัญชีแอดมินกดปุ่ม "แอดมิน" มุมบนขวา แล้วใส่รหัสผ่าน');
+    if (!String(u.department || '').trim()) throw new Error('บัญชีนี้ยังไม่ได้ผูกแผนก — ติดต่อแอดมิน');
     return publicUser(u);
   },
   loginAdmin(payload) {
@@ -183,7 +184,7 @@ const localHandlers = {
     const u = db.users.find((x) => String(x.username || x.id).toLowerCase() === username);
     if (!u) throw new Error('ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง');
     if (u.active === false) throw new Error('บัญชีถูกปิดการใช้งาน');
-    if (u.role !== 'Admin') throw new Error('โหมดนี้สำหรับแอดมินเท่านั้น — พนักงานใช้รหัสแผนกเข้าสู่ระบบ');
+    if (u.role !== 'Admin') throw new Error('โหมดนี้สำหรับแอดมินเท่านั้น — พนักงาน/หัวหน้ากรอก Username ที่หน้าแรก');
     if (String(u.password || '') !== password) throw new Error('ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง');
     return publicUser(u);
   },
@@ -212,11 +213,13 @@ const localHandlers = {
     const password = String(payload.password || '');
     const name = String(payload.name || '').trim();
     const role = String(payload.role || 'Staff');
+    let department = String(payload.department || '').trim();
     if (!username || !password || !name) throw new Error('กรอกชื่อผู้ใช้ รหัสผ่าน และชื่อแสดง');
+    if (!department) department = role === 'Admin' ? 'SYSTEM' : '';
+    if (!department) throw new Error('ต้องระบุแผนก (1 Username ต่อ 1 แผนก)');
     if (db.users.some((u) => String(u.username || u.id).toLowerCase() === username.toLowerCase())) {
-      throw new Error('Username นี้ถูกใช้แล้ว');
+      throw new Error('Username นี้ถูกใช้แล้ว (ใช้ได้คนเดียวทั้งระบบ / 1 Username = 1 แผนก)');
     }
-    const department = String(payload.department || 'IT').trim() || 'IT';
     const division = String(payload.division || '').trim();
     const row = {
       id: 'u_' + Date.now(),
@@ -254,8 +257,11 @@ const localHandlers = {
     if (payload.username) {
       const lower = String(payload.username).trim().toLowerCase();
       if (db.users.some((u, i) => i !== idx && String(u.username || u.id).toLowerCase() === lower)) {
-        throw new Error('Username นี้ถูกใช้แล้ว');
+        throw new Error('Username นี้ถูกใช้แล้ว (ใช้ได้คนเดียวทั้งระบบ)');
       }
+    }
+    if (payload.department !== undefined && !String(payload.department || '').trim()) {
+      throw new Error('ต้องระบุแผนก (1 Username ต่อ 1 แผนก)');
     }
     const next = {
       ...prev,
@@ -587,14 +593,23 @@ const localHandlers = {
       ...prev,
       name: payload.name !== undefined ? String(payload.name || '').trim() : prev.name,
       email: payload.email !== undefined ? String(payload.email || '').trim() : (prev.email || ''),
-      department: payload.department !== undefined ? String(payload.department || '').trim() : prev.department,
-      division: payload.division !== undefined ? String(payload.division || '').trim() : prev.division,
       notifyEmail: payload.notifyEmail !== undefined ? !!payload.notifyEmail : !!prev.notifyEmail,
       notifyAssign: payload.notifyAssign !== undefined ? !!payload.notifyAssign : (prev.notifyAssign !== false),
       notifyStatus: payload.notifyStatus !== undefined ? !!payload.notifyStatus : (prev.notifyStatus !== false),
       notifyReview: payload.notifyReview !== undefined ? !!payload.notifyReview : !!prev.notifyReview,
       notifyLineDefault: payload.notifyLineDefault !== undefined ? !!payload.notifyLineDefault : (prev.notifyLineDefault !== false),
     };
+    if (payload.department !== undefined || payload.division !== undefined) {
+      if (prev.role !== 'Admin') {
+        throw new Error('เปลี่ยนแผนกได้เฉพาะแอดมิน — ติดต่อผู้ดูแลระบบ');
+      }
+      if (payload.department !== undefined) {
+        const dept = String(payload.department || '').trim();
+        if (!dept) throw new Error('ต้องระบุแผนก');
+        next.department = dept;
+      }
+      if (payload.division !== undefined) next.division = String(payload.division || '').trim();
+    }
     if (!next.name) throw new Error('ชื่อจำเป็น');
     db.users = db.users.map((u, i) => (i === idx ? next : u));
     return publicUser(next);

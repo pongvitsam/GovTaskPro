@@ -168,7 +168,10 @@ export default function Settings({
                   className="w-full border border-slate-100 rounded-2xl p-3.5 font-bold outline-none focus:border-teal-400 disabled:bg-slate-50"
                 />
                 {currentUser.role !== 'Admin' && (
-                  <p className="text-[11px] text-slate-400 font-medium mt-1">เปลี่ยนแผนกได้เฉพาะแอดมิน</p>
+                  <p className="text-[11px] text-slate-400 font-medium mt-1">1 Username = 1 แผนก · เปลี่ยนได้เฉพาะแอดมิน</p>
+                )}
+                {currentUser.role === 'Admin' && (
+                  <p className="text-[11px] text-teal-600 font-medium mt-1">แอดมินแก้ไขแผนกได้ทั้งหมด</p>
                 )}
               </div>
               <div>

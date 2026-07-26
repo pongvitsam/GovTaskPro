@@ -106,6 +106,10 @@ export default function AdminUsers({
 
   const saveEdit = async () => {
     if (!editDraft || !editingId) return;
+    if (!editDraft.department.trim() && editDraft.role !== 'Admin') {
+      showToast('❌ ต้องระบุแผนก (1 Username ต่อ 1 แผนก)');
+      return;
+    }
     const row = await onUpdateUser({
       adminId: currentUser.id,
       userId: editingId,
@@ -113,7 +117,7 @@ export default function AdminUsers({
       username: editDraft.username.trim(),
       password: editDraft.password,
       role: editDraft.role,
-      department: editDraft.department.trim(),
+      department: editDraft.department.trim() || (editDraft.role === 'Admin' ? 'SYSTEM' : ''),
       division: editDraft.division.trim(),
     });
     if (row) {
@@ -131,13 +135,17 @@ export default function AdminUsers({
       showToast('❌ กรอกชื่อผู้ใช้ รหัสผ่าน และชื่อแสดง');
       return;
     }
+    if (!form.department.trim() && form.role !== 'Admin') {
+      showToast('❌ ต้องเลือกแผนก (1 Username ต่อ 1 แผนก)');
+      return;
+    }
     const row = await onCreate({
       adminId: currentUser.id,
       username: form.username.trim(),
       password: form.password,
       name: form.name.trim(),
       role: form.role,
-      department: form.department.trim() || 'IT',
+      department: form.department.trim() || (form.role === 'Admin' ? 'SYSTEM' : ''),
       division: form.division.trim(),
     });
     if (row) {
@@ -191,7 +199,7 @@ export default function AdminUsers({
               <Users className="w-7 h-7 mr-3 text-teal-500" /> จัดการระบบ (แอดมิน)
             </h2>
             <p className="text-[#5b7a8a] text-sm mt-1 font-medium">
-              เพิ่มคน · แผนก · กอง · ดูรหัสผ่าน · กำหนดสิทธิ์แต่ละคน
+              1 Username = 1 แผนก · แอดมินแก้ username / รหัสผ่าน / บทบาท / แผนก ได้ทั้งหมด
             </p>
           </div>
           <div className="flex bg-[#e8f2f6] p-1.5 rounded-2xl gap-1">
@@ -222,6 +230,7 @@ export default function AdminUsers({
                 <div>
                   <label className="text-xs font-bold text-slate-500 mb-1 block">Username *</label>
                   <input value={form.username} onChange={(e) => setForm({ ...form, username: e.target.value })} disabled={busy} className="w-full border border-slate-100 rounded-2xl p-3 font-bold outline-none focus:border-teal-400" placeholder="เช่น somchai" autoComplete="off" />
+                  <p className="text-[11px] text-[#8aa3b0] font-medium mt-1">ใช้ได้คนเดียวทั้งระบบ · ผูกแผนกเดียว</p>
                 </div>
                 <div>
                   <label className="text-xs font-bold text-slate-500 mb-1 block">รหัสผ่านเริ่มต้น *</label>
@@ -238,7 +247,7 @@ export default function AdminUsers({
                   </select>
                 </div>
                 <div>
-                  <label className="text-xs font-bold text-slate-500 mb-1 block">แผนก</label>
+                  <label className="text-xs font-bold text-slate-500 mb-1 block">แผนก * (1 Username = 1 แผนก)</label>
                   <select
                     value={form.department}
                     onChange={(e) => setForm({ ...form, department: e.target.value, division: '' })}
