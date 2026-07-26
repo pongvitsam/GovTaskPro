@@ -1,21 +1,24 @@
 import React, { useState } from 'react';
 import {
-  Briefcase, Shield, KeyRound, User, ArrowLeft, Loader2, X
+  Briefcase, Shield, KeyRound, User, ArrowLeft, Loader2, X, Building2
 } from 'lucide-react';
 import { isProductionGas, isProductionHost } from './api';
 
 /**
- * หน้าแรก: พนักงาน/หัวหน้า — กรอกแค่ username
- * มุมบนขวา: ปุ่มแอดมิน — username + รหัสผ่าน
+ * พนักงาน/หัวหน้า: รหัสแผนก → เลือกชื่อตัวเอง
+ * แอดมิน (มุมบนขวา): username + รหัสผ่าน
  */
 export default function LoginScreen({
   busy,
   error,
-  onLoginStaff,
+  onOpenDepartment,
+  onPickUser,
   onLoginAdmin,
 }) {
   const [adminOpen, setAdminOpen] = useState(false);
-  const [username, setUsername] = useState('');
+  const [deptCode, setDeptCode] = useState('');
+  const [deptInfo, setDeptInfo] = useState(null);
+  const [deptUsers, setDeptUsers] = useState([]);
   const [adminUser, setAdminUser] = useState('admin');
   const [adminPass, setAdminPass] = useState('');
 
@@ -23,9 +26,20 @@ export default function LoginScreen({
     ? (isProductionGas() ? 'Production · Apps Script' : 'Production · GitHub Pages')
     : 'โหมดพัฒนา (local)';
 
-  const submitStaff = async (e) => {
+  const step = deptInfo ? 'pick' : 'dept';
+
+  const submitDept = async (e) => {
     e.preventDefault();
-    await onLoginStaff({ username: username.trim() });
+    const result = await onOpenDepartment({ departmentCode: deptCode.trim() });
+    if (result?.department) {
+      setDeptInfo(result.department);
+      setDeptUsers(Array.isArray(result.users) ? result.users : []);
+    }
+  };
+
+  const backToDept = () => {
+    setDeptInfo(null);
+    setDeptUsers([]);
   };
 
   const submitAdmin = async (e) => {
@@ -36,9 +50,13 @@ export default function LoginScreen({
     });
   };
 
+  const roleLabel = (role) => {
+    if (role === 'Head') return 'หัวหน้า';
+    return 'พนักงาน';
+  };
+
   return (
     <div className="min-h-dvh gtp-login-bg flex items-center justify-center p-4 gtp-safe-top gtp-safe-bottom relative">
-      {/* Admin entry — top right */}
       <button
         type="button"
         onClick={() => { setAdminOpen(true); }}
@@ -59,52 +77,102 @@ export default function LoginScreen({
           GovTask<span className="text-teal-600">Pro</span>
         </h1>
         <p className="text-center text-[#5b7a8a] text-sm font-medium mb-1">
-          กรอก Username ที่แอดมินตั้งให้สำหรับเข้าแผนกของคุณ
+          {step === 'dept' ? 'พนักงาน / หัวหน้า — กรอกรหัสแผนก' : 'เลือกชื่อของคุณในแผนก'}
         </p>
         <p className="text-center text-[11px] text-teal-600 font-bold mb-8">● {hostHint}</p>
 
-        <form onSubmit={submitStaff} className="space-y-4">
-          <div>
-            <label className="block text-xs font-bold text-[#5b7a8a] mb-1.5 tracking-wide">ชื่อผู้ใช้ (Username)</label>
-            <div className="relative">
-              <User className="w-4 h-4 text-teal-500 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" aria-hidden />
-              <input
-                value={username}
-                onChange={(e) => setUsername(e.target.value)}
-                disabled={busy || adminOpen}
-                autoFocus
-                className="gtp-input gtp-input--icon"
-                placeholder="เช่น somchai / boss"
-                autoComplete="username"
-              />
+        {step === 'dept' && (
+          <form onSubmit={submitDept} className="space-y-4">
+            <div>
+              <label className="block text-xs font-bold text-[#5b7a8a] mb-1.5 tracking-wide">รหัสแผนก</label>
+              <div className="relative">
+                <Building2 className="w-4 h-4 text-teal-500 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" aria-hidden />
+                <input
+                  value={deptCode}
+                  onChange={(e) => setDeptCode(e.target.value.toUpperCase())}
+                  disabled={busy || adminOpen}
+                  autoFocus
+                  className="gtp-input gtp-input--icon font-mono"
+                  placeholder="เช่น IT / HR / FIN"
+                  autoComplete="organization"
+                />
+              </div>
+              <p className="text-[11px] text-[#8aa3b0] font-medium mt-1.5">
+                ไม่ต้องใส่รหัสผ่าน — ต่อไปเลือกชื่อตัวเองภายในแผนก
+              </p>
+              <div className="mt-3 rounded-2xl bg-[#f3f9fc] border border-slate-100 px-3.5 py-2.5 text-[11px] text-[#5b7a8a] font-medium leading-relaxed">
+                <p className="font-extrabold text-[#1e3a4c] mb-1">รหัสแผนกทดลอง</p>
+                <p><span className="font-mono font-bold">IT</span> · <span className="font-mono font-bold">HR</span> · <span className="font-mono font-bold">FIN</span></p>
+                <p className="mt-1">แอดมินเท่านั้น: ปุ่มมุมขวาบน · <span className="font-mono font-bold">admin / 1234</span></p>
+              </div>
             </div>
-            <p className="text-[11px] text-[#8aa3b0] font-medium mt-1.5">
-              สิทธิ์งานแยกตามแผนก — แอดมินเป็นผู้ตั้งแผนกและ Username
-            </p>
-            <div className="mt-3 rounded-2xl bg-[#f3f9fc] border border-slate-100 px-3.5 py-2.5 text-[11px] text-[#5b7a8a] font-medium leading-relaxed">
-              <p className="font-extrabold text-[#1e3a4c] mb-1">บัญชีทดลอง</p>
-              <p>IT: <span className="font-mono font-bold">boss / somchai / somying / somsak</span></p>
-              <p>HR: <span className="font-mono font-bold">hrhead / mali</span> · การเงิน: <span className="font-mono font-bold">finhead / wichai</span></p>
-              <p>แอดมิน: ปุ่มมุมขวาบน · <span className="font-mono font-bold">admin / 1234</span></p>
+
+            {!adminOpen && error && (
+              <p className="text-sm text-rose-600 font-semibold bg-rose-50/90 border border-rose-100 rounded-2xl px-4 py-2.5">{error}</p>
+            )}
+
+            <button
+              type="submit"
+              disabled={busy || adminOpen || !deptCode.trim()}
+              className="gtp-btn-primary w-full py-3.5 flex items-center justify-center gap-2"
+            >
+              {busy && !adminOpen ? <Loader2 className="w-5 h-5 animate-spin" /> : <Building2 className="w-5 h-5" />}
+              เปิดแผนก
+            </button>
+          </form>
+        )}
+
+        {step === 'pick' && (
+          <div className="space-y-4">
+            <div className="rounded-2xl bg-[#f3f9fc] border border-slate-100 px-4 py-3 flex items-center justify-between gap-3">
+              <div>
+                <p className="text-[11px] font-bold text-[#8aa3b0]">แผนก</p>
+                <p className="gtp-display font-extrabold text-[#1e3a4c]">
+                  {deptInfo?.name}
+                  <span className="ml-2 text-xs font-mono font-bold text-teal-700">{deptInfo?.code || deptCode}</span>
+                </p>
+              </div>
+              <button type="button" disabled={busy} onClick={backToDept} className="text-xs font-bold text-[#5b7a8a] flex items-center gap-1 px-2.5 py-2 rounded-xl hover:bg-white">
+                <ArrowLeft className="w-3.5 h-3.5" /> เปลี่ยนแผนก
+              </button>
             </div>
+
+            {!adminOpen && error && (
+              <p className="text-sm text-rose-600 font-semibold bg-rose-50/90 border border-rose-100 rounded-2xl px-4 py-2.5">{error}</p>
+            )}
+
+            <div className="space-y-2 max-h-[42vh] overflow-y-auto custom-scrollbar pr-1">
+              {deptUsers.map((u) => (
+                <button
+                  key={u.id}
+                  type="button"
+                  disabled={busy || adminOpen}
+                  onClick={() => onPickUser({ departmentCode: deptCode.trim(), userId: u.id })}
+                  className="w-full text-left rounded-2xl border border-slate-100 bg-white hover:border-teal-300 hover:bg-teal-50/50 px-4 py-3.5 transition-all disabled:opacity-55 flex items-center gap-3"
+                >
+                  <div className={`p-2.5 rounded-xl shrink-0 ${u.role === 'Head' ? 'bg-sky-50 text-sky-600' : 'bg-emerald-50 text-emerald-600'}`}>
+                    <User className="w-4 h-4" />
+                  </div>
+                  <div className="min-w-0">
+                    <p className="font-extrabold text-[#1e3a4c] truncate">{u.name}</p>
+                    <p className="text-[11px] font-bold text-[#8aa3b0]">
+                      {roleLabel(u.role)}
+                      {u.division ? ` · ${u.division}` : ''}
+                    </p>
+                  </div>
+                </button>
+              ))}
+            </div>
+
+            {busy && !adminOpen && (
+              <p className="text-center text-sm font-bold text-teal-600 flex items-center justify-center gap-2">
+                <Loader2 className="w-4 h-4 animate-spin" /> กำลังเข้าสู่ระบบ...
+              </p>
+            )}
           </div>
-
-          {!adminOpen && error && (
-            <p className="text-sm text-rose-600 font-semibold bg-rose-50/90 border border-rose-100 rounded-2xl px-4 py-2.5">{error}</p>
-          )}
-
-          <button
-            type="submit"
-            disabled={busy || adminOpen || !username.trim()}
-            className="gtp-btn-primary w-full py-3.5 flex items-center justify-center gap-2"
-          >
-            {busy && !adminOpen ? <Loader2 className="w-5 h-5 animate-spin" /> : <User className="w-5 h-5" />}
-            เข้าสู่ระบบ
-          </button>
-        </form>
+        )}
       </div>
 
-      {/* Admin modal */}
       {adminOpen && (
         <div className="fixed inset-0 z-50 flex items-start sm:items-center justify-center p-4 pt-[max(4.5rem,env(safe-area-inset-top))]">
           <button
@@ -119,7 +187,7 @@ export default function LoginScreen({
                 <p className="gtp-display font-extrabold text-lg text-[#1e3a4c] flex items-center gap-2">
                   <Shield className="w-5 h-5 text-amber-600" /> ผู้ดูแลระบบ
                 </p>
-                <p className="text-[12px] text-[#5b7a8a] font-medium mt-1">ต้องใส่ username และรหัสผ่าน</p>
+                <p className="text-[12px] text-[#5b7a8a] font-medium mt-1">แอดมินเท่านั้นที่ต้องใส่ username และรหัสผ่าน</p>
               </div>
               <button type="button" onClick={() => setAdminOpen(false)} className="p-2 rounded-xl hover:bg-slate-100 text-slate-400">
                 <X className="w-5 h-5" />

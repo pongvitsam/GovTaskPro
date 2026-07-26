@@ -328,7 +328,7 @@ export default function AdminUsers({
             ) : (
               <>
                 <button type="button" disabled={busy} onClick={() => startEdit(u)} className="text-xs font-bold px-3 py-2 rounded-xl border border-slate-100 hover:bg-[#f3f9fc]">
-                  ตั้งแผนก / Username
+                  ตั้งแผนก / แก้ไข
                 </button>
                 {u.id !== currentUser.id && (
                   <button
@@ -366,7 +366,7 @@ export default function AdminUsers({
               <Users className="w-7 h-7 mr-3 text-teal-500" /> สิทธิ์แยกตามแผนก
             </h2>
             <p className="text-[#5b7a8a] text-sm mt-1 font-medium">
-              แอดมินตั้งได้ว่าคนนี้อยู่แผนกอะไร และ Username สำหรับเข้าแผนกนั้น
+              ตั้งแผนกของแต่ละคน · รหัสแผนกใช้เข้าสู่ระบบ · แอดมินเท่านั้นที่ใช้ username + รหัสผ่าน
             </p>
           </div>
           <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
@@ -424,7 +424,7 @@ export default function AdminUsers({
                   <p className="text-[11px] text-[#8aa3b0] font-medium mt-1">สิทธิ์งานจะเห็นเฉพาะแผนกนี้ (ยกเว้นแอดมิน)</p>
                 </div>
                 <div>
-                  <label className="text-xs font-bold text-slate-500 mb-1 block">2) Username สำหรับเข้าแผนก *</label>
+                  <label className="text-xs font-bold text-slate-500 mb-1 block">2) รหัสอ้างอิงผู้ใช้ (Username)</label>
                   <input
                     value={form.username}
                     onChange={(e) => setForm({ ...form, username: e.target.value })}
@@ -433,7 +433,7 @@ export default function AdminUsers({
                     placeholder="เช่น somchai"
                     autoComplete="off"
                   />
-                  <p className="text-[11px] text-[#8aa3b0] font-medium mt-1">ใช้ล็อกอินหน้าแรก · 1 Username = 1 แผนก</p>
+                  <p className="text-[11px] text-[#8aa3b0] font-medium mt-1">พนักงานล็อกอินด้วยรหัสแผนกแล้วเลือกชื่อ — Username สำคัญกับแอดมิน</p>
                 </div>
                 <div>
                   <label className="text-xs font-bold text-slate-500 mb-1 block">3) บทบาทในแผนก</label>
@@ -513,7 +513,7 @@ export default function AdminUsers({
                   <thead>
                     <tr className="text-left text-[11px] font-bold text-[#5b7a8a] bg-white border-b border-slate-100">
                       <th className="px-4 py-3">ชื่อ</th>
-                      <th className="px-4 py-3">Username เข้าแผนก</th>
+                      <th className="px-4 py-3">Username</th>
                       <th className="px-4 py-3">รหัสผ่าน</th>
                       <th className="px-4 py-3">บทบาท</th>
                       <th className="px-4 py-3">แผนก / กอง</th>
@@ -577,7 +577,7 @@ export default function AdminUsers({
                   placeholder="เช่น HR"
                   className="w-full border border-slate-100 rounded-2xl p-3 font-mono font-bold outline-none focus:border-teal-400"
                 />
-                <p className="text-[11px] text-[#8aa3b0] font-medium mt-1">ใช้จัดหมวดในระบบ — ล็อกอินใช้ Username ที่แอดมินตั้งให้แต่ละคน</p>
+                <p className="text-[11px] text-[#8aa3b0] font-medium mt-1">รหัสนี้ใช้ตอนล็อกอินพนักงาน (กรอกรหัสแผนกแล้วเลือกชื่อ)</p>
               </div>
               <button type="submit" disabled={busy} className="gtp-btn-primary px-5 py-2.5 text-sm flex items-center disabled:opacity-60">
                 <Plus className="w-4 h-4 mr-2" /> เพิ่มแผนก

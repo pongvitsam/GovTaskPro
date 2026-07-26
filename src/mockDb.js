@@ -233,6 +233,57 @@ const localHandlers = {
     if (!String(u.department || '').trim()) throw new Error('บัญชีนี้ยังไม่ได้ผูกแผนก — ติดต่อแอดมิน');
     return publicUser(u);
   },
+  listDeptUsersForLogin(payload) {
+    const db = getLocalDb();
+    const departmentCode = String(payload.departmentCode || '').trim().toLowerCase();
+    if (!departmentCode) throw new Error('กรอกรหัสแผนก');
+    const orgs = db.orgUnits || [];
+    const dept = orgs.find((o) => {
+      if (o.type !== 'department' || o.active === false) return false;
+      const c = String(o.code || o.name || '').replace(/\s+/g, '').toLowerCase();
+      const n = String(o.name || '').toLowerCase();
+      return c === departmentCode || n === departmentCode || n.replace(/\s+/g, '') === departmentCode;
+    });
+    if (!dept) throw new Error('รหัสแผนกไม่ถูกต้อง');
+    const users = db.users
+      .filter((u) => u.active !== false && u.role !== 'Admin' && String(u.department || '').toLowerCase() === String(dept.name).toLowerCase())
+      .map((u) => ({
+        id: u.id,
+        name: u.name,
+        role: u.role,
+        division: u.division || '',
+        department: u.department || '',
+      }))
+      .sort((a, b) => (a.role === 'Head' ? 0 : 1) - (b.role === 'Head' ? 0 : 1) || String(a.name).localeCompare(String(b.name), 'th'));
+    if (!users.length) throw new Error('แผนกนี้ยังไม่มีผู้ใช้ที่ใช้งานได้');
+    return {
+      department: { id: dept.id, name: dept.name, code: dept.code || dept.name, type: 'department', active: true, parent: '' },
+      users,
+    };
+  },
+  loginDeptPick(payload) {
+    const db = getLocalDb();
+    const departmentCode = String(payload.departmentCode || '').trim().toLowerCase();
+    const userId = String(payload.userId || '').trim();
+    if (!departmentCode) throw new Error('กรอกรหัสแผนก');
+    if (!userId) throw new Error('เลือกชื่อผู้ใช้');
+    const orgs = db.orgUnits || [];
+    const dept = orgs.find((o) => {
+      if (o.type !== 'department' || o.active === false) return false;
+      const c = String(o.code || o.name || '').replace(/\s+/g, '').toLowerCase();
+      const n = String(o.name || '').toLowerCase();
+      return c === departmentCode || n === departmentCode || n.replace(/\s+/g, '') === departmentCode;
+    });
+    if (!dept) throw new Error('รหัสแผนกไม่ถูกต้อง');
+    const u = db.users.find((x) => String(x.id) === userId);
+    if (!u) throw new Error('ไม่พบผู้ใช้ในแผนกนี้');
+    if (u.active === false) throw new Error('บัญชีถูกปิดการใช้งาน');
+    if (u.role === 'Admin') throw new Error('บัญชีแอดมินกดปุ่ม "แอดมิน" มุมบนขวา แล้วใส่รหัสผ่าน');
+    if (String(u.department || '').toLowerCase() !== String(dept.name).toLowerCase()) {
+      throw new Error('ผู้ใช้นี้ไม่อยู่ในแผนกที่ระบุ');
+    }
+    return publicUser(u);
+  },
   loginAdmin(payload) {
     const db = getLocalDb();
     const username = String(payload.username || '').trim().toLowerCase();
@@ -241,7 +292,7 @@ const localHandlers = {
     const u = db.users.find((x) => String(x.username || x.id).toLowerCase() === username);
     if (!u) throw new Error('ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง');
     if (u.active === false) throw new Error('บัญชีถูกปิดการใช้งาน');
-    if (u.role !== 'Admin') throw new Error('โหมดนี้สำหรับแอดมินเท่านั้น — พนักงาน/หัวหน้ากรอก Username ที่หน้าแรก');
+    if (u.role !== 'Admin') throw new Error('โหมดนี้สำหรับแอดมินเท่านั้น — พนักงาน/หัวหน้าใส่รหัสแผนกแล้วเลือกชื่อ');
     if (String(u.password || '') !== password) throw new Error('ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง');
     return publicUser(u);
   },

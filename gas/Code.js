@@ -184,6 +184,8 @@ function dispatchApi_(fn, payload, hasPayload) {
   if (fn === 'login') return login(payload || {});
   if (fn === 'loginDept') return loginDept(payload || {});
   if (fn === 'loginStaff') return loginStaff(payload || {});
+  if (fn === 'listDeptUsersForLogin') return listDeptUsersForLogin(payload || {});
+  if (fn === 'loginDeptPick') return loginDeptPick(payload || {});
   if (fn === 'loginAdmin') return loginAdmin(payload || {});
   if (fn === 'changePassword') return changePassword(payload || {});
   if (fn === 'adminCreateUser') return adminCreateUser(payload || {});
@@ -945,7 +947,77 @@ function loginDept(payload) {
   throw new Error('ไม่พบชื่อผู้ใช้ในแผนกนี้');
 }
 
-/** Staff/Head: กรอกแค่ username (1 username = 1 แผนก) */
+/** Staff/Head: เปิดแผนกด้วยรหัส → ได้รายชื่อให้เลือก */
+function listDeptUsersForLogin(payload) {
+  openDatabase_(false);
+  ensureAdminUser_();
+  try { ensureOrgUnitsSeed_(); } catch (e) {}
+  var departmentCode = String(payload.departmentCode || '').trim();
+  if (!departmentCode) throw new Error('กรอกรหัสแผนก');
+
+  var dept = findDeptByCode_(departmentCode);
+  if (!dept) throw new Error('รหัสแผนกไม่ถูกต้อง');
+
+  var deptName = String(dept.name || '').trim().toLowerCase();
+  var users = [];
+  var raw = listUsersRaw_();
+  for (var i = 0; i < raw.length; i++) {
+    var u = raw[i];
+    if (String(u.active).toUpperCase() === 'FALSE') continue;
+    if (String(u.role) === 'Admin') continue;
+    if (String(u.department || '').trim().toLowerCase() !== deptName) continue;
+    users.push({
+      id: String(u.id),
+      name: String(u.name || ''),
+      role: String(u.role || 'Staff'),
+      division: String(u.division || ''),
+      department: String(u.department || '')
+    });
+  }
+  users.sort(function (a, b) {
+    var ra = a.role === 'Head' ? 0 : 1;
+    var rb = b.role === 'Head' ? 0 : 1;
+    if (ra !== rb) return ra - rb;
+    return String(a.name).localeCompare(String(b.name), 'th');
+  });
+  if (!users.length) throw new Error('แผนกนี้ยังไม่มีผู้ใช้ที่ใช้งานได้');
+
+  return {
+    department: dept,
+    users: users
+  };
+}
+
+/** Staff/Head: เลือกชื่อตัวเองหลังเปิดแผนก */
+function loginDeptPick(payload) {
+  openDatabase_(false);
+  ensureAdminUser_();
+  try { ensureOrgUnitsSeed_(); } catch (e) {}
+  var departmentCode = String(payload.departmentCode || '').trim();
+  var userId = String(payload.userId || '').trim();
+  if (!departmentCode) throw new Error('กรอกรหัสแผนก');
+  if (!userId) throw new Error('เลือกชื่อผู้ใช้');
+
+  var dept = findDeptByCode_(departmentCode);
+  if (!dept) throw new Error('รหัสแผนกไม่ถูกต้อง');
+
+  var raw = listUsersRaw_();
+  for (var i = 0; i < raw.length; i++) {
+    var u = raw[i];
+    if (String(u.id) !== userId) continue;
+    if (String(u.active).toUpperCase() === 'FALSE') throw new Error('บัญชีถูกปิดการใช้งาน');
+    if (String(u.role) === 'Admin') {
+      throw new Error('บัญชีแอดมินกดปุ่ม "แอดมิน" มุมบนขวา แล้วใส่รหัสผ่าน');
+    }
+    if (String(u.department || '').trim().toLowerCase() !== String(dept.name).trim().toLowerCase()) {
+      throw new Error('ผู้ใช้นี้ไม่อยู่ในแผนกที่ระบุ');
+    }
+    return normalizeUser_(u);
+  }
+  throw new Error('ไม่พบผู้ใช้ในแผนกนี้');
+}
+
+/** Staff/Head: กรอกแค่ username (legacy) */
 function loginStaff(payload) {
   openDatabase_(false);
   ensureAdminUser_();
@@ -986,7 +1058,7 @@ function loginAdmin(payload) {
     if (uname !== username) continue;
     if (String(u.active).toUpperCase() === 'FALSE') throw new Error('บัญชีถูกปิดการใช้งาน');
     if (String(u.role) !== 'Admin') {
-      throw new Error('โหมดนี้สำหรับแอดมินเท่านั้น — พนักงาน/หัวหน้ากรอก Username ที่หน้าแรก');
+      throw new Error('โหมดนี้สำหรับแอดมินเท่านั้น — พนักงาน/หัวหน้าใส่รหัสแผนกแล้วเลือกชื่อ');
     }
     if (String(u.password || '') !== password) throw new Error('ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง');
     return normalizeUser_(u);

@@ -271,12 +271,27 @@ export default function App() {
     setLoginError(null);
   };
 
-  const handleLoginStaff = async ({ username }) => {
+  const handleOpenDepartment = async ({ departmentCode }) => {
+    if (loginBusy) return null;
+    setLoginBusy(true);
+    setLoginError(null);
+    try {
+      const result = await api('listDeptUsersForLogin', { departmentCode });
+      return result;
+    } catch (err) {
+      setLoginError(err?.message || String(err));
+      return null;
+    } finally {
+      setLoginBusy(false);
+    }
+  };
+
+  const handlePickUser = async ({ departmentCode, userId }) => {
     if (loginBusy) return;
     setLoginBusy(true);
     setLoginError(null);
     try {
-      const user = await api('loginStaff', { username });
+      const user = await api('loginDeptPick', { departmentCode, userId });
       finishLogin(user);
     } catch (err) {
       setLoginError(err?.message || String(err));
@@ -729,7 +744,8 @@ export default function App() {
       <LoginScreen
         busy={loginBusy}
         error={loginError}
-        onLoginStaff={handleLoginStaff}
+        onOpenDepartment={handleOpenDepartment}
+        onPickUser={handlePickUser}
         onLoginAdmin={handleLoginAdmin}
       />
     );
