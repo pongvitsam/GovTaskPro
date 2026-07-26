@@ -27,6 +27,7 @@ export default function AdminUsers({
   onToggleActive,
   onCreateOrg,
   onDeleteOrg,
+  onSeedDemo,
   showToast,
 }) {
   const [tab, setTab] = useState('rights');
@@ -368,7 +369,22 @@ export default function AdminUsers({
               แอดมินตั้งได้ว่าคนนี้อยู่แผนกอะไร และ Username สำหรับเข้าแผนกนั้น
             </p>
           </div>
-          <div className="flex bg-[#e8f2f6] p-1.5 rounded-2xl gap-1">
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+            {onSeedDemo && (
+              <button
+                type="button"
+                disabled={busy}
+                onClick={async () => {
+                  if (!window.confirm('โหลดข้อมูลตัวอย่างครบทุกฟังก์ชัน?\n(เพิ่มแผนก HR/Finance, โปรเจกต์, งานทุกสถานะ, โน้ต — ไม่ลบข้อมูลเดิมที่มี id ซ้ำ)')) return;
+                  await onSeedDemo();
+                  await refreshAdminList();
+                }}
+                className="text-xs font-extrabold px-3.5 py-2.5 rounded-2xl border border-teal-200 bg-teal-50 text-teal-800 hover:bg-teal-100 disabled:opacity-50"
+              >
+                โหลดข้อมูลตัวอย่าง (Demo)
+              </button>
+            )}
+            <div className="flex bg-[#e8f2f6] p-1.5 rounded-2xl gap-1">
             <button
               type="button"
               onClick={() => setTab('rights')}
@@ -383,6 +399,7 @@ export default function AdminUsers({
             >
               จัดการแผนก & กอง
             </button>
+            </div>
           </div>
         </div>
 

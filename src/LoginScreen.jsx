@@ -81,6 +81,12 @@ export default function LoginScreen({
             <p className="text-[11px] text-[#8aa3b0] font-medium mt-1.5">
               สิทธิ์งานแยกตามแผนก — แอดมินเป็นผู้ตั้งแผนกและ Username
             </p>
+            <div className="mt-3 rounded-2xl bg-[#f3f9fc] border border-slate-100 px-3.5 py-2.5 text-[11px] text-[#5b7a8a] font-medium leading-relaxed">
+              <p className="font-extrabold text-[#1e3a4c] mb-1">บัญชีทดลอง</p>
+              <p>IT: <span className="font-mono font-bold">boss / somchai / somying / somsak</span></p>
+              <p>HR: <span className="font-mono font-bold">hrhead / mali</span> · การเงิน: <span className="font-mono font-bold">finhead / wichai</span></p>
+              <p>แอดมิน: ปุ่มมุมขวาบน · <span className="font-mono font-bold">admin / 1234</span></p>
+            </div>
           </div>
 
           {!adminOpen && error && (

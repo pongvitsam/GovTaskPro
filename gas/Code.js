@@ -193,6 +193,7 @@ function dispatchApi_(fn, payload, hasPayload) {
   if (fn === 'adminUpdateUser') return adminUpdateUser(payload || {});
   if (fn === 'adminCreateOrgUnit') return adminCreateOrgUnit(payload || {});
   if (fn === 'adminDeleteOrgUnit') return adminDeleteOrgUnit(payload || {});
+  if (fn === 'adminSeedDemoData') return adminSeedDemoData(payload || {});
 
   throw new Error('Unknown API: ' + fn);
 }
@@ -206,8 +207,8 @@ function include_(filename) {
   return include(filename);
 }
 
-var SCHEMA_VERSION = '8';
-var BOOT_CACHE_KEY = 'gtp_boot_v5';
+var SCHEMA_VERSION = '9';
+var BOOT_CACHE_KEY = 'gtp_boot_v6';
 var BOOT_CACHE_TTL = 20;
 var _ssCache = null;
 var STICKY_COLORS = ['yellow', 'pink', 'mint', 'blue', 'lavender'];
@@ -692,6 +693,7 @@ function maybeMigrateAndSeed_(ss) {
   try { ensureProjectDates_(); } catch (pdErr) { /* non-fatal */ }
   try { ensureUserAuthDefaults_(); } catch (uaErr) { /* non-fatal */ }
   try { ensureOrgUnitsSeed_(); } catch (orgErr) { /* non-fatal */ }
+  try { ensureDemoShowcase_(); } catch (demoErr) { /* non-fatal */ }
   ensureAdminUser_();
   props.setProperty('SCHEMA_VERSION', SCHEMA_VERSION);
 }
@@ -1299,6 +1301,179 @@ function adminDeleteOrgUnit(payload) {
   if (!found) throw new Error('ไม่พบรายการ');
   invalidateBootstrapCache_();
   return { ok: true, id: id };
+}
+
+/** เติมข้อมูลตัวอย่างให้ครบทุกฟังก์ชัน (เพิ่มเฉพาะ id ที่ยังไม่มี) */
+function adminSeedDemoData(payload) {
+  openDatabase_(false);
+  requireAdmin_(payload.adminId);
+  var result = ensureDemoShowcase_();
+  invalidateBootstrapCache_();
+  return result;
+}
+
+function sheetHasId_(sheetName, id) {
+  var rows = listObjects_(sheetName);
+  var needle = String(id);
+  for (var i = 0; i < rows.length; i++) {
+    if (String(rows[i].id) === needle) return true;
+  }
+  return false;
+}
+
+function ensureDemoShowcase_() {
+  ensureSheets_(openDatabase_(false));
+  var now = Date.now();
+  var HOUR = 3600000;
+  var DAY = 86400000;
+  function d(n) { return dateOnly_(now + DAY * n); }
+  function iso(n, h) { return new Date(now + DAY * n + HOUR * (h || 0)).toISOString(); }
+
+  var added = { users: 0, projects: 0, tasks: 0, milestones: 0, orgs: 0, comments: 0, logs: 0, stickies: 0 };
+
+  ensureOrgUnitExists_('department', 'IT', '', 'IT');
+  ensureOrgUnitExists_('department', 'SYSTEM', '', 'SYSTEM');
+  ensureOrgUnitExists_('department', 'HR', '', 'HR');
+  ensureOrgUnitExists_('department', 'Finance', '', 'FIN');
+  ensureOrgUnitExists_('division', 'กองเทคโนโลยี', 'IT');
+  ensureOrgUnitExists_('division', 'ผู้ดูแลระบบ', 'SYSTEM');
+  ensureOrgUnitExists_('division', 'กองบุคคล', 'HR');
+  ensureOrgUnitExists_('division', 'กองงบประมาณ', 'Finance');
+  added.orgs = 8;
+
+  var demoUsers = [
+    ['admin', 'ผู้ดูแลระบบ', 'Admin', 'SYSTEM', 'ผู้ดูแลระบบ', 'TRUE', 'admin@demo.local', 'TRUE', 'TRUE', 'TRUE', 'TRUE', 'TRUE', 'admin', '1234'],
+    ['u1', 'คุณบอส (หัวหน้า IT)', 'Head', 'IT', 'กองเทคโนโลยี', 'TRUE', 'boss@demo.local', 'TRUE', 'TRUE', 'TRUE', 'TRUE', 'TRUE', 'boss', '1234'],
+    ['u2', 'สมชาย (พนักงาน IT)', 'Staff', 'IT', 'กองเทคโนโลยี', 'TRUE', 'somchai@demo.local', 'TRUE', 'TRUE', 'TRUE', 'FALSE', 'TRUE', 'somchai', '1234'],
+    ['u3', 'สมหญิง (พนักงาน IT)', 'Staff', 'IT', 'กองเทคโนโลยี', 'TRUE', '', 'FALSE', 'TRUE', 'TRUE', 'FALSE', 'TRUE', 'somying', '1234'],
+    ['u4', 'สมศักดิ์ (พนักงาน IT)', 'Staff', 'IT', 'กองเทคโนโลยี', 'TRUE', '', 'FALSE', 'TRUE', 'TRUE', 'FALSE', 'TRUE', 'somsak', '1234'],
+    ['u5', 'คุณนภา (หัวหน้า HR)', 'Head', 'HR', 'กองบุคคล', 'TRUE', 'hr@demo.local', 'TRUE', 'TRUE', 'TRUE', 'TRUE', 'TRUE', 'hrhead', '1234'],
+    ['u6', 'มาลี (พนักงาน HR)', 'Staff', 'HR', 'กองบุคคล', 'TRUE', '', 'FALSE', 'TRUE', 'TRUE', 'FALSE', 'TRUE', 'mali', '1234'],
+    ['u7', 'คุณวิชัย (หัวหน้าการเงิน)', 'Head', 'Finance', 'กองงบประมาณ', 'TRUE', '', 'FALSE', 'TRUE', 'TRUE', 'TRUE', 'TRUE', 'finhead', '1234'],
+    ['u8', 'วิชัย (พนักงานการเงิน)', 'Staff', 'Finance', 'กองงบประมาณ', 'TRUE', '', 'FALSE', 'TRUE', 'TRUE', 'FALSE', 'TRUE', 'wichai', '1234'],
+    ['u9', 'บัญชีปิดใช้ (ตัวอย่าง)', 'Staff', 'IT', 'กองเทคโนโลยี', 'FALSE', '', 'FALSE', 'TRUE', 'TRUE', 'FALSE', 'TRUE', 'olduser', '1234']
+  ];
+  for (var ui = 0; ui < demoUsers.length; ui++) {
+    if (!sheetHasId_(USERS_SHEET, demoUsers[ui][0])) {
+      writeRows_(getSheet_(USERS_SHEET), getSheet_(USERS_SHEET).getLastRow() + 1, [demoUsers[ui]]);
+      added.users++;
+    }
+  }
+
+  var demoProjects = [
+    ['p1', 'พัฒนาระบบ Intranet กอง', 'อัปเกรดระบบภายใน (Next-Gen) — ดู Gantt / Milestone ได้', 'u1', iso(-14), d(-14), d(45)],
+    ['p2', 'กิจกรรม 5ส ประจำปี', 'จัดระเบียบอุปกรณ์และสายไฟ', 'u1', iso(-7), d(-7), d(21)],
+    ['p3', 'แผนซ่อมบำรุงประจำไตรมาส (Q3)', 'ตรวจสอบอุปกรณ์ Network ทั่วตึก', 'u1', iso(-3), d(-3), d(60)],
+    ['p4', 'ระบบประเมินผลประจำปี', 'โปรเจกต์แผนก HR — สิทธิ์แยกตามแผนก', 'u5', iso(-10), d(-10), d(30)],
+    ['p5', 'จัดทำงบประมาณปี 69', 'โปรเจกต์แผนก Finance', 'u7', iso(-5), d(-5), d(40)]
+  ];
+  for (var pi = 0; pi < demoProjects.length; pi++) {
+    if (!sheetHasId_(PROJECTS_SHEET, demoProjects[pi][0])) {
+      writeRows_(getSheet_(PROJECTS_SHEET), getSheet_(PROJECTS_SHEET).getLastRow() + 1, [demoProjects[pi]]);
+      added.projects++;
+    }
+  }
+
+  var demoMs = [
+    ['m1', 'p1', 'เก็บความต้องการ & ออกแบบ', 'ประชุมผู้ใช้และออกแบบ UI/DB', d(-14), d(-7), 20, 1, 'TRUE', iso(-6)],
+    ['m2', 'p1', 'พัฒนา Backend / API', 'Auth และบริการหลัก', d(-7), d(7), 30, 2, 'FALSE', ''],
+    ['m3', 'p1', 'พัฒนา Frontend', 'หน้าจอ Intranet', d(-3), d(21), 25, 3, 'FALSE', ''],
+    ['m4', 'p1', 'ทดสอบระบบ & อบรม', 'UAT และคู่มือ', d(21), d(35), 15, 4, 'FALSE', ''],
+    ['m5', 'p1', 'ขึ้นระบบจริง (Go-live)', 'Deploy และส่งมอบ', d(35), d(45), 10, 5, 'FALSE', ''],
+    ['m6', 'p2', 'สำรวจพื้นที่ & วางแผน', 'ตรวจตู้ Rack / สายไฟ', d(-7), d(-3), 30, 1, 'TRUE', iso(-2)],
+    ['m7', 'p2', 'ดำเนินการ 5ส', 'จัดระเบียบและติดป้าย', d(-2), d(10), 50, 2, 'FALSE', ''],
+    ['m8', 'p2', 'ตรวจรับ & สรุปผล', 'รายงานผลกิจกรรม', d(10), d(21), 20, 3, 'FALSE', ''],
+    ['m9', 'p3', 'สำรวจอุปกรณ์ Network', 'Inventory ชั้น 1-3', d(-3), d(14), 40, 1, 'FALSE', ''],
+    ['m10', 'p3', 'ซ่อมบำรุง / เปลี่ยนอะไหล่', 'UPS สายแลน AP', d(14), d(40), 40, 2, 'FALSE', ''],
+    ['m11', 'p3', 'ทดสอบ & ปิดงานไตรมาส', 'รายงาน Q3', d(40), d(60), 20, 3, 'FALSE', ''],
+    ['m12', 'p4', 'ออกแบบแบบฟอร์มประเมิน', 'KPI รายบุคคล', d(-10), d(-2), 40, 1, 'TRUE', iso(-2)],
+    ['m13', 'p4', 'ทดลองใช้งาน & อบรม', 'อบรมหัวหน้าแผนก', d(-1), d(14), 40, 2, 'FALSE', ''],
+    ['m14', 'p4', 'ปิดรอบประเมิน', 'สรุปคะแนน', d(14), d(30), 20, 3, 'FALSE', ''],
+    ['m15', 'p5', 'รวบรวมคำของบ', 'จากทุกกอง', d(-5), d(7), 50, 1, 'FALSE', ''],
+    ['m16', 'p5', 'ปรับยอด & อนุมัติ', 'เสนอ ผอ.', d(7), d(40), 50, 2, 'FALSE', '']
+  ];
+  for (var mi = 0; mi < demoMs.length; mi++) {
+    if (!sheetHasId_(MILESTONES_SHEET, demoMs[mi][0])) {
+      writeRows_(getSheet_(MILESTONES_SHEET), getSheet_(MILESTONES_SHEET).getLastRow() + 1, [demoMs[mi]]);
+      added.milestones++;
+    }
+  }
+
+  var demoTasks = [
+    [1, 'p1', 'ออกแบบหน้า Login ใหม่', 'ใช้โทนสีองค์กร — สถานะเสร็จสิ้น', 'u1', 'u2', 'Completed', 'Assigned', iso(-2), 'FALSE', iso(-7), iso(-2)],
+    [2, 'p1', 'พัฒนาระบบ Backend (API)', 'กำลังทำ + มีคอมเมนต์', 'u1', 'u2', 'In Progress', 'Assigned', iso(5), 'FALSE', iso(-1), ''],
+    [3, 'p1', 'เตรียม Database Server', 'สร้างตารางข้อมูล', 'u1', 'u3', 'Completed', 'Assigned', iso(-3), 'FALSE', iso(-7), iso(-3)],
+    [4, '', 'รายงานประเมินความเสี่ยง IT (ตีกลับ)', 'ตัวอย่างส่งต่อ/ตีกลับ + ประวัติงาน', 'u1', 'u4', 'In Progress', 'Assigned', iso(1), 'FALSE', iso(-4), ''],
+    [5, 'p2', 'ทำความสะอาดตู้ Rack', 'รอตรวจโดยหัวหน้า', 'u1', 'u3', 'Review', 'Assigned', iso(0), 'FALSE', iso(-1), ''],
+    [6, '', 'สรุปรายงาน Helpdesk (รายสัปดาห์)', 'งาน Self + ทำซ้ำ', 'u2', 'u2', 'In Progress', 'Self', iso(2), 'TRUE', iso(0, -2), ''],
+    [7, 'p3', 'เปลี่ยนแบตเตอรี่ UPS ชั้น 2', 'งานค้าง / overdue', 'u1', 'u4', 'Pending', 'Assigned', iso(-1), 'FALSE', iso(-2), ''],
+    [8, 'p1', 'เขียนคู่มือผู้ใช้ Intranet', 'งานใหม่รอรับ', 'u1', 'u2', 'Pending', 'Assigned', iso(3), 'FALSE', iso(0, -1), ''],
+    [9, 'p4', 'อัปโหลดแบบฟอร์ม KPI', 'งาน HR — แผนกอื่นไม่เห็น', 'u5', 'u6', 'In Progress', 'Assigned', iso(4), 'FALSE', iso(-2), ''],
+    [10, 'p4', 'ตรวจสอบรายชื่อผู้ถูกประเมิน', 'รอตรวจหัวหน้า HR', 'u5', 'u6', 'Review', 'Assigned', iso(0), 'FALSE', iso(-1), ''],
+    [11, '', 'สรุปวันลาประจำเดือน', 'งาน Self ของ HR', 'u6', 'u6', 'Pending', 'Self', iso(6), 'TRUE', iso(-1), ''],
+    [12, 'p5', 'รวบรวมคำของบกอง IT', 'งาน Finance', 'u7', 'u8', 'In Progress', 'Assigned', iso(7), 'FALSE', iso(-3), ''],
+    [13, 'p5', 'ตรวจยอดงบประมาณคงเหลือ', 'เสร็จแล้ว', 'u7', 'u8', 'Completed', 'Assigned', iso(-1), 'FALSE', iso(-5), iso(-1)],
+    [14, '', 'ประชุมวางแผนงบ Q4', 'ปฏิทินสัปดาห์หน้า', 'u7', 'u7', 'Pending', 'Self', iso(8), 'FALSE', iso(-1), ''],
+    [15, 'p2', 'ติดป้ายอุปกรณ์ Rack', 'ปฏิทินวันนี้', 'u1', 'u3', 'Pending', 'Assigned', iso(0), 'FALSE', iso(-1), ''],
+    [16, 'p3', 'สำรวจ AP ชั้น 3', 'ปฏิทินอีก 10 วัน', 'u1', 'u2', 'Pending', 'Assigned', iso(10), 'FALSE', iso(-1), '']
+  ];
+  for (var ti = 0; ti < demoTasks.length; ti++) {
+    if (!sheetHasId_(TASKS_SHEET, demoTasks[ti][0])) {
+      writeRows_(getSheet_(TASKS_SHEET), getSheet_(TASKS_SHEET).getLastRow() + 1, [demoTasks[ti]]);
+      added.tasks++;
+    }
+  }
+
+  var demoLogs = [
+    ['l1', 4, iso(-4), 'u1', 'Created', 'มอบหมายงานให้ สมศักดิ์'],
+    ['l2', 4, iso(-2), 'u4', 'Status Changed', 'เปลี่ยนสถานะเป็น "รอตรวจ"'],
+    ['l3', 4, iso(0, -12), 'u1', 'Status Changed', 'ตีกลับให้แก้ไข - ขาดข้อมูลกราฟแนวโน้ม'],
+    ['l4', 5, iso(-1), 'u1', 'Created', 'มอบหมายงานให้ สมหญิง'],
+    ['l5', 5, iso(0, -2), 'u3', 'Status Changed', 'เปลี่ยนสถานะเป็น "รอตรวจ"'],
+    ['l6', 9, iso(-2), 'u5', 'Created', 'มอบหมายงานให้ มาลี'],
+    ['l7', 10, iso(0, -3), 'u6', 'Status Changed', 'ส่งตรวจหัวหน้า HR'],
+    ['l8', 12, iso(-3), 'u7', 'Created', 'มอบหมายงานให้ วิชัย']
+  ];
+  for (var li = 0; li < demoLogs.length; li++) {
+    if (!sheetHasId_(LOGS_SHEET, demoLogs[li][0])) {
+      writeRows_(getSheet_(LOGS_SHEET), getSheet_(LOGS_SHEET).getLastRow() + 1, [demoLogs[li]]);
+      added.logs++;
+    }
+  }
+
+  var demoComments = [
+    ['c1', 2, iso(0, -18), 'u1', 'ติดปัญหาตรงไหนเรื่อง API ทักมาได้เลยนะ'],
+    ['c2', 2, iso(0, -16), 'u2', 'ตอนนี้เชื่อม DB ได้แล้วครับ กำลังเขียนส่วน Auth'],
+    ['c3', 4, iso(0, -11), 'u1', '@สมศักดิ์ รบกวนแก้ด่วนนะ ผอ. จะใช้พรุ่งนี้'],
+    ['c4', 9, iso(-1), 'u5', 'ใช้เทมเพลตใหม่ในโฟลเดอร์แชร์ได้เลย'],
+    ['c5', 12, iso(-2), 'u8', 'รอตัวเลขจาก IT อีกชุดครับ']
+  ];
+  for (var ci = 0; ci < demoComments.length; ci++) {
+    if (!sheetHasId_(COMMENTS_SHEET, demoComments[ci][0])) {
+      writeRows_(getSheet_(COMMENTS_SHEET), getSheet_(COMMENTS_SHEET).getLastRow() + 1, [demoComments[ci]]);
+      added.comments++;
+    }
+  }
+
+  var demoStickies = [
+    ['sn1', 'u1', 'ประชุมทีม IT', 'เตรียมสไลด์รายงานประจำเดือน', 'yellow', '📌', 48, 56, 220, 200, 1, iso(-1), iso(-1)],
+    ['sn2', 'u2', 'ของตัวเอง', 'โน้ตส่วนตัวของสมชาย — คนอื่นไม่เห็น', 'mint', '✨', 80, 80, 220, 200, 1, iso(0, -1), iso(0, -1)],
+    ['sn3', 'admin', 'เช็คลิสต์แอดมิน', 'ดูสิทธิ์ตามแผนก · โหลด mock · ตั้ง username', 'lavender', '🛠', 120, 100, 240, 210, 2, iso(-1), iso(-1)],
+    ['sn4', 'u5', 'รอบประเมิน', 'ปิดรับแบบฟอร์มวันศุกร์', 'pink', '📋', 60, 70, 220, 190, 1, iso(-2), iso(-2)],
+    ['sn5', 'u7', 'งบ 69', 'นัดประชุมผอ. สัปดาห์หน้า', 'blue', '💰', 90, 90, 220, 190, 1, iso(-1), iso(-1)]
+  ];
+  for (var si = 0; si < demoStickies.length; si++) {
+    if (!sheetHasId_(STICKY_NOTES_SHEET, demoStickies[si][0])) {
+      writeRows_(getSheet_(STICKY_NOTES_SHEET), getSheet_(STICKY_NOTES_SHEET).getLastRow() + 1, [demoStickies[si]]);
+      added.stickies++;
+    }
+  }
+
+  return {
+    ok: true,
+    message: 'โหลดข้อมูลตัวอย่างครบทุกฟังก์ชันแล้ว (เพิ่มเฉพาะรายการที่ยังไม่มี)',
+    added: added
+  };
 }
 
 function ensureAdminUser_() {

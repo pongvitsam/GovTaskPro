@@ -1,75 +1,132 @@
 /** Local mock DB for Vite DEV only (stripped from production bundle) */
 
-const SEED = (() => {
+const SEED_VERSION = 3;
+
+function buildDemoSeed() {
   const NOW = Date.now();
   const HOUR = 3600000;
   const DAY = 86400000;
+  const d = (n) => new Date(NOW + DAY * n).toISOString().slice(0, 10);
+  const t = (n, h = 0) => new Date(NOW + DAY * n + HOUR * h).toISOString();
+  const user = (row) => ({
+    email: '',
+    notifyEmail: false,
+    notifyAssign: true,
+    notifyStatus: true,
+    notifyReview: row.role === 'Head' || row.role === 'Admin',
+    notifyLineDefault: true,
+    password: '1234',
+    active: true,
+    ...row,
+  });
+
   return {
+    _seedVersion: SEED_VERSION,
     users: [
-      { id: 'admin', name: 'ผู้ดูแลระบบ', role: 'Admin', department: 'SYSTEM', division: 'ผู้ดูแลระบบ', active: true, email: '', notifyEmail: false, notifyAssign: true, notifyStatus: true, notifyReview: true, notifyLineDefault: true, username: 'admin', password: '1234' },
-      { id: 'u1', name: 'คุณบอส (หัวหน้าแผนก IT)', role: 'Head', department: 'IT', division: 'กองเทคโนโลยี', active: true, email: '', notifyEmail: false, notifyAssign: true, notifyStatus: true, notifyReview: true, notifyLineDefault: true, username: 'boss', password: '1234' },
-      { id: 'u2', name: 'สมชาย (พนักงาน IT)', role: 'Staff', department: 'IT', division: 'กองเทคโนโลยี', active: true, email: '', notifyEmail: false, notifyAssign: true, notifyStatus: true, notifyReview: false, notifyLineDefault: true, username: 'somchai', password: '1234' },
-      { id: 'u3', name: 'สมหญิง (พนักงาน IT)', role: 'Staff', department: 'IT', division: 'กองเทคโนโลยี', active: true, email: '', notifyEmail: false, notifyAssign: true, notifyStatus: true, notifyReview: false, notifyLineDefault: true, username: 'somying', password: '1234' },
-      { id: 'u4', name: 'สมศักดิ์ (พนักงาน IT)', role: 'Staff', department: 'IT', division: 'กองเทคโนโลยี', active: true, email: '', notifyEmail: false, notifyAssign: true, notifyStatus: true, notifyReview: false, notifyLineDefault: true, username: 'somsak', password: '1234' },
+      user({ id: 'admin', name: 'ผู้ดูแลระบบ', role: 'Admin', department: 'SYSTEM', division: 'ผู้ดูแลระบบ', username: 'admin', email: 'admin@demo.local', notifyEmail: true }),
+      user({ id: 'u1', name: 'คุณบอส (หัวหน้า IT)', role: 'Head', department: 'IT', division: 'กองเทคโนโลยี', username: 'boss', email: 'boss@demo.local', notifyEmail: true }),
+      user({ id: 'u2', name: 'สมชาย (พนักงาน IT)', role: 'Staff', department: 'IT', division: 'กองเทคโนโลยี', username: 'somchai', email: 'somchai@demo.local', notifyEmail: true }),
+      user({ id: 'u3', name: 'สมหญิง (พนักงาน IT)', role: 'Staff', department: 'IT', division: 'กองเทคโนโลยี', username: 'somying' }),
+      user({ id: 'u4', name: 'สมศักดิ์ (พนักงาน IT)', role: 'Staff', department: 'IT', division: 'กองเทคโนโลยี', username: 'somsak' }),
+      user({ id: 'u5', name: 'คุณนภา (หัวหน้า HR)', role: 'Head', department: 'HR', division: 'กองบุคคล', username: 'hrhead', email: 'hr@demo.local', notifyEmail: true }),
+      user({ id: 'u6', name: 'มาลี (พนักงาน HR)', role: 'Staff', department: 'HR', division: 'กองบุคคล', username: 'mali' }),
+      user({ id: 'u7', name: 'คุณวิชัย (หัวหน้าการเงิน)', role: 'Head', department: 'Finance', division: 'กองงบประมาณ', username: 'finhead' }),
+      user({ id: 'u8', name: 'วิชัย (พนักงานการเงิน)', role: 'Staff', department: 'Finance', division: 'กองงบประมาณ', username: 'wichai' }),
+      user({ id: 'u9', name: 'บัญชีปิดใช้ (ตัวอย่าง)', role: 'Staff', department: 'IT', division: 'กองเทคโนโลยี', username: 'olduser', active: false }),
     ],
     projects: [
-      { id: 'p1', name: 'พัฒนาระบบ Intranet กอง', description: 'อัปเกรดระบบภายในให้รองรับการทำงานแบบใหม่ (Next-Gen)', createdBy: 'u1', startDate: new Date(NOW - DAY * 14).toISOString().slice(0, 10), endDate: new Date(NOW + DAY * 45).toISOString().slice(0, 10) },
-      { id: 'p2', name: 'กิจกรรม 5ส ประจำปี', description: 'จัดระเบียบอุปกรณ์และสายไฟ', createdBy: 'u1', startDate: new Date(NOW - DAY * 7).toISOString().slice(0, 10), endDate: new Date(NOW + DAY * 21).toISOString().slice(0, 10) },
-      { id: 'p3', name: 'แผนซ่อมบำรุงประจำไตรมาส (Q3)', description: 'ตรวจสอบอุปกรณ์ Network ทั่วตึก', createdBy: 'u1', startDate: new Date(NOW - DAY * 3).toISOString().slice(0, 10), endDate: new Date(NOW + DAY * 60).toISOString().slice(0, 10) },
+      { id: 'p1', name: 'พัฒนาระบบ Intranet กอง', description: 'อัปเกรดระบบภายใน (Next-Gen) — ดู Gantt / Milestone ได้', createdBy: 'u1', createdAt: t(-14), startDate: d(-14), endDate: d(45) },
+      { id: 'p2', name: 'กิจกรรม 5ส ประจำปี', description: 'จัดระเบียบอุปกรณ์และสายไฟ', createdBy: 'u1', createdAt: t(-7), startDate: d(-7), endDate: d(21) },
+      { id: 'p3', name: 'แผนซ่อมบำรุงประจำไตรมาส (Q3)', description: 'ตรวจสอบอุปกรณ์ Network ทั่วตึก', createdBy: 'u1', createdAt: t(-3), startDate: d(-3), endDate: d(60) },
+      { id: 'p4', name: 'ระบบประเมินผลประจำปี', description: 'โปรเจกต์แผนก HR — สิทธิ์แยกตามแผนก', createdBy: 'u5', createdAt: t(-10), startDate: d(-10), endDate: d(30) },
+      { id: 'p5', name: 'จัดทำงบประมาณปี 69', description: 'โปรเจกต์แผนก Finance', createdBy: 'u7', createdAt: t(-5), startDate: d(-5), endDate: d(40) },
     ],
     milestones: [
-      { id: 'm1', projectId: 'p1', title: 'เก็บความต้องการ & ออกแบบ', description: 'ประชุมผู้ใช้และออกแบบ UI/DB', plannedStart: new Date(NOW - DAY * 14).toISOString().slice(0, 10), plannedEnd: new Date(NOW - DAY * 7).toISOString().slice(0, 10), weight: 20, sortOrder: 1, completed: true, completedAt: new Date(NOW - DAY * 6).toISOString() },
-      { id: 'm2', projectId: 'p1', title: 'พัฒนา Backend / API', description: 'Auth และบริการหลัก', plannedStart: new Date(NOW - DAY * 7).toISOString().slice(0, 10), plannedEnd: new Date(NOW + DAY * 7).toISOString().slice(0, 10), weight: 30, sortOrder: 2, completed: false, completedAt: null },
-      { id: 'm3', projectId: 'p1', title: 'พัฒนา Frontend', description: 'หน้าจอ Intranet', plannedStart: new Date(NOW - DAY * 3).toISOString().slice(0, 10), plannedEnd: new Date(NOW + DAY * 21).toISOString().slice(0, 10), weight: 25, sortOrder: 3, completed: false, completedAt: null },
-      { id: 'm4', projectId: 'p1', title: 'ทดสอบระบบ & อบรม', description: 'UAT และคู่มือ', plannedStart: new Date(NOW + DAY * 21).toISOString().slice(0, 10), plannedEnd: new Date(NOW + DAY * 35).toISOString().slice(0, 10), weight: 15, sortOrder: 4, completed: false, completedAt: null },
-      { id: 'm5', projectId: 'p1', title: 'ขึ้นระบบจริง (Go-live)', description: 'Deploy และส่งมอบ', plannedStart: new Date(NOW + DAY * 35).toISOString().slice(0, 10), plannedEnd: new Date(NOW + DAY * 45).toISOString().slice(0, 10), weight: 10, sortOrder: 5, completed: false, completedAt: null },
-      { id: 'm6', projectId: 'p2', title: 'สำรวจพื้นที่ & วางแผน', description: 'ตรวจตู้ Rack / สายไฟ', plannedStart: new Date(NOW - DAY * 7).toISOString().slice(0, 10), plannedEnd: new Date(NOW - DAY * 3).toISOString().slice(0, 10), weight: 30, sortOrder: 1, completed: true, completedAt: new Date(NOW - DAY * 2).toISOString() },
-      { id: 'm7', projectId: 'p2', title: 'ดำเนินการ 5ส', description: 'จัดระเบียบและติดป้าย', plannedStart: new Date(NOW - DAY * 2).toISOString().slice(0, 10), plannedEnd: new Date(NOW + DAY * 10).toISOString().slice(0, 10), weight: 50, sortOrder: 2, completed: false, completedAt: null },
-      { id: 'm8', projectId: 'p2', title: 'ตรวจรับ & สรุปผล', description: 'รายงานผลกิจกรรม', plannedStart: new Date(NOW + DAY * 10).toISOString().slice(0, 10), plannedEnd: new Date(NOW + DAY * 21).toISOString().slice(0, 10), weight: 20, sortOrder: 3, completed: false, completedAt: null },
-      { id: 'm9', projectId: 'p3', title: 'สำรวจอุปกรณ์ Network', description: 'Inventory ชั้น 1-3', plannedStart: new Date(NOW - DAY * 3).toISOString().slice(0, 10), plannedEnd: new Date(NOW + DAY * 14).toISOString().slice(0, 10), weight: 40, sortOrder: 1, completed: false, completedAt: null },
-      { id: 'm10', projectId: 'p3', title: 'ซ่อมบำรุง / เปลี่ยนอะไหล่', description: 'UPS สายแลน AP', plannedStart: new Date(NOW + DAY * 14).toISOString().slice(0, 10), plannedEnd: new Date(NOW + DAY * 40).toISOString().slice(0, 10), weight: 40, sortOrder: 2, completed: false, completedAt: null },
-      { id: 'm11', projectId: 'p3', title: 'ทดสอบ & ปิดงานไตรมาส', description: 'รายงาน Q3', plannedStart: new Date(NOW + DAY * 40).toISOString().slice(0, 10), plannedEnd: new Date(NOW + DAY * 60).toISOString().slice(0, 10), weight: 20, sortOrder: 3, completed: false, completedAt: null },
+      { id: 'm1', projectId: 'p1', title: 'เก็บความต้องการ & ออกแบบ', description: 'ประชุมผู้ใช้และออกแบบ UI/DB', plannedStart: d(-14), plannedEnd: d(-7), weight: 20, sortOrder: 1, completed: true, completedAt: t(-6) },
+      { id: 'm2', projectId: 'p1', title: 'พัฒนา Backend / API', description: 'Auth และบริการหลัก', plannedStart: d(-7), plannedEnd: d(7), weight: 30, sortOrder: 2, completed: false, completedAt: null },
+      { id: 'm3', projectId: 'p1', title: 'พัฒนา Frontend', description: 'หน้าจอ Intranet', plannedStart: d(-3), plannedEnd: d(21), weight: 25, sortOrder: 3, completed: false, completedAt: null },
+      { id: 'm4', projectId: 'p1', title: 'ทดสอบระบบ & อบรม', description: 'UAT และคู่มือ', plannedStart: d(21), plannedEnd: d(35), weight: 15, sortOrder: 4, completed: false, completedAt: null },
+      { id: 'm5', projectId: 'p1', title: 'ขึ้นระบบจริง (Go-live)', description: 'Deploy และส่งมอบ', plannedStart: d(35), plannedEnd: d(45), weight: 10, sortOrder: 5, completed: false, completedAt: null },
+      { id: 'm6', projectId: 'p2', title: 'สำรวจพื้นที่ & วางแผน', description: 'ตรวจตู้ Rack / สายไฟ', plannedStart: d(-7), plannedEnd: d(-3), weight: 30, sortOrder: 1, completed: true, completedAt: t(-2) },
+      { id: 'm7', projectId: 'p2', title: 'ดำเนินการ 5ส', description: 'จัดระเบียบและติดป้าย', plannedStart: d(-2), plannedEnd: d(10), weight: 50, sortOrder: 2, completed: false, completedAt: null },
+      { id: 'm8', projectId: 'p2', title: 'ตรวจรับ & สรุปผล', description: 'รายงานผลกิจกรรม', plannedStart: d(10), plannedEnd: d(21), weight: 20, sortOrder: 3, completed: false, completedAt: null },
+      { id: 'm9', projectId: 'p3', title: 'สำรวจอุปกรณ์ Network', description: 'Inventory ชั้น 1-3', plannedStart: d(-3), plannedEnd: d(14), weight: 40, sortOrder: 1, completed: false, completedAt: null },
+      { id: 'm10', projectId: 'p3', title: 'ซ่อมบำรุง / เปลี่ยนอะไหล่', description: 'UPS สายแลน AP', plannedStart: d(14), plannedEnd: d(40), weight: 40, sortOrder: 2, completed: false, completedAt: null },
+      { id: 'm11', projectId: 'p3', title: 'ทดสอบ & ปิดงานไตรมาส', description: 'รายงาน Q3', plannedStart: d(40), plannedEnd: d(60), weight: 20, sortOrder: 3, completed: false, completedAt: null },
+      { id: 'm12', projectId: 'p4', title: 'ออกแบบแบบฟอร์มประเมิน', description: 'KPI รายบุคคล', plannedStart: d(-10), plannedEnd: d(-2), weight: 40, sortOrder: 1, completed: true, completedAt: t(-2) },
+      { id: 'm13', projectId: 'p4', title: 'ทดลองใช้งาน & อบรม', description: 'อบรมหัวหน้าแผนก', plannedStart: d(-1), plannedEnd: d(14), weight: 40, sortOrder: 2, completed: false, completedAt: null },
+      { id: 'm14', projectId: 'p4', title: 'ปิดรอบประเมิน', description: 'สรุปคะแนน', plannedStart: d(14), plannedEnd: d(30), weight: 20, sortOrder: 3, completed: false, completedAt: null },
+      { id: 'm15', projectId: 'p5', title: 'รวบรวมคำของบ', description: 'จากทุกกอง', plannedStart: d(-5), plannedEnd: d(7), weight: 50, sortOrder: 1, completed: false, completedAt: null },
+      { id: 'm16', projectId: 'p5', title: 'ปรับยอด & อนุมัติ', description: 'เสนอ ผอ.', plannedStart: d(7), plannedEnd: d(40), weight: 50, sortOrder: 2, completed: false, completedAt: null },
     ],
     tasks: [
-      { id: 1, projectId: 'p1', title: 'ออกแบบหน้า Login ใหม่', description: 'ใช้โทนสีองค์กร', createdBy: 'u1', assignedTo: 'u2', status: 'Completed', type: 'Assigned', dueDate: new Date(NOW - DAY * 2).toISOString(), isRecurring: false, createdAt: new Date(NOW - DAY * 7).toISOString(), completedAt: new Date(NOW - DAY * 2).toISOString() },
-      { id: 2, projectId: 'p1', title: 'พัฒนาระบบ Backend (API)', description: 'สร้าง API สำหรับ Login Auth', createdBy: 'u1', assignedTo: 'u2', status: 'In Progress', type: 'Assigned', dueDate: new Date(NOW + DAY * 5).toISOString(), isRecurring: false, createdAt: new Date(NOW - DAY).toISOString() },
-      { id: 3, projectId: 'p1', title: 'เตรียม Database Server', description: 'สร้างตารางข้อมูล', createdBy: 'u1', assignedTo: 'u3', status: 'Completed', type: 'Assigned', dueDate: new Date(NOW - DAY * 3).toISOString(), isRecurring: false, createdAt: new Date(NOW - DAY * 7).toISOString(), completedAt: new Date(NOW - DAY * 3).toISOString() },
-      { id: 4, projectId: null, title: 'รายงานผลการประเมินความเสี่ยง IT (ตีกลับ)', description: 'ผอ. ตีกลับให้เพิ่มข้อมูลกราฟ (เจ้าของงานคือสมศักดิ์ แต่ตอนนี้ลา)', createdBy: 'u1', assignedTo: 'u4', status: 'In Progress', type: 'Assigned', dueDate: new Date(NOW + DAY * 1).toISOString(), isRecurring: false, createdAt: new Date(NOW - DAY * 4).toISOString() },
-      { id: 5, projectId: 'p2', title: 'ทำความสะอาดตู้ Rack', description: 'เป่าฝุ่นและเช็คพัดลม', createdBy: 'u1', assignedTo: 'u3', status: 'Review', type: 'Assigned', dueDate: new Date(NOW).toISOString(), isRecurring: false, createdAt: new Date(NOW - DAY * 1).toISOString() },
-      { id: 6, projectId: null, title: 'สรุปรายงาน Helpdesk', description: 'ส่งหัวหน้ากอง', createdBy: 'u2', assignedTo: 'u2', status: 'In Progress', type: 'Self', dueDate: new Date(NOW + DAY * 2).toISOString(), isRecurring: true, createdAt: new Date(NOW - HOUR * 2).toISOString() },
-      { id: 7, projectId: 'p3', title: 'เปลี่ยนแบตเตอรี่ UPS ชั้น 2', description: 'เปลี่ยนแบต 3 ตัว', createdBy: 'u1', assignedTo: 'u4', status: 'Pending', type: 'Assigned', dueDate: new Date(NOW - DAY * 1).toISOString(), isRecurring: false, createdAt: new Date(NOW - DAY * 2).toISOString() },
+      { id: 1, projectId: 'p1', title: 'ออกแบบหน้า Login ใหม่', description: 'ใช้โทนสีองค์กร — สถานะเสร็จสิ้น', createdBy: 'u1', assignedTo: 'u2', status: 'Completed', type: 'Assigned', dueDate: t(-2), isRecurring: false, createdAt: t(-7), completedAt: t(-2) },
+      { id: 2, projectId: 'p1', title: 'พัฒนาระบบ Backend (API)', description: 'กำลังทำ + มีคอมเมนต์', createdBy: 'u1', assignedTo: 'u2', status: 'In Progress', type: 'Assigned', dueDate: t(5), isRecurring: false, createdAt: t(-1) },
+      { id: 3, projectId: 'p1', title: 'เตรียม Database Server', description: 'สร้างตารางข้อมูล', createdBy: 'u1', assignedTo: 'u3', status: 'Completed', type: 'Assigned', dueDate: t(-3), isRecurring: false, createdAt: t(-7), completedAt: t(-3) },
+      { id: 4, projectId: null, title: 'รายงานประเมินความเสี่ยง IT (ตีกลับ)', description: 'ตัวอย่างส่งต่อ/ตีกลับ + ประวัติงาน', createdBy: 'u1', assignedTo: 'u4', status: 'In Progress', type: 'Assigned', dueDate: t(1), isRecurring: false, createdAt: t(-4) },
+      { id: 5, projectId: 'p2', title: 'ทำความสะอาดตู้ Rack', description: 'รอตรวจโดยหัวหน้า', createdBy: 'u1', assignedTo: 'u3', status: 'Review', type: 'Assigned', dueDate: t(0), isRecurring: false, createdAt: t(-1) },
+      { id: 6, projectId: null, title: 'สรุปรายงาน Helpdesk (รายสัปดาห์)', description: 'งาน Self + ทำซ้ำ', createdBy: 'u2', assignedTo: 'u2', status: 'In Progress', type: 'Self', dueDate: t(2), isRecurring: true, createdAt: t(0, -2) },
+      { id: 7, projectId: 'p3', title: 'เปลี่ยนแบตเตอรี่ UPS ชั้น 2', description: 'งานค้าง / overdue', createdBy: 'u1', assignedTo: 'u4', status: 'Pending', type: 'Assigned', dueDate: t(-1), isRecurring: false, createdAt: t(-2) },
+      { id: 8, projectId: 'p1', title: 'เขียนคู่มือผู้ใช้ Intranet', description: 'งานใหม่รอรับ', createdBy: 'u1', assignedTo: 'u2', status: 'Pending', type: 'Assigned', dueDate: t(3), isRecurring: false, createdAt: t(0, -1) },
+      { id: 9, projectId: 'p4', title: 'อัปโหลดแบบฟอร์ม KPI', description: 'งาน HR — แผนกอื่นไม่เห็น', createdBy: 'u5', assignedTo: 'u6', status: 'In Progress', type: 'Assigned', dueDate: t(4), isRecurring: false, createdAt: t(-2) },
+      { id: 10, projectId: 'p4', title: 'ตรวจสอบรายชื่อผู้ถูกประเมิน', description: 'รอตรวจหัวหน้า HR', createdBy: 'u5', assignedTo: 'u6', status: 'Review', type: 'Assigned', dueDate: t(0), isRecurring: false, createdAt: t(-1) },
+      { id: 11, projectId: null, title: 'สรุปวันลาประจำเดือน', description: 'งาน Self ของ HR', createdBy: 'u6', assignedTo: 'u6', status: 'Pending', type: 'Self', dueDate: t(6), isRecurring: true, createdAt: t(-1) },
+      { id: 12, projectId: 'p5', title: 'รวบรวมคำของบกอง IT', description: 'งาน Finance', createdBy: 'u7', assignedTo: 'u8', status: 'In Progress', type: 'Assigned', dueDate: t(7), isRecurring: false, createdAt: t(-3) },
+      { id: 13, projectId: 'p5', title: 'ตรวจยอดงบประมาณคงเหลือ', description: 'เสร็จแล้ว', createdBy: 'u7', assignedTo: 'u8', status: 'Completed', type: 'Assigned', dueDate: t(-1), isRecurring: false, createdAt: t(-5), completedAt: t(-1) },
+      { id: 14, projectId: null, title: 'ประชุมวางแผนงบ Q4', description: 'ปฏิทินสัปดาห์หน้า', createdBy: 'u7', assignedTo: 'u7', status: 'Pending', type: 'Self', dueDate: t(8), isRecurring: false, createdAt: t(-1) },
+      { id: 15, projectId: 'p2', title: 'ติดป้ายอุปกรณ์ Rack', description: 'ปฏิทินวันนี้', createdBy: 'u1', assignedTo: 'u3', status: 'Pending', type: 'Assigned', dueDate: t(0), isRecurring: false, createdAt: t(-1) },
+      { id: 16, projectId: 'p3', title: 'สำรวจ AP ชั้น 3', description: 'ปฏิทินอีก 10 วัน', createdBy: 'u1', assignedTo: 'u2', status: 'Pending', type: 'Assigned', dueDate: t(10), isRecurring: false, createdAt: t(-1) },
     ],
     taskLogs: [
-      { id: 'l1', taskId: 4, timestamp: new Date(NOW - DAY * 4).toISOString(), actionBy: 'u1', actionType: 'Created', detail: 'มอบหมายงานให้ สมศักดิ์' },
-      { id: 'l2', taskId: 4, timestamp: new Date(NOW - DAY * 2).toISOString(), actionBy: 'u4', actionType: 'Status Changed', detail: 'เปลี่ยนสถานะเป็น "รอตรวจ"' },
-      { id: 'l3', taskId: 4, timestamp: new Date(NOW - HOUR * 12).toISOString(), actionBy: 'u1', actionType: 'Status Changed', detail: 'ตีกลับให้แก้ไข - ขาดข้อมูลกราฟแนวโน้ม' },
-      { id: 'l4', taskId: 5, timestamp: new Date(NOW - DAY * 1).toISOString(), actionBy: 'u1', actionType: 'Created', detail: 'มอบหมายงานให้ สมหญิง' },
-      { id: 'l5', taskId: 5, timestamp: new Date(NOW - HOUR * 2).toISOString(), actionBy: 'u3', actionType: 'Status Changed', detail: 'เปลี่ยนสถานะเป็น "รอตรวจ"' },
+      { id: 'l1', taskId: 4, timestamp: t(-4), actionBy: 'u1', actionType: 'Created', detail: 'มอบหมายงานให้ สมศักดิ์' },
+      { id: 'l2', taskId: 4, timestamp: t(-2), actionBy: 'u4', actionType: 'Status Changed', detail: 'เปลี่ยนสถานะเป็น "รอตรวจ"' },
+      { id: 'l3', taskId: 4, timestamp: t(0, -12), actionBy: 'u1', actionType: 'Status Changed', detail: 'ตีกลับให้แก้ไข - ขาดข้อมูลกราฟแนวโน้ม' },
+      { id: 'l4', taskId: 5, timestamp: t(-1), actionBy: 'u1', actionType: 'Created', detail: 'มอบหมายงานให้ สมหญิง' },
+      { id: 'l5', taskId: 5, timestamp: t(0, -2), actionBy: 'u3', actionType: 'Status Changed', detail: 'เปลี่ยนสถานะเป็น "รอตรวจ"' },
+      { id: 'l6', taskId: 9, timestamp: t(-2), actionBy: 'u5', actionType: 'Created', detail: 'มอบหมายงานให้ มาลี' },
+      { id: 'l7', taskId: 10, timestamp: t(0, -3), actionBy: 'u6', actionType: 'Status Changed', detail: 'ส่งตรวจหัวหน้า HR' },
+      { id: 'l8', taskId: 12, timestamp: t(-3), actionBy: 'u7', actionType: 'Created', detail: 'มอบหมายงานให้ วิชัย' },
     ],
     comments: [
-      { id: 'c1', taskId: 2, timestamp: new Date(NOW - HOUR * 18).toISOString(), authorId: 'u1', text: 'ติดปัญหาตรงไหนเรื่อง API ทักมาได้เลยนะ' },
-      { id: 'c2', taskId: 2, timestamp: new Date(NOW - HOUR * 16).toISOString(), authorId: 'u2', text: 'ตอนนี้เชื่อม DB ได้แล้วครับ กำลังเขียนส่วน Auth' },
-      { id: 'c3', taskId: 4, timestamp: new Date(NOW - HOUR * 11).toISOString(), authorId: 'u1', text: '@สมศักดิ์ รบกวนแก้ด่วนนะ ผอ. จะใช้พรุ่งนี้' },
+      { id: 'c1', taskId: 2, timestamp: t(0, -18), authorId: 'u1', text: 'ติดปัญหาตรงไหนเรื่อง API ทักมาได้เลยนะ' },
+      { id: 'c2', taskId: 2, timestamp: t(0, -16), authorId: 'u2', text: 'ตอนนี้เชื่อม DB ได้แล้วครับ กำลังเขียนส่วน Auth' },
+      { id: 'c3', taskId: 4, timestamp: t(0, -11), authorId: 'u1', text: '@สมศักดิ์ รบกวนแก้ด่วนนะ ผอ. จะใช้พรุ่งนี้' },
+      { id: 'c4', taskId: 9, timestamp: t(-1), authorId: 'u5', text: 'ใช้เทมเพลตใหม่ในโฟลเดอร์แชร์ได้เลย' },
+      { id: 'c5', taskId: 12, timestamp: t(-2), authorId: 'u8', text: 'รอตัวเลขจาก IT อีกชุดครับ' },
     ],
     stickyNotes: [
-      { id: 'sn1', userId: 'u1', title: 'ประชุมทีม', body: 'เตรียมสไลด์รายงานประจำเดือน', color: 'yellow', emoji: '📌', x: 48, y: 56, width: 220, height: 200, zIndex: 1, createdAt: new Date(NOW - DAY).toISOString(), updatedAt: new Date(NOW - DAY).toISOString() },
-      { id: 'sn2', userId: 'u2', title: 'ของตัวเอง', body: 'โน้ตส่วนตัวของสมชาย — คนอื่นไม่เห็น', color: 'mint', emoji: '✨', x: 80, y: 80, width: 220, height: 200, zIndex: 1, createdAt: new Date(NOW - HOUR).toISOString(), updatedAt: new Date(NOW - HOUR).toISOString() },
+      { id: 'sn1', userId: 'u1', title: 'ประชุมทีม IT', body: 'เตรียมสไลด์รายงานประจำเดือน', color: 'yellow', emoji: '📌', x: 48, y: 56, width: 220, height: 200, zIndex: 1, createdAt: t(-1), updatedAt: t(-1) },
+      { id: 'sn2', userId: 'u2', title: 'ของตัวเอง', body: 'โน้ตส่วนตัวของสมชาย — คนอื่นไม่เห็น', color: 'mint', emoji: '✨', x: 80, y: 80, width: 220, height: 200, zIndex: 1, createdAt: t(0, -1), updatedAt: t(0, -1) },
+      { id: 'sn3', userId: 'admin', title: 'เช็คลิสต์แอดมิน', body: 'ดูสิทธิ์ตามแผนก · โหลด mock · ตั้ง username', color: 'lavender', emoji: '🛠', x: 120, y: 100, width: 240, height: 210, zIndex: 2, createdAt: t(-1), updatedAt: t(-1) },
+      { id: 'sn4', userId: 'u5', title: 'รอบประเมิน', body: 'ปิดรับแบบฟอร์มวันศุกร์', color: 'pink', emoji: '📋', x: 60, y: 70, width: 220, height: 190, zIndex: 1, createdAt: t(-2), updatedAt: t(-2) },
+      { id: 'sn5', userId: 'u7', title: 'งบ 69', body: 'นัดประชุมผอ. สัปดาห์หน้า', color: 'blue', emoji: '💰', x: 90, y: 90, width: 220, height: 190, zIndex: 1, createdAt: t(-1), updatedAt: t(-1) },
     ],
     orgUnits: [
       { id: 'org_d1', type: 'department', name: 'IT', parent: '', active: true, code: 'IT' },
       { id: 'org_d2', type: 'department', name: 'SYSTEM', parent: '', active: true, code: 'SYSTEM' },
+      { id: 'org_d3', type: 'department', name: 'HR', parent: '', active: true, code: 'HR' },
+      { id: 'org_d4', type: 'department', name: 'Finance', parent: '', active: true, code: 'FIN' },
       { id: 'org_v1', type: 'division', name: 'กองเทคโนโลยี', parent: 'IT', active: true, code: '' },
       { id: 'org_v2', type: 'division', name: 'ผู้ดูแลระบบ', parent: 'SYSTEM', active: true, code: '' },
+      { id: 'org_v3', type: 'division', name: 'กองบุคคล', parent: 'HR', active: true, code: '' },
+      { id: 'org_v4', type: 'division', name: 'กองงบประมาณ', parent: 'Finance', active: true, code: '' },
     ],
   };
-})();
+}
+
+const SEED = buildDemoSeed();
 
 let localDb = null;
 
 function getLocalDb() {
-  if (!localDb) {
+  if (!localDb || localDb._seedVersion !== SEED_VERSION) {
     localDb = JSON.parse(JSON.stringify(SEED));
   }
+  return localDb;
+}
+
+export function resetLocalDemo() {
+  localDb = JSON.parse(JSON.stringify(buildDemoSeed()));
   return localDb;
 }
 
@@ -333,6 +390,16 @@ const localHandlers = {
     if (idx < 0) throw new Error('ไม่พบรายการ');
     db.orgUnits[idx] = { ...db.orgUnits[idx], active: false };
     return { ok: true, id: payload.id };
+  },
+  adminSeedDemoData(payload) {
+    const db = getLocalDb();
+    requireAdmin(db, payload.adminId);
+    resetLocalDemo();
+    return {
+      ok: true,
+      message: 'รีเซ็ตข้อมูลตัวอย่างครบทุกฟังก์ชันแล้ว',
+      bootstrap: localHandlers.getBootstrap(),
+    };
   },
   createProject(payload) {
     const db = getLocalDb();

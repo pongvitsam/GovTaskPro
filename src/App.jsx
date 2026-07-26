@@ -443,6 +443,25 @@ export default function App() {
     }
   };
 
+  const handleAdminSeedDemo = async () => {
+    if (busy || !currentUser) return null;
+    setBusy(true);
+    try {
+      const result = await api('adminSeedDemoData', { adminId: currentUser.id });
+      const data = await api('getBootstrap', { force: true });
+      if (data && Array.isArray(data.users)) {
+        applyBootstrap(data, { restoreSession: false });
+      }
+      showToast('✅ ' + (result?.message || 'โหลดข้อมูลตัวอย่างแล้ว'));
+      return result;
+    } catch (err) {
+      showToast('❌ ' + (err?.message || String(err)));
+      return null;
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const myNotifications = useMemo(() => visibleTasks.filter(
     (t) => (t.assignedTo === currentUser?.id && t.status === 'Pending') || (isManager && t.status === 'Review')
   ).length, [visibleTasks, currentUser?.id, isManager]);
@@ -1237,6 +1256,7 @@ export default function App() {
             onToggleActive={handleAdminToggleActive}
             onCreateOrg={handleAdminCreateOrg}
             onDeleteOrg={handleAdminDeleteOrg}
+            onSeedDemo={handleAdminSeedDemo}
             showToast={showToast}
           />
         )}
