@@ -97,6 +97,7 @@ export default function App() {
   const [stickyReminderNotes, setStickyReminderNotes] = useState([]);
   const [stickyNotesSnapshot, setStickyNotesSnapshot] = useState(null);
   const [bellOpen, setBellOpen] = useState(false);
+  const [bellAnchor, setBellAnchor] = useState(null);
   const [seenBellKeys, setSeenBellKeys] = useState(() => {
     try {
       const raw = sessionStorage.getItem('gtp_bell_seen');
@@ -108,7 +109,9 @@ export default function App() {
   });
   const softRefreshingRef = useRef(false);
   const lastSyncAtRef = useRef(0);
-  const bellRef = useRef(null);
+  const desktopBellRef = useRef(null);
+  const mobileBellRef = useRef(null);
+  const bellPanelRef = useRef(null);
 
   const showToast = (msg, duration = 3000) => {
     setToastMsg(msg);
@@ -686,8 +689,25 @@ export default function App() {
     });
   };
 
-  const openBellPanel = () => {
-    setBellOpen((v) => !v);
+  const toggleBellPanel = (wrapRef) => {
+    setBellOpen((wasOpen) => {
+      if (wasOpen) return false;
+      const btn = wrapRef.current?.querySelector('button');
+      if (btn) {
+        const r = btn.getBoundingClientRect();
+        const panelW = Math.min(320, window.innerWidth - 16);
+        let left = r.right - panelW;
+        left = Math.max(8, Math.min(left, window.innerWidth - panelW - 8));
+        setBellAnchor({
+          top: r.bottom + 8,
+          left,
+          width: panelW,
+        });
+      } else {
+        setBellAnchor({ top: 56, left: 8, width: Math.min(320, window.innerWidth - 16) });
+      }
+      return true;
+    });
   };
 
   const closeBellAndMarkSeen = () => {
@@ -720,10 +740,11 @@ export default function App() {
   useEffect(() => {
     if (!bellOpen) return undefined;
     const onDoc = (e) => {
-      if (!bellRef.current?.contains(e.target)) {
-        markBellSeen();
-        setBellOpen(false);
-      }
+      if (desktopBellRef.current?.contains(e.target)) return;
+      if (mobileBellRef.current?.contains(e.target)) return;
+      if (bellPanelRef.current?.contains(e.target)) return;
+      markBellSeen();
+      setBellOpen(false);
     };
     document.addEventListener('mousedown', onDoc);
     return () => document.removeEventListener('mousedown', onDoc);
@@ -1100,6 +1121,63 @@ export default function App() {
         </div>
       )}
 
+      {bellOpen && bellAnchor && (
+        <div
+          ref={bellPanelRef}
+          className="fixed z-[100] rounded-2xl border border-slate-200 bg-white shadow-2xl overflow-hidden gtp-fade-in"
+          style={{ top: bellAnchor.top, left: bellAnchor.left, width: bellAnchor.width }}
+        >
+          <div className="px-4 py-3 bg-slate-50 border-b border-slate-200 flex items-center justify-between gap-2">
+            <div className="min-w-0">
+              <p className="text-sm font-extrabold text-slate-800">แจ้งเตือน</p>
+              <p className="text-[11px] text-slate-500 font-medium truncate">{unreadBellItems.length} รายการที่ยังไม่ได้อ่าน</p>
+            </div>
+            <button
+              type="button"
+              className="text-[11px] font-bold text-teal-700 hover:bg-teal-50 px-2 py-1 rounded-lg shrink-0"
+              onClick={closeBellAndMarkSeen}
+            >
+              อ่านแล้ว
+            </button>
+          </div>
+          <div className="max-h-[min(20rem,50vh)] overflow-y-auto divide-y divide-slate-100">
+            {unreadBellItems.length === 0 ? (
+              <p className="p-6 text-center text-sm font-bold text-slate-400">ไม่มีแจ้งเตือนใหม่</p>
+            ) : unreadBellItems.map((item) => (
+              <button
+                key={item.key}
+                type="button"
+                className="w-full text-left px-4 py-3 hover:bg-slate-50 transition-colors"
+                onClick={() => {
+                  markBellSeen([item.key]);
+                  if (item.kind === 'task') {
+                    const task = tasks.find((t) => String(t.id) === String(item.taskId));
+                    if (task) {
+                      setSelectedTask(task);
+                      setTaskModalTab('details');
+                      setCurrentModule('board');
+                    }
+                  } else {
+                    setCurrentModule('sticky');
+                  }
+                  setBellOpen(false);
+                }}
+              >
+                <p className="text-sm font-extrabold text-slate-800 line-clamp-2">{item.title}</p>
+                <p className="text-xs text-slate-500 font-medium mt-0.5 line-clamp-2">{item.message}</p>
+                <span className={`inline-block mt-1.5 text-[10px] font-black px-2 py-0.5 rounded-full ${
+                  item.tone === 'amber' ? 'bg-amber-100 text-amber-800'
+                    : item.tone === 'violet' ? 'bg-violet-100 text-violet-800'
+                      : 'bg-rose-100 text-rose-800'
+                }`}>
+                  {item.kind === 'task' ? 'งาน' : 'เตือนความจำ'}
+                </span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
       <nav className="gtp-nav hidden md:flex w-64 flex-shrink-0 flex-col z-20 rounded-[1.75rem] overflow-hidden">
         <div className="p-5 border-b border-white/10 flex justify-between items-center">
           <div className="flex items-center space-x-3">
@@ -1115,68 +1193,16 @@ export default function App() {
             <button type="button" title="ซิงก์ข้อมูล" className="p-2 rounded-xl hover:bg-white/10 transition-colors" onClick={() => softRefresh({ silent: false })}>
               <RefreshCw className={`w-5 h-5 text-teal-100/80 ${syncing ? 'animate-spin' : ''}`} />
             </button>
-            <div className="relative" ref={bellRef}>
+            <div className="relative" ref={desktopBellRef}>
               <button
                 type="button"
                 className="p-2 rounded-xl hover:bg-white/10 transition-colors"
                 aria-label="แจ้งเตือน"
-                onClick={openBellPanel}
+                onClick={() => toggleBellPanel(desktopBellRef)}
               >
                 <Bell className="w-5 h-5 text-teal-100/80" />
               </button>
               {totalBellNotifications > 0 && <span className="absolute top-1 right-1 bg-rose-400 w-2.5 h-2.5 rounded-full ring-2 ring-[#163542] gtp-soft-pulse" />}
-              {bellOpen && (
-                <div className="absolute right-0 top-11 z-50 w-80 max-w-[85vw] rounded-2xl border border-slate-200 bg-white shadow-2xl overflow-hidden">
-                  <div className="px-4 py-3 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
-                    <div>
-                      <p className="text-sm font-extrabold text-slate-800">แจ้งเตือน</p>
-                      <p className="text-[11px] text-slate-500 font-medium">{unreadBellItems.length} รายการที่ยังไม่ได้อ่าน</p>
-                    </div>
-                    <button
-                      type="button"
-                      className="text-[11px] font-bold text-teal-700 hover:bg-teal-50 px-2 py-1 rounded-lg"
-                      onClick={closeBellAndMarkSeen}
-                    >
-                      อ่านแล้ว
-                    </button>
-                  </div>
-                  <div className="max-h-80 overflow-y-auto divide-y divide-slate-100">
-                    {unreadBellItems.length === 0 ? (
-                      <p className="p-6 text-center text-sm font-bold text-slate-400">ไม่มีแจ้งเตือนใหม่</p>
-                    ) : unreadBellItems.map((item) => (
-                      <button
-                        key={item.key}
-                        type="button"
-                        className="w-full text-left px-4 py-3 hover:bg-slate-50 transition-colors"
-                        onClick={() => {
-                          markBellSeen([item.key]);
-                          if (item.kind === 'task') {
-                            const task = tasks.find((t) => String(t.id) === String(item.taskId));
-                            if (task) {
-                              setSelectedTask(task);
-                              setTaskModalTab('details');
-                              setCurrentModule('board');
-                            }
-                          } else {
-                            setCurrentModule('sticky');
-                          }
-                          setBellOpen(false);
-                        }}
-                      >
-                        <p className="text-sm font-extrabold text-slate-800 line-clamp-1">{item.title}</p>
-                        <p className="text-xs text-slate-500 font-medium mt-0.5 line-clamp-2">{item.message}</p>
-                        <span className={`inline-block mt-1.5 text-[10px] font-black px-2 py-0.5 rounded-full ${
-                          item.tone === 'amber' ? 'bg-amber-100 text-amber-800'
-                            : item.tone === 'violet' ? 'bg-violet-100 text-violet-800'
-                              : 'bg-rose-100 text-rose-800'
-                        }`}>
-                          {item.kind === 'task' ? 'งาน' : 'เตือนความจำ'}
-                        </span>
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
             </div>
           </div>
         </div>
@@ -1258,34 +1284,17 @@ export default function App() {
           <button type="button" className="p-2.5 rounded-xl hover:bg-white/10" onClick={() => softRefresh({ silent: false })} aria-label="ซิงก์">
             <RefreshCw className={`w-5 h-5 text-teal-100 ${syncing ? 'animate-spin' : ''}`} />
           </button>
-          <button
-            type="button"
-            className="p-2.5 rounded-xl hover:bg-white/10 relative"
-            aria-label="แจ้งเตือน"
-            onClick={() => {
-              if (unreadBellItems.length === 0) {
-                showToast('🔔 ไม่มีแจ้งเตือนใหม่');
-                return;
-              }
-              // Mobile: show first unread messages then clear badge
-              const preview = unreadBellItems.slice(0, 3).map((x) => `• ${x.title}`).join('\n');
-              showToast(`🔔 ${unreadBellItems.length} รายการ\n${preview}`, 4500);
-              markBellSeen();
-              const first = unreadBellItems[0];
-              if (first?.kind === 'sticky') setCurrentModule('sticky');
-              else if (first?.kind === 'task') {
-                const task = tasks.find((t) => String(t.id) === String(first.taskId));
-                if (task) {
-                  setSelectedTask(task);
-                  setTaskModalTab('details');
-                  setCurrentModule('board');
-                }
-              }
-            }}
-          >
-            <Bell className="w-5 h-5 text-teal-100" />
-            {totalBellNotifications > 0 && <span className="absolute top-1.5 right-1.5 bg-rose-400 w-2 h-2 rounded-full" />}
-          </button>
+          <div className="relative" ref={mobileBellRef}>
+            <button
+              type="button"
+              className="p-2.5 rounded-xl hover:bg-white/10 relative"
+              aria-label="แจ้งเตือน"
+              onClick={() => toggleBellPanel(mobileBellRef)}
+            >
+              <Bell className="w-5 h-5 text-teal-100" />
+              {totalBellNotifications > 0 && <span className="absolute top-1.5 right-1.5 bg-rose-400 w-2 h-2 rounded-full" />}
+            </button>
+          </div>
           <button type="button" className="p-2.5 rounded-xl hover:bg-white/10" onClick={() => setMobileMoreOpen(true)} aria-label="เมนู">
             <Menu className="w-5 h-5 text-teal-100" />
           </button>
