@@ -1502,10 +1502,16 @@ export default function App() {
               milestones={milestones}
               contractExtensions={contractExtensions}
               tasks={tasks}
+              users={users}
+              cachedTaskLogs={taskLogs}
               currentUser={currentUser}
               busy={busy}
               onBack={() => setDetailProjectId(null)}
               onOpenBoard={() => { setActiveProjectId(detailProject.id); setCurrentModule('board'); }}
+              onOpenTask={(task) => {
+                setSelectedTask(task);
+                setTaskModalTab('details');
+              }}
               onSaveProject={handleSaveProject}
               onCreateMilestone={handleCreateMilestone}
               onUpdateMilestone={handleUpdateMilestone}

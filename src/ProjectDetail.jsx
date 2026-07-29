@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ArrowLeft, Calendar as CalendarIcon, CheckCircle2, Plus, Trash2,
   Settings2, LineChart, ListChecks, KanbanSquare, Loader2, Save, Download, ImageDown,
-  FileClock, CalendarRange, Milestone, FileText, FileCode2
+  FileClock, CalendarRange, Milestone, FileText, FileCode2, History,
 } from 'lucide-react';
 import {
   buildSCurve, buildSCurveSheet, toTimelinePolyline, toTimelinePoints, timeToRatio,
@@ -11,8 +11,15 @@ import {
 import { formatThaiDate, formatThaiDateLong } from './formatThaiDate';
 import ProjectTimeBar from './ProjectTimeBar';
 import ThaiDateField from './ThaiDateField';
+import ProjectActivityPanel from './ProjectActivityPanel';
+import { api } from './api';
+import {
+  buildProjectActivityEvents,
+  summarizeRecentActivity,
+} from './projectActivity';
 
 const TABS = [
+  { id: 'activity', label: 'ความเคลื่อนไหว', icon: History },
   { id: 'plan', label: 'แผนงาน / ขั้นตอน', icon: ListChecks },
   { id: 'contract', label: 'ขยายสัญญา', icon: FileClock },
   { id: 'scurve', label: 'S-Curve', icon: LineChart },
@@ -197,10 +204,13 @@ export default function ProjectDetail({
   milestones,
   contractExtensions,
   tasks,
+  users,
+  cachedTaskLogs,
   currentUser,
   busy,
   onBack,
   onOpenBoard,
+  onOpenTask,
   onSaveProject,
   onCreateMilestone,
   onUpdateMilestone,
@@ -210,8 +220,11 @@ export default function ProjectDetail({
   onDeleteContractExtension,
   showToast,
 }) {
-  const [tab, setTab] = useState('plan');
+  const [tab, setTab] = useState('activity');
   const [exportBusy, setExportBusy] = useState(false);
+  const [projectTaskLogs, setProjectTaskLogs] = useState([]);
+  const [activityLoading, setActivityLoading] = useState(false);
+  const [activityLoadError, setActivityLoadError] = useState(null);
   const scurveSvgRef = useRef(null);
   const [settings, setSettings] = useState({
     name: project?.name || '',
@@ -228,6 +241,43 @@ export default function ProjectDetail({
       endDate: toInputDate(project?.endDate),
     });
   }, [project?.id, project?.name, project?.description, project?.startDate, project?.endDate]);
+
+  const projectTasks = useMemo(
+    () => (tasks || []).filter((t) => String(t.projectId) === String(project.id)),
+    [tasks, project.id],
+  );
+
+  useEffect(() => {
+    if (!project?.id) return;
+    let cancelled = false;
+    (async () => {
+      setActivityLoading(true);
+      setActivityLoadError(null);
+      try {
+        const data = await api('getProjectActivity', { projectId: project.id });
+        if (!cancelled) setProjectTaskLogs(data?.taskLogs || []);
+      } catch (err) {
+        if (!cancelled) {
+          setActivityLoadError(err?.message || String(err));
+          setProjectTaskLogs([]);
+        }
+      } finally {
+        if (!cancelled) setActivityLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [project?.id]);
+
+  const mergedProjectTaskLogs = useMemo(() => {
+    const byId = new Map();
+    (cachedTaskLogs || []).forEach((l) => {
+      const tid = String(l.taskId);
+      if (!projectTasks.some((t) => String(t.id) === tid)) return;
+      byId.set(String(l.id), l);
+    });
+    projectTaskLogs.forEach((l) => byId.set(String(l.id), l));
+    return [...byId.values()];
+  }, [cachedTaskLogs, projectTaskLogs, projectTasks]);
 
   const [newMs, setNewMs] = useState({
     title: '',
@@ -250,6 +300,17 @@ export default function ProjectDetail({
       .sort((a, b) => (Number(a.extensionNo) || 0) - (Number(b.extensionNo) || 0)),
     [contractExtensions, project.id]
   );
+
+  const activitySummary = useMemo(() => {
+    const events = buildProjectActivityEvents({
+      project,
+      projectTasks,
+      taskLogs: mergedProjectTaskLogs,
+      milestones: projectMilestones,
+      contractExtensions: projectExtensions,
+    });
+    return summarizeRecentActivity(events, 7);
+  }, [project, projectTasks, mergedProjectTaskLogs, projectMilestones, projectExtensions]);
 
   const originalContractEnd = projectExtensions[0]?.fromDate || project.endDate;
   const effectiveContractEnd = projectExtensions.reduce((latest, x) => {
@@ -441,7 +502,7 @@ export default function ProjectDetail({
               จริง {progress.actualPct}% · แผน {progress.plannedPct}%
             </span>
             <span className="text-[11px] font-bold px-3 py-1.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200">
-              งานในบอร์ด {tasks.filter((t) => t.projectId === project.id).length}
+              งานในบอร์ด {projectTasks.length}
             </span>
             <span className={`text-[11px] font-bold px-3 py-1.5 rounded-full border ${
               projectExtensions.length
@@ -451,6 +512,14 @@ export default function ProjectDetail({
               ขยายสัญญา {projectExtensions.length} ครั้ง
             </span>
           </div>
+          <button
+            type="button"
+            onClick={() => setTab('activity')}
+            className="mt-3 w-full max-w-xl text-left text-xs font-bold text-slate-600 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-2xl px-4 py-3 transition-colors"
+          >
+            <span className="text-slate-500">7 วันล่าสุด:</span>{' '}
+            <span className="text-slate-800">{activitySummary.label}</span>
+          </button>
           <div className="mt-4 max-w-xl">
             <ProjectTimeBar startDate={project.startDate} endDate={effectiveContractEnd} />
           </div>
@@ -476,6 +545,22 @@ export default function ProjectDetail({
           </button>
         ))}
       </div>
+
+      {tab === 'activity' && (
+        <ProjectActivityPanel
+          project={project}
+          projectTasks={projectTasks}
+          projectMilestones={projectMilestones}
+          projectExtensions={projectExtensions}
+          users={users}
+          taskLogs={mergedProjectTaskLogs}
+          loading={activityLoading}
+          loadError={activityLoadError}
+          onOpenTask={onOpenTask}
+          onGoContractTab={() => setTab('contract')}
+          onGoPlanTab={() => setTab('plan')}
+        />
+      )}
 
       {tab === 'settings' && (
         <form onSubmit={handleSaveSettings} className="bg-white border border-slate-200 rounded-3xl p-6 md:p-8 shadow-sm max-w-3xl space-y-5">

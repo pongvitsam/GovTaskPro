@@ -109,6 +109,12 @@ function buildDemoSeed() {
       { id: 'l6', taskId: 9, timestamp: t(-2), actionBy: 'u5', actionType: 'Created', detail: 'มอบหมายงานให้ มาลี' },
       { id: 'l7', taskId: 10, timestamp: t(0, -3), actionBy: 'u6', actionType: 'Status Changed', detail: 'ส่งตรวจหัวหน้า HR' },
       { id: 'l8', taskId: 12, timestamp: t(-3), actionBy: 'u7', actionType: 'Created', detail: 'มอบหมายงานให้ วิชัย' },
+      { id: 'l9', taskId: 1, timestamp: t(-7), actionBy: 'u1', actionType: 'Created', detail: 'มอบหมายงานให้ สมชาย' },
+      { id: 'l10', taskId: 1, timestamp: t(-2), actionBy: 'u2', actionType: 'Status Changed', detail: 'เปลี่ยนสถานะเป็น "เสร็จสิ้น" · วันเสร็จ 27 ก.ค. 2569' },
+      { id: 'l11', taskId: 2, timestamp: t(-1), actionBy: 'u1', actionType: 'Created', detail: 'มอบหมายงานพัฒนา API' },
+      { id: 'l12', taskId: 2, timestamp: t(0, -4), actionBy: 'u2', actionType: 'Status Changed', detail: 'เปลี่ยนสถานะเป็น "กำลังทำ"' },
+      { id: 'l13', taskId: 3, timestamp: t(-3), actionBy: 'u3', actionType: 'Status Changed', detail: 'เปลี่ยนสถานะเป็น "เสร็จสิ้น" · วันเสร็จ 26 ก.ค. 2569' },
+      { id: 'l14', taskId: 8, timestamp: t(0, -1), actionBy: 'u1', actionType: 'Created', detail: 'มอบหมายงานเขียนคู่มือ' },
     ],
     comments: [
       { id: 'c1', taskId: 2, timestamp: t(0, -18), authorId: 'u1', text: 'ติดปัญหาตรงไหนเรื่อง API ทักมาได้เลยนะ' },
@@ -855,6 +861,15 @@ const localHandlers = {
       comments: db.comments.filter((c) => String(c.taskId) === taskId),
       taskLogs: db.taskLogs.filter((l) => String(l.taskId) === taskId),
     };
+  },
+  getProjectActivity(payload) {
+    const db = getLocalDb();
+    const projectId = String(payload?.projectId || '');
+    const taskIds = new Set(
+      db.tasks.filter((t) => String(t.projectId) === projectId).map((t) => String(t.id)),
+    );
+    const taskLogs = db.taskLogs.filter((l) => taskIds.has(String(l.taskId)));
+    return { taskLogs };
   },
   deleteStickyNote(payload) {
     const db = getLocalDb();

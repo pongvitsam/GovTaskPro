@@ -174,6 +174,7 @@ function dispatchApi_(fn, payload, hasPayload) {
 
   // payload optional / required
   if (fn === 'getTaskActivity') return getTaskActivity(payload || {});
+  if (fn === 'getProjectActivity') return getProjectActivity(payload || {});
   if (fn === 'createProject') return createProject(payload || {});
   if (fn === 'updateProject') return updateProject(payload || {});
   if (fn === 'createMilestone') return createMilestone(payload || {});
@@ -317,6 +318,37 @@ function getTaskActivity(payload) {
     };
   });
   return { comments: comments, taskLogs: taskLogs };
+}
+
+/** Task timeline logs for all board tasks in a project */
+function getProjectActivity(payload) {
+  openDatabase_(false);
+  var projectId = String((payload && payload.projectId) || '');
+  if (!projectId) throw new Error('ไม่พบโปรเจกต์');
+  var tasks = listObjects_(TASKS_SHEET);
+  var taskIds = {};
+  for (var ti = 0; ti < tasks.length; ti++) {
+    if (String(tasks[ti].projectId) !== projectId) continue;
+    taskIds[String(tasks[ti].id)] = true;
+  }
+  var rawLogs = listObjectsFromSheet_(getSheet_(LOGS_SHEET));
+  var taskLogs = [];
+  for (var li = 0; li < rawLogs.length; li++) {
+    var l = rawLogs[li];
+    if (!taskIds[String(l.taskId)]) continue;
+    taskLogs.push({
+      id: String(l.id),
+      taskId: isFinite(Number(l.taskId)) ? Number(l.taskId) : String(l.taskId),
+      timestamp: toIso_(l.timestamp),
+      actionBy: String(l.actionBy || ''),
+      actionType: String(l.actionType || ''),
+      detail: String(l.detail || '')
+    });
+  }
+  taskLogs.sort(function (a, b) {
+    return new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime();
+  });
+  return { taskLogs: taskLogs };
 }
 
 function createProject(payload) {
