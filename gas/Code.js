@@ -571,7 +571,12 @@ function updateTaskStatus(payload) {
     }
   }
   if (!found) throw new Error('ไม่พบงาน');
-  var statusLog = addLog_(taskId, userId, 'Status Changed', payload.logDetail || ('เปลี่ยนสถานะเป็น ' + newStatus));
+  var defaultDetail = 'เปลี่ยนสถานะเป็น ' + newStatus;
+  if (newStatus === 'Completed') {
+    var doneDate = found.completedAt ? toDateOnly_(found.completedAt) : toDateOnly_(new Date());
+    defaultDetail = 'เปลี่ยนสถานะเป็น เสร็จสิ้น · วันเสร็จ ' + formatThaiDateShort_(doneDate);
+  }
+  var statusLog = addLog_(taskId, userId, 'Status Changed', payload.logDetail || defaultDetail);
   if (payload.notifyLine) notifyLine_('อัปเดตงาน: ' + found.title + ' → ' + newStatus);
   var assignee = findUserById_(found.assignedTo);
   if (assignee && assignee.notifyStatus && String(assignee.id) !== String(userId)) {
@@ -2240,6 +2245,18 @@ function toDateOnly_(v) {
   var iso = toIso_(v);
   if (!iso) return null;
   return iso.slice(0, 10);
+}
+
+/** Short Thai Buddhist date for logs, e.g. 29 ก.ค. 2569 */
+function formatThaiDateShort_(v) {
+  var d = v instanceof Date ? v : new Date(String(v || ''));
+  if (isNaN(d.getTime())) d = new Date();
+  try {
+    return Utilities.formatDate(d, Session.getScriptTimeZone() || 'Asia/Bangkok', 'd MMM yyyy');
+  } catch (e) {
+    var be = d.getFullYear() + 543;
+    return (d.getDate()) + '/' + (d.getMonth() + 1) + '/' + be;
+  }
 }
 
 function listTasks_() {

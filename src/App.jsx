@@ -8,7 +8,7 @@ import {
 } from 'lucide-react';
 import { api, isProductionGas, isProductionHost } from './api';
 import LoginScreen from './LoginScreen';
-import { formatThaiDate, formatThaiMonthYear } from './formatThaiDate';
+import { formatThaiDate, formatThaiDateLong, formatThaiMonthYear } from './formatThaiDate';
 import ProjectTimeBar from './ProjectTimeBar';
 import { readSession, saveSession, clearSession } from './session';
 import ThaiDateField from './ThaiDateField';
@@ -92,8 +92,20 @@ export default function App() {
   const [mobileMoreOpen, setMobileMoreOpen] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [stickyRemindersDue, setStickyRemindersDue] = useState(0);
+  const [stickyReminderNotes, setStickyReminderNotes] = useState([]);
+  const [bellOpen, setBellOpen] = useState(false);
+  const [seenBellKeys, setSeenBellKeys] = useState(() => {
+    try {
+      const raw = sessionStorage.getItem('gtp_bell_seen');
+      const arr = raw ? JSON.parse(raw) : [];
+      return new Set(Array.isArray(arr) ? arr : []);
+    } catch {
+      return new Set();
+    }
+  });
   const softRefreshingRef = useRef(false);
   const lastSyncAtRef = useRef(0);
+  const bellRef = useRef(null);
 
   const showToast = (msg, duration = 3000) => {
     setToastMsg(msg);
@@ -101,11 +113,46 @@ export default function App() {
   };
 
   const getStatusColor = (status) => ({
-    Pending: 'bg-amber-50 text-amber-800 border-amber-100',
-    'In Progress': 'bg-sky-50 text-sky-800 border-sky-100',
-    Review: 'bg-teal-50 text-teal-800 border-teal-100',
-    Completed: 'bg-emerald-50 text-emerald-800 border-emerald-100',
+    Pending: 'bg-amber-100 text-amber-900 border-amber-300',
+    'In Progress': 'bg-sky-100 text-sky-900 border-sky-300',
+    Review: 'bg-violet-100 text-violet-900 border-violet-300',
+    Completed: 'bg-emerald-100 text-emerald-900 border-emerald-300',
   }[status] || 'bg-slate-50 text-slate-700 border-slate-100');
+
+  const boardColumnTheme = {
+    Pending: {
+      border: 'border-amber-300',
+      bg: 'bg-gradient-to-b from-amber-100/90 via-amber-50/70 to-white',
+      header: 'bg-amber-500 text-white',
+      badge: 'bg-white/95 text-amber-800',
+      cardBorder: 'border-amber-200',
+      accent: 'bg-amber-500',
+    },
+    'In Progress': {
+      border: 'border-sky-300',
+      bg: 'bg-gradient-to-b from-sky-100/90 via-sky-50/70 to-white',
+      header: 'bg-sky-500 text-white',
+      badge: 'bg-white/95 text-sky-800',
+      cardBorder: 'border-sky-200',
+      accent: 'bg-sky-500',
+    },
+    Review: {
+      border: 'border-violet-300',
+      bg: 'bg-gradient-to-b from-violet-100/90 via-violet-50/70 to-white',
+      header: 'bg-violet-500 text-white',
+      badge: 'bg-white/95 text-violet-800',
+      cardBorder: 'border-violet-200',
+      accent: 'bg-violet-500',
+    },
+    Completed: {
+      border: 'border-emerald-300',
+      bg: 'bg-gradient-to-b from-emerald-100/90 via-emerald-50/70 to-white',
+      header: 'bg-emerald-600 text-white',
+      badge: 'bg-white/95 text-emerald-800',
+      cardBorder: 'border-emerald-200',
+      accent: 'bg-emerald-600',
+    },
+  };
 
   const getStatusText = (status) => ({
     Pending: 'รอรับงาน',
@@ -585,24 +632,97 @@ export default function App() {
     }
   };
 
-  const myNotifications = useMemo(() => visibleTasks.filter(
-    (t) => (t.assignedTo === currentUser?.id && t.status === 'Pending') || (isManager && t.status === 'Review')
-  ).length, [visibleTasks, currentUser?.id, isManager]);
+  const notificationItems = useMemo(() => {
+    const items = [];
+    visibleTasks.forEach((t) => {
+      const isPendingMine = t.assignedTo === currentUser?.id && t.status === 'Pending';
+      const isReviewForManager = isManager && t.status === 'Review';
+      if (!isPendingMine && !isReviewForManager) return;
+      items.push({
+        key: `task:${t.id}`,
+        kind: 'task',
+        taskId: t.id,
+        title: t.title,
+        message: isPendingMine
+          ? `งานใหม่รอรับ · กำหนดส่ง ${formatThaiDate(t.dueDate, { emptyLabel: 'ไม่ระบุ' })}`
+          : `รอตรวจจากหัวหน้า · ผู้ทำ ${usersById.get(t.assignedTo)?.name || '—'}`,
+        tone: isPendingMine ? 'amber' : 'violet',
+      });
+    });
+    stickyReminderNotes.forEach((n) => {
+      items.push({
+        key: `sticky:${n.id}:${dayKeyLocal(n.reminderAt)}`,
+        kind: 'sticky',
+        stickyId: n.id,
+        title: n.title || 'เตือนความจำ',
+        message: n.body || (Array.isArray(n.items) ? n.items.map((i) => i.text).filter(Boolean).join(' · ') : '') || 'ถึงวันเตือนความจำแล้ว',
+        tone: 'rose',
+      });
+    });
+    return items;
+  }, [visibleTasks, currentUser?.id, isManager, stickyReminderNotes, usersById]);
 
-  const totalBellNotifications = myNotifications + stickyRemindersDue;
+  const unreadBellItems = useMemo(
+    () => notificationItems.filter((item) => !seenBellKeys.has(item.key)),
+    [notificationItems, seenBellKeys]
+  );
+
+  const totalBellNotifications = unreadBellItems.length;
+  const unreadBellKeysRef = useRef([]);
+  unreadBellKeysRef.current = unreadBellItems.map((x) => x.key);
+
+  const markBellSeen = (keys = unreadBellKeysRef.current) => {
+    if (!keys.length) return;
+    setSeenBellKeys((prev) => {
+      const next = new Set(prev);
+      keys.forEach((k) => next.add(k));
+      try {
+        sessionStorage.setItem('gtp_bell_seen', JSON.stringify([...next].slice(-200)));
+      } catch { /* ignore */ }
+      return next;
+    });
+  };
+
+  const openBellPanel = () => {
+    setBellOpen((v) => !v);
+  };
+
+  const closeBellAndMarkSeen = () => {
+    markBellSeen();
+    setBellOpen(false);
+  };
 
   const refreshStickyReminders = async () => {
     if (!currentUser?.id) {
       setStickyRemindersDue(0);
+      setStickyReminderNotes([]);
       return;
     }
     try {
       const rows = await api('listStickyNotes', { userId: currentUser.id });
-      setStickyRemindersDue(countStickyRemindersDueToday(rows));
+      const today = dayKeyLocal(Date.now());
+      const due = (rows || []).filter((n) => {
+        if (!n || n.trashed || n.archived || !n.reminderAt) return false;
+        return dayKeyLocal(n.reminderAt) === today;
+      });
+      setStickyReminderNotes(due);
+      setStickyRemindersDue(due.length);
     } catch (_) {
       /* non-fatal — badge just stays as-is */
     }
   };
+
+  useEffect(() => {
+    if (!bellOpen) return undefined;
+    const onDoc = (e) => {
+      if (!bellRef.current?.contains(e.target)) {
+        markBellSeen();
+        setBellOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', onDoc);
+    return () => document.removeEventListener('mousedown', onDoc);
+  }, [bellOpen]);
 
   useEffect(() => {
     if (!currentUser?.id || bootLoading) return undefined;
@@ -705,17 +825,25 @@ export default function App() {
     try {
       const task = tasks.find((t) => String(t.id) === String(taskId));
       const actingAsHead = currentUser.role === 'Head' && task && String(task.assignedTo) !== String(currentUser.id);
+      const completedLabel = formatThaiDateLong(new Date());
+      let logDetail = actingAsHead
+        ? `หัวหน้าอัปเดตสถานะเป็น "${getStatusText(newStatus)}" (แทนผู้รับผิดชอบ)`
+        : `เปลี่ยนสถานะเป็น "${getStatusText(newStatus)}"`;
+      if (newStatus === 'Completed') {
+        logDetail = actingAsHead
+          ? `หัวหน้าปิดงานเป็น "เสร็จสิ้น" · วันเสร็จ ${completedLabel} (แทนผู้รับผิดชอบ)`
+          : `เปลี่ยนสถานะเป็น "เสร็จสิ้น" · วันเสร็จ ${completedLabel}`;
+      }
       const result = await api('updateTaskStatus', {
         taskId,
         status: newStatus,
         userId: currentUser.id,
         notifyLine,
-        logDetail: actingAsHead
-          ? `หัวหน้าอัปเดตสถานะเป็น "${getStatusText(newStatus)}" (แทนผู้รับผิดชอบ)`
-          : `เปลี่ยนสถานะเป็น "${getStatusText(newStatus)}"`,
+        logDetail,
       });
       patchTask(result?.task || result, result?.log);
       if (notifyLine) showToast(`📱 อัปเดตเป็น ${getStatusText(newStatus)} และแจ้งเตือน LINE แล้ว`);
+      else if (newStatus === 'Completed') showToast(`✅ เสร็จสิ้นเมื่อ ${completedLabel}`);
       else showToast(`อัปเดตสถานะเป็น ${getStatusText(newStatus)}`);
     } catch (err) {
       showToast('❌ ' + (err?.message || String(err)));
@@ -971,21 +1099,68 @@ export default function App() {
             <button type="button" title="ซิงก์ข้อมูล" className="p-2 rounded-xl hover:bg-white/10 transition-colors" onClick={() => softRefresh({ silent: false })}>
               <RefreshCw className={`w-5 h-5 text-teal-100/80 ${syncing ? 'animate-spin' : ''}`} />
             </button>
-            <div className="relative">
+            <div className="relative" ref={bellRef}>
               <button
                 type="button"
                 className="p-2 rounded-xl hover:bg-white/10 transition-colors"
-                onClick={() => {
-                  const parts = [];
-                  if (myNotifications > 0) parts.push(`${myNotifications} งานที่ต้องสนใจ`);
-                  if (stickyRemindersDue > 0) parts.push(`${stickyRemindersDue} เตือนความจำวันนี้`);
-                  showToast(parts.length ? `🔔 ${parts.join(' · ')}` : '🔔 ไม่มีแจ้งเตือนใหม่');
-                  if (stickyRemindersDue > 0) setCurrentModule('sticky');
-                }}
+                aria-label="แจ้งเตือน"
+                onClick={openBellPanel}
               >
                 <Bell className="w-5 h-5 text-teal-100/80" />
               </button>
               {totalBellNotifications > 0 && <span className="absolute top-1 right-1 bg-rose-400 w-2.5 h-2.5 rounded-full ring-2 ring-[#163542] gtp-soft-pulse" />}
+              {bellOpen && (
+                <div className="absolute right-0 top-11 z-50 w-80 max-w-[85vw] rounded-2xl border border-slate-200 bg-white shadow-2xl overflow-hidden">
+                  <div className="px-4 py-3 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
+                    <div>
+                      <p className="text-sm font-extrabold text-slate-800">แจ้งเตือน</p>
+                      <p className="text-[11px] text-slate-500 font-medium">{unreadBellItems.length} รายการที่ยังไม่ได้อ่าน</p>
+                    </div>
+                    <button
+                      type="button"
+                      className="text-[11px] font-bold text-teal-700 hover:bg-teal-50 px-2 py-1 rounded-lg"
+                      onClick={closeBellAndMarkSeen}
+                    >
+                      อ่านแล้ว
+                    </button>
+                  </div>
+                  <div className="max-h-80 overflow-y-auto divide-y divide-slate-100">
+                    {unreadBellItems.length === 0 ? (
+                      <p className="p-6 text-center text-sm font-bold text-slate-400">ไม่มีแจ้งเตือนใหม่</p>
+                    ) : unreadBellItems.map((item) => (
+                      <button
+                        key={item.key}
+                        type="button"
+                        className="w-full text-left px-4 py-3 hover:bg-slate-50 transition-colors"
+                        onClick={() => {
+                          markBellSeen([item.key]);
+                          if (item.kind === 'task') {
+                            const task = tasks.find((t) => String(t.id) === String(item.taskId));
+                            if (task) {
+                              setSelectedTask(task);
+                              setTaskModalTab('details');
+                              setCurrentModule('board');
+                            }
+                          } else {
+                            setCurrentModule('sticky');
+                          }
+                          setBellOpen(false);
+                        }}
+                      >
+                        <p className="text-sm font-extrabold text-slate-800 line-clamp-1">{item.title}</p>
+                        <p className="text-xs text-slate-500 font-medium mt-0.5 line-clamp-2">{item.message}</p>
+                        <span className={`inline-block mt-1.5 text-[10px] font-black px-2 py-0.5 rounded-full ${
+                          item.tone === 'amber' ? 'bg-amber-100 text-amber-800'
+                            : item.tone === 'violet' ? 'bg-violet-100 text-violet-800'
+                              : 'bg-rose-100 text-rose-800'
+                        }`}>
+                          {item.kind === 'task' ? 'งาน' : 'เตือนความจำ'}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -1070,12 +1245,26 @@ export default function App() {
           <button
             type="button"
             className="p-2.5 rounded-xl hover:bg-white/10 relative"
+            aria-label="แจ้งเตือน"
             onClick={() => {
-              const parts = [];
-              if (myNotifications > 0) parts.push(`${myNotifications} งานที่ต้องสนใจ`);
-              if (stickyRemindersDue > 0) parts.push(`${stickyRemindersDue} เตือนความจำวันนี้`);
-              showToast(parts.length ? `🔔 ${parts.join(' · ')}` : '🔔 ไม่มีแจ้งเตือนใหม่');
-              if (stickyRemindersDue > 0) setCurrentModule('sticky');
+              if (unreadBellItems.length === 0) {
+                showToast('🔔 ไม่มีแจ้งเตือนใหม่');
+                return;
+              }
+              // Mobile: show first unread messages then clear badge
+              const preview = unreadBellItems.slice(0, 3).map((x) => `• ${x.title}`).join('\n');
+              showToast(`🔔 ${unreadBellItems.length} รายการ\n${preview}`, 4500);
+              markBellSeen();
+              const first = unreadBellItems[0];
+              if (first?.kind === 'sticky') setCurrentModule('sticky');
+              else if (first?.kind === 'task') {
+                const task = tasks.find((t) => String(t.id) === String(first.taskId));
+                if (task) {
+                  setSelectedTask(task);
+                  setTaskModalTab('details');
+                  setCurrentModule('board');
+                }
+              }
             }}
           >
             <Bell className="w-5 h-5 text-teal-100" />
@@ -1339,7 +1528,7 @@ export default function App() {
 
             <div className="flex-1 overflow-x-auto pb-4">
               <div className="flex gap-5 h-full min-w-max items-start">
-                {['Pending', 'In Progress', 'Review', 'Completed'].map((status, index) => {
+                {['Pending', 'In Progress', 'Review', 'Completed'].map((status) => {
                   let colTasks = visibleTasks.filter((t) => t.status === status);
                   if (status === 'Completed') {
                     colTasks = [...colTasks].sort((a, b) => {
@@ -1353,13 +1542,15 @@ export default function App() {
                     ? totalInCol - COMPLETED_PREVIEW
                     : 0;
                   const shownTasks = hiddenCompleted > 0 ? colTasks.slice(0, COMPLETED_PREVIEW) : colTasks;
-                  const borders = ['border-amber-100', 'border-sky-100', 'border-teal-100', 'border-emerald-100'];
-                  const bgs = ['bg-amber-50/40', 'bg-sky-50/40', 'bg-teal-50/40', 'bg-emerald-50/40'];
+                  const theme = boardColumnTheme[status];
                   return (
-                    <div key={status} className={`w-80 flex flex-col rounded-[1.5rem] border ${borders[index]} ${bgs[index]} max-h-full shrink-0 shadow-sm`}>
-                      <div className="p-4 flex justify-between items-center border-b border-black/5">
-                        <h3 className="gtp-display font-extrabold text-[#1e3a4c] text-sm tracking-wide">{getStatusText(status)}</h3>
-                        <span className="bg-white/90 text-xs font-bold px-2.5 py-1 rounded-full text-[#5b7a8a] shadow-sm">{totalInCol}</span>
+                    <div key={status} className={`w-80 flex flex-col rounded-[1.5rem] border-2 ${theme.border} ${theme.bg} max-h-full shrink-0 shadow-md overflow-hidden`}>
+                      <div className={`p-4 flex justify-between items-center ${theme.header}`}>
+                        <div className="flex items-center gap-2">
+                          <span className={`w-2.5 h-2.5 rounded-full bg-white/90 shadow-sm`} />
+                          <h3 className="gtp-display font-extrabold text-sm tracking-wide">{getStatusText(status)}</h3>
+                        </div>
+                        <span className={`text-xs font-black px-2.5 py-1 rounded-full shadow-sm ${theme.badge}`}>{totalInCol}</span>
                       </div>
                       <div className="p-3 flex-1 overflow-y-auto space-y-3 custom-scrollbar">
                         {shownTasks.map((task) => {
@@ -1371,23 +1562,24 @@ export default function App() {
                             <div
                               key={task.id}
                               onClick={() => { setSelectedTask(task); setTaskModalTab('details'); }}
-                              className={`bg-white/95 p-4 rounded-2xl shadow-sm border ${
-                                overdue ? 'border-rose-300' : (isMyTask && status === 'Pending' ? 'border-teal-400 ring-2 ring-teal-100' : 'border-white')
-                              } ${status === 'Completed' ? 'opacity-80' : ''} cursor-pointer hover:shadow-md hover:-translate-y-0.5 transition-all relative group`}
+                              className={`bg-white p-4 rounded-2xl shadow-sm border-2 relative group cursor-pointer hover:shadow-md hover:-translate-y-0.5 transition-all ${
+                                overdue ? 'border-rose-400 ring-2 ring-rose-100' : `${theme.cardBorder}`
+                              } ${isMyTask && status === 'Pending' ? 'ring-2 ring-amber-200' : ''} ${status === 'Completed' ? 'opacity-90' : ''}`}
                             >
+                              <div className={`absolute left-0 top-3 bottom-3 w-1 rounded-r-full ${theme.accent}`} />
                               {task.isRecurring && <Repeat className="w-4 h-4 absolute top-3.5 right-3.5 text-slate-300" />}
-                              {isMyTask && status === 'Pending' && <div className="absolute -top-2 -right-2 bg-teal-500 text-white text-[9px] font-bold px-2 py-0.5 rounded-full shadow-md">งานใหม่!</div>}
+                              {isMyTask && status === 'Pending' && <div className="absolute -top-2 -right-2 bg-amber-500 text-white text-[9px] font-bold px-2 py-0.5 rounded-full shadow-md">งานใหม่!</div>}
                               {!isMyTask && overdue && <div className="absolute -top-2 -right-2 bg-rose-500 text-white text-[9px] font-bold px-2 py-0.5 rounded-full shadow-md">เลยกำหนด</div>}
                               {task.projectId && !activeProjectId && (
-                                <span className="text-[10px] font-bold text-teal-700 bg-teal-50 px-1.5 py-0.5 rounded-lg mb-2 inline-block truncate max-w-[80%]">
+                                <span className="text-[10px] font-bold text-teal-700 bg-teal-50 px-1.5 py-0.5 rounded-lg mb-2 inline-block truncate max-w-[80%] ml-2">
                                   {projects.find((p) => p.id === task.projectId)?.name}
                                 </span>
                               )}
-                              <h4 className={`font-bold text-[#1e3a4c] text-sm mb-2 leading-relaxed pr-6 ${status === 'Completed' ? 'line-through decoration-slate-300' : ''}`}>{task.title}</h4>
+                              <h4 className={`font-bold text-[#1e3a4c] text-sm mb-2 leading-relaxed pr-6 pl-2 ${status === 'Completed' ? 'line-through decoration-slate-300' : ''}`}>{task.title}</h4>
                               {isMyTask && status !== 'Completed' && (
-                                <p className="text-[10px] font-extrabold text-teal-600 mb-3">แตะการ์ด → อัปเดตสถานะ</p>
+                                <p className="text-[10px] font-extrabold text-teal-600 mb-3 pl-2">แตะการ์ด → อัปเดตสถานะ</p>
                               )}
-                              <div className="flex justify-between items-end pt-3 border-t border-slate-100/80">
+                              <div className="flex justify-between items-end pt-3 border-t border-slate-100/80 pl-2">
                                 <div className="flex items-center space-x-2">
                                   <div className={`w-7 h-7 rounded-full flex items-center justify-center text-[10px] font-extrabold ${isMyTask ? 'bg-teal-500 text-white' : 'bg-[#f3f9fc] text-[#5b7a8a]'}`}>
                                     {assignee?.name?.charAt(0)}
@@ -1433,6 +1625,9 @@ export default function App() {
                         )}
                         {status === 'Completed' && totalInCol === 0 && (
                           <p className="text-center text-xs text-slate-400 font-medium py-8">ยังไม่มีงานเสร็จสิ้น</p>
+                        )}
+                        {status !== 'Completed' && totalInCol === 0 && (
+                          <p className="text-center text-xs text-slate-400 font-medium py-8">ยังไม่มีงานในคอลัมน์นี้</p>
                         )}
                       </div>
                     </div>

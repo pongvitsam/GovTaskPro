@@ -341,12 +341,14 @@ export function downloadSCurveExcel(project, sheet) {
   return filename;
 }
 
-/** Download SVG chart as PNG */
-export async function downloadSCurvePng(svgEl, project) {
-  if (!svgEl) throw new Error('ไม่พบกราฟ S-Curve');
-  const vb = svgEl.viewBox?.baseVal;
-  const width = Math.max(1, Math.round(vb?.width || svgEl.clientWidth || 960));
-  const height = Math.max(1, Math.round(vb?.height || svgEl.clientHeight || 400));
+function thaiShort(msOrIso) {
+  if (!msOrIso) return '—';
+  const d = typeof msOrIso === 'number' ? new Date(msOrIso) : new Date(msOrIso);
+  if (Number.isNaN(d.getTime())) return '—';
+  return d.toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: 'numeric' });
+}
+
+async function svgToImage(svgEl, width, height) {
   const clone = svgEl.cloneNode(true);
   clone.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
   clone.setAttribute('width', String(width));
@@ -361,27 +363,201 @@ export async function downloadSCurvePng(svgEl, project) {
       img.onerror = () => reject(new Error('สร้างภาพกราฟไม่สำเร็จ'));
       img.src = svgUrl;
     });
-    const canvas = document.createElement('canvas');
-    canvas.width = width;
-    canvas.height = height;
-    const ctx = canvas.getContext('2d');
-    ctx.fillStyle = '#ffffff';
-    ctx.fillRect(0, 0, width, height);
-    ctx.drawImage(img, 0, 0, width, height);
-    const stamp = isoDate(Date.now()).replace(/-/g, '');
-    const filename = `SCurve_${safeFilePart(project?.name)}_${stamp}.png`;
-    await new Promise((resolve, reject) => {
-      canvas.toBlob((blob) => {
-        if (!blob) {
-          reject(new Error('สร้างไฟล์ภาพไม่สำเร็จ'));
-          return;
-        }
-        triggerDownload(blob, filename);
-        resolve(filename);
-      }, 'image/png');
-    });
-    return filename;
+    return img;
   } finally {
     URL.revokeObjectURL(svgUrl);
   }
+}
+
+/** Download editable SVG of the chart */
+export async function downloadSCurveSvg(svgEl, project) {
+  if (!svgEl) throw new Error('ไม่พบกราฟ S-Curve');
+  const vb = svgEl.viewBox?.baseVal;
+  const width = Math.max(1, Math.round(vb?.width || svgEl.clientWidth || 960));
+  const height = Math.max(1, Math.round(vb?.height || svgEl.clientHeight || 400));
+  const clone = svgEl.cloneNode(true);
+  clone.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
+  clone.setAttribute('width', String(width));
+  clone.setAttribute('height', String(height));
+  const stamp = isoDate(Date.now()).replace(/-/g, '');
+  const filename = `SCurve_${safeFilePart(project?.name)}_${stamp}.svg`;
+  const xml = `<?xml version="1.0" encoding="UTF-8"?>\n${new XMLSerializer().serializeToString(clone)}`;
+  triggerDownload(new Blob([xml], { type: 'image/svg+xml;charset=utf-8' }), filename);
+  return filename;
+}
+
+/**
+ * Export full plan sheet (title + summary + milestone table + chart) as a beautiful PNG.
+ * PNG is not editable; use SVG/Excel for editing.
+ */
+export async function downloadSCurvePng(svgEl, project, sheet) {
+  if (!svgEl) throw new Error('ไม่พบกราฟ S-Curve');
+  if (!sheet?.rows?.length) throw new Error('ไม่มีแผนงานให้ส่งออก');
+
+  const vb = svgEl.viewBox?.baseVal;
+  const chartW = Math.max(1, Math.round(vb?.width || svgEl.clientWidth || 960));
+  const chartH = Math.max(1, Math.round(vb?.height || svgEl.clientHeight || 400));
+  const chartImg = await svgToImage(svgEl, chartW, chartH);
+
+  const pad = 36;
+  const tableRowH = 34;
+  const headerH = 132;
+  const summaryH = 78;
+  const tableHeaderH = 38;
+  const tableH = tableHeaderH + sheet.rows.length * tableRowH + 12;
+  const chartPadTop = 28;
+  const width = Math.max(1180, chartW + pad * 2);
+  const height = pad + headerH + summaryH + tableH + chartPadTop + chartH + pad + 24;
+
+  const canvas = document.createElement('canvas');
+  canvas.width = width;
+  canvas.height = height;
+  const ctx = canvas.getContext('2d');
+
+  // Background
+  const bg = ctx.createLinearGradient(0, 0, 0, height);
+  bg.addColorStop(0, '#f8fafc');
+  bg.addColorStop(1, '#ffffff');
+  ctx.fillStyle = bg;
+  ctx.fillRect(0, 0, width, height);
+
+  // Header band
+  const head = ctx.createLinearGradient(0, 0, width, 0);
+  head.addColorStop(0, '#0f766e');
+  head.addColorStop(1, '#0369a1');
+  ctx.fillStyle = head;
+  roundRect(ctx, pad / 2, pad / 2, width - pad, headerH - 12, 18);
+  ctx.fill();
+
+  ctx.fillStyle = '#ffffff';
+  ctx.font = '800 28px Manrope, Sarabun, sans-serif';
+  ctx.fillText('แผนงาน · Gantt · S-Curve', pad + 18, pad / 2 + 42);
+  ctx.font = '700 18px Sarabun, sans-serif';
+  ctx.fillText(String(project?.name || 'โปรเจกต์'), pad + 18, pad / 2 + 74);
+  ctx.font = '600 13px Sarabun, sans-serif';
+  ctx.fillStyle = 'rgba(255,255,255,0.88)';
+  ctx.fillText(
+    `ช่วง ${thaiShort(sheet.start)} → ${thaiShort(sheet.end)}  ·  ส่งออก ${thaiShort(Date.now())}`,
+    pad + 18,
+    pad / 2 + 100
+  );
+
+  // Summary cards
+  const ySum = pad / 2 + headerH;
+  const cards = [
+    { label: 'ความคืบหน้าจริง', val: `${sheet.actualPct}%`, color: '#e11d48' },
+    { label: 'ตามแผน (ถึงวันนี้)', val: `${sheet.plannedPct}%`, color: '#2563eb' },
+    { label: 'ส่วนต่าง', val: `${Math.round((sheet.actualPct - sheet.plannedPct) * 10) / 10}%`, color: sheet.actualPct >= sheet.plannedPct ? '#059669' : '#e11d48' },
+    { label: 'ขั้นตอน', val: String(sheet.rows.length), color: '#0f766e' },
+  ];
+  const cardW = (width - pad * 2 - 24) / 4;
+  cards.forEach((c, i) => {
+    const x = pad + i * (cardW + 8);
+    ctx.fillStyle = '#ffffff';
+    roundRect(ctx, x, ySum, cardW, 62, 14);
+    ctx.fill();
+    ctx.strokeStyle = '#e2e8f0';
+    ctx.lineWidth = 1;
+    roundRect(ctx, x, ySum, cardW, 62, 14);
+    ctx.stroke();
+    ctx.fillStyle = '#64748b';
+    ctx.font = '700 11px Sarabun, sans-serif';
+    ctx.fillText(c.label, x + 14, ySum + 22);
+    ctx.fillStyle = c.color;
+    ctx.font = '800 24px Manrope, Sarabun, sans-serif';
+    ctx.fillText(c.val, x + 14, ySum + 48);
+  });
+
+  // Milestone table
+  const yTable = ySum + summaryH;
+  ctx.fillStyle = '#ffffff';
+  roundRect(ctx, pad, yTable, width - pad * 2, tableH, 16);
+  ctx.fill();
+  ctx.strokeStyle = '#e2e8f0';
+  roundRect(ctx, pad, yTable, width - pad * 2, tableH, 16);
+  ctx.stroke();
+
+  const cols = [
+    { key: 'no', label: '#', w: 40 },
+    { key: 'title', label: 'ขั้นตอน', w: 320 },
+    { key: 'weight', label: 'น้ำหนัก', w: 70 },
+    { key: 'start', label: 'เริ่มแผน', w: 120 },
+    { key: 'end', label: 'สิ้นสุดแผน', w: 120 },
+    { key: 'done', label: 'เสร็จจริง', w: 120 },
+    { key: 'progress', label: '%', w: 56 },
+    { key: 'status', label: 'สถานะ', w: 140 },
+  ];
+  let xCol = pad + 16;
+  ctx.fillStyle = '#f1f5f9';
+  ctx.fillRect(pad + 1, yTable + 1, width - pad * 2 - 2, tableHeaderH);
+  ctx.fillStyle = '#475569';
+  ctx.font = '800 11px Sarabun, sans-serif';
+  cols.forEach((col) => {
+    ctx.fillText(col.label, xCol, yTable + 24);
+    xCol += col.w;
+  });
+
+  sheet.rows.forEach((row, i) => {
+    const y = yTable + tableHeaderH + i * tableRowH;
+    if (i % 2 === 0) {
+      ctx.fillStyle = '#f8fafc';
+      ctx.fillRect(pad + 1, y, width - pad * 2 - 2, tableRowH);
+    }
+    const values = [
+      String(row.no),
+      String(row.title || ''),
+      `${row.weightPct}%`,
+      thaiShort(row.plannedStart),
+      thaiShort(row.plannedEnd),
+      thaiShort(row.completedAt),
+      `${row.progress}`,
+      row.completed ? 'เสร็จแล้ว' : String(row.actualStatus || row.planStatus || '—'),
+    ];
+    let x = pad + 16;
+    values.forEach((val, ci) => {
+      ctx.fillStyle = row.completed ? '#047857' : '#1e293b';
+      ctx.font = ci === 1 ? '700 12px Sarabun, sans-serif' : '600 12px Sarabun, sans-serif';
+      const text = String(val);
+      const maxW = cols[ci].w - 8;
+      let draw = text;
+      while (ctx.measureText(draw).width > maxW && draw.length > 1) {
+        draw = `${draw.slice(0, -2)}…`;
+      }
+      ctx.fillText(draw, x, y + 22);
+      x += cols[ci].w;
+    });
+  });
+
+  // Chart
+  const yChart = yTable + tableH + chartPadTop;
+  ctx.fillStyle = '#0f172a';
+  ctx.font = '800 14px Sarabun, sans-serif';
+  ctx.fillText('แผนภาพ Gantt / S-Curve', pad, yChart - 10);
+  const chartX = pad;
+  ctx.drawImage(chartImg, chartX, yChart, chartW, chartH);
+
+  const stamp = isoDate(Date.now()).replace(/-/g, '');
+  const filename = `Plan_SCurve_${safeFilePart(project?.name)}_${stamp}.png`;
+  await new Promise((resolve, reject) => {
+    canvas.toBlob((blob) => {
+      if (!blob) {
+        reject(new Error('สร้างไฟล์ภาพไม่สำเร็จ'));
+        return;
+      }
+      triggerDownload(blob, filename);
+      resolve(filename);
+    }, 'image/png');
+  });
+  return filename;
+}
+
+function roundRect(ctx, x, y, w, h, r) {
+  const radius = Math.min(r, w / 2, h / 2);
+  ctx.beginPath();
+  ctx.moveTo(x + radius, y);
+  ctx.arcTo(x + w, y, x + w, y + h, radius);
+  ctx.arcTo(x + w, y + h, x, y + h, radius);
+  ctx.arcTo(x, y + h, x, y, radius);
+  ctx.arcTo(x, y, x + w, y, radius);
+  ctx.closePath();
 }

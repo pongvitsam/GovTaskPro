@@ -343,6 +343,7 @@ h1, h2, h3, h4, .gtp-display {
   display: flex;
   align-items: center;
   gap: 0.55rem;
+  width: 100%;
   min-height: 2.75rem;
   padding: 0.55rem 0.85rem;
   border-radius: 1rem;
@@ -351,9 +352,14 @@ h1, h2, h3, h4, .gtp-display {
     linear-gradient(180deg, #ffffff 0%, #f7fbfc 100%);
   box-shadow: 0 1px 2px rgba(22, 53, 66, 0.04);
   transition: border-color 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
+  cursor: pointer;
+  text-align: left;
+  font: inherit;
+  color: inherit;
 }
 
-.thai-date-field:hover .thai-date-field__face {
+.thai-date-field:hover .thai-date-field__face,
+.thai-date-field--open .thai-date-field__face {
   border-color: #5eead4;
   box-shadow: 0 0 0 3px rgba(45, 212, 191, 0.12);
 }
@@ -440,15 +446,178 @@ h1, h2, h3, h4, .gtp-display {
   color: #e11d48;
 }
 
-.thai-date-field__input {
+.thai-date-field__native {
   position: absolute;
-  inset: 0;
+  width: 1px;
+  height: 1px;
   opacity: 0;
-  width: 100%;
-  height: 100%;
-  cursor: pointer;
-  font-size: 1rem;
+  pointer-events: none;
   border: 0;
+  padding: 0;
+  margin: 0;
+}
+
+.thai-date-pop {
+  position: absolute;
+  z-index: 80;
+  top: calc(100% + 0.45rem);
+  left: 0;
+  width: min(19.5rem, calc(100vw - 2rem));
+  padding: 0.85rem;
+  border-radius: 1.15rem;
+  border: 1px solid #d1e7e4;
+  background:
+    radial-gradient(120% 90% at 0% 0%, rgba(45, 212, 191, 0.14), transparent 55%),
+    linear-gradient(180deg, #ffffff 0%, #f4fbfb 100%);
+  box-shadow:
+    0 18px 40px rgba(15, 58, 74, 0.16),
+    0 2px 6px rgba(15, 58, 74, 0.06);
+  animation: thai-date-pop-in 0.16s ease-out;
+}
+
+@keyframes thai-date-pop-in {
+  from { opacity: 0; transform: translateY(-4px) scale(0.98); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+.thai-date-pop__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-bottom: 0.65rem;
+}
+
+.thai-date-pop__title {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  line-height: 1.15;
+}
+
+.thai-date-pop__month {
+  font-family: Sarabun, sans-serif;
+  font-weight: 800;
+  font-size: 0.95rem;
+  color: #134e4a;
+}
+
+.thai-date-pop__year {
+  font-family: Manrope, Sarabun, sans-serif;
+  font-weight: 800;
+  font-size: 0.78rem;
+  color: #0f766e;
+  letter-spacing: 0.04em;
+}
+
+.thai-date-pop__nav {
+  width: 2rem;
+  height: 2rem;
+  border-radius: 0.75rem;
+  border: 1px solid #d5ece8;
+  background: #fff;
+  color: #0f766e;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.thai-date-pop__nav:hover {
+  background: #ecfeff;
+  border-color: #99f6e4;
+}
+
+.thai-date-pop__weekdays,
+.thai-date-pop__grid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 0.2rem;
+}
+
+.thai-date-pop__weekdays {
+  margin-bottom: 0.35rem;
+}
+
+.thai-date-pop__weekdays span {
+  text-align: center;
+  font-size: 0.68rem;
+  font-weight: 800;
+  color: #94a3b8;
+  padding: 0.2rem 0;
+}
+
+.thai-date-pop__cell {
+  aspect-ratio: 1;
+  border: 0;
+  border-radius: 0.7rem;
+  background: transparent;
+  color: #1e3a4c;
+  font-family: Manrope, Sarabun, sans-serif;
+  font-size: 0.82rem;
+  font-weight: 700;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.thai-date-pop__cell:hover:not(.thai-date-pop__cell--empty):not(.thai-date-pop__cell--selected) {
+  background: rgba(45, 212, 191, 0.16);
+  color: #0f766e;
+}
+
+.thai-date-pop__cell--empty {
+  cursor: default;
+  pointer-events: none;
+}
+
+.thai-date-pop__cell--today {
+  box-shadow: inset 0 0 0 1.5px #2dd4bf;
+  color: #0f766e;
+}
+
+.thai-date-pop__cell--selected {
+  background: linear-gradient(145deg, #14b8a6, #0e7490);
+  color: #fff;
+  box-shadow: 0 6px 14px rgba(14, 116, 144, 0.28);
+}
+
+.thai-date-pop__foot {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-top: 0.65rem;
+  padding-top: 0.55rem;
+  border-top: 1px solid #e2efed;
+}
+
+.thai-date-pop__today,
+.thai-date-pop__clear-all {
+  border: 0;
+  background: transparent;
+  font-size: 0.75rem;
+  font-weight: 800;
+  cursor: pointer;
+  padding: 0.25rem 0.4rem;
+  border-radius: 0.5rem;
+}
+
+.thai-date-pop__today {
+  color: #0f766e;
+}
+
+.thai-date-pop__today:hover {
+  background: rgba(45, 212, 191, 0.14);
+}
+
+.thai-date-pop__clear-all {
+  color: #e11d48;
+  margin-left: auto;
+}
+
+.thai-date-pop__clear-all:hover {
+  background: rgba(244, 63, 94, 0.1);
 }
 
 .thai-date-field--sm .thai-date-field__face {

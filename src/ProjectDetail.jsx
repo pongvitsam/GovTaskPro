@@ -2,11 +2,11 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ArrowLeft, Calendar as CalendarIcon, CheckCircle2, Plus, Trash2,
   Settings2, LineChart, ListChecks, KanbanSquare, Loader2, Save, Download, ImageDown,
-  FileClock, CalendarRange, Milestone, FileText
+  FileClock, CalendarRange, Milestone, FileText, FileCode2
 } from 'lucide-react';
 import {
   buildSCurve, buildSCurveSheet, toTimelinePolyline, toTimelinePoints, timeToRatio,
-  downloadSCurveExcel, downloadSCurvePng,
+  downloadSCurveExcel, downloadSCurvePng, downloadSCurveSvg,
 } from './sCurve';
 import { formatThaiDate, formatThaiDateLong } from './formatThaiDate';
 import ProjectTimeBar from './ProjectTimeBar';
@@ -329,8 +329,21 @@ export default function ProjectDetail({
     if (!sheet || exportBusy) return;
     setExportBusy(true);
     try {
-      const name = await downloadSCurvePng(scurveSvgRef.current, project);
-      showToast(`📥 ส่งออก ${name} แล้ว`);
+      const name = await downloadSCurvePng(scurveSvgRef.current, project, sheet);
+      showToast(`📥 ส่งออกแผนงานเต็ม ${name} แล้ว`);
+    } catch (err) {
+      showToast('❌ ' + (err?.message || String(err)));
+    } finally {
+      setExportBusy(false);
+    }
+  };
+
+  const handleExportSvg = async () => {
+    if (!sheet || exportBusy) return;
+    setExportBusy(true);
+    try {
+      const name = await downloadSCurveSvg(scurveSvgRef.current, project);
+      showToast(`📥 ส่งออก SVG (แก้ไขได้) ${name} แล้ว`);
     } catch (err) {
       showToast('❌ ' + (err?.message || String(err)));
     } finally {
@@ -815,10 +828,21 @@ export default function ProjectDetail({
                   type="button"
                   onClick={handleExportPng}
                   disabled={!sheet?.rows?.length || exportBusy}
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[11px] font-bold bg-white text-slate-700 border border-slate-200 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed shadow-sm"
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[11px] font-bold bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-40 disabled:cursor-not-allowed shadow-sm"
+                  title="ส่งออกแผนงานทั้งหมด + กราฟ เป็นภาพ PNG"
                 >
                   {exportBusy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ImageDown className="w-3.5 h-3.5" />}
-                  ภาพ PNG
+                  ภาพแผนงาน PNG
+                </button>
+                <button
+                  type="button"
+                  onClick={handleExportSvg}
+                  disabled={!sheet?.rows?.length || exportBusy}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[11px] font-bold bg-white text-slate-700 border border-slate-200 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed shadow-sm"
+                  title="ไฟล์ SVG เปิดแก้ใน Illustrator / Inkscape / Figma ได้"
+                >
+                  <FileCode2 className="w-3.5 h-3.5" />
+                  SVG แก้ไขได้
                 </button>
               </div>
             </div>

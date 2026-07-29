@@ -666,21 +666,28 @@ const localHandlers = {
   },
   updateTaskStatus(payload) {
     const db = getLocalDb();
+    const completedAt = payload.status === 'Completed' ? new Date().toISOString() : null;
     db.tasks = db.tasks.map((t) => {
       if (String(t.id) !== String(payload.taskId)) return t;
       return {
         ...t,
         status: payload.status,
-        completedAt: payload.status === 'Completed' ? new Date().toISOString() : t.completedAt,
+        completedAt: payload.status === 'Completed' ? completedAt : t.completedAt,
       };
     });
+    const doneLabel = completedAt
+      ? new Date(completedAt).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: 'numeric' })
+      : '';
+    const defaultDetail = payload.status === 'Completed'
+      ? `เปลี่ยนสถานะเป็น เสร็จสิ้น · วันเสร็จ ${doneLabel}`
+      : `เปลี่ยนสถานะเป็น ${payload.status}`;
     db.taskLogs = [{
       id: `l_${Date.now()}`,
       taskId: payload.taskId,
       timestamp: new Date().toISOString(),
       actionBy: payload.userId,
       actionType: 'Status Changed',
-      detail: payload.logDetail || `เปลี่ยนสถานะเป็น ${payload.status}`,
+      detail: payload.logDetail || defaultDetail,
     }, ...db.taskLogs];
     return {
       task: db.tasks.find((t) => String(t.id) === String(payload.taskId)),
