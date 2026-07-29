@@ -1,6 +1,6 @@
 /** Local mock DB for Vite DEV only (stripped from production bundle) */
 
-const SEED_VERSION = 4;
+const SEED_VERSION = 5;
 
 function buildDemoSeed() {
   const NOW = Date.now();
@@ -35,9 +35,9 @@ function buildDemoSeed() {
       user({ id: 'u9', name: 'บัญชีปิดใช้ (ตัวอย่าง)', role: 'Staff', department: 'IT', division: 'กองเทคโนโลยี', username: 'olduser', active: false }),
     ],
     projects: [
-      { id: 'p1', name: 'พัฒนาระบบ Intranet กอง', description: 'อัปเกรดระบบภายใน (Next-Gen) — ดู Gantt / Milestone ได้', createdBy: 'u1', createdAt: t(-14), startDate: d(-14), endDate: d(45) },
+      { id: 'p1', name: 'พัฒนาระบบ Intranet กอง', description: 'อัปเกรดระบบภายใน (Next-Gen) — มีประวัติขยายสัญญา 2 ครั้ง', createdBy: 'u1', createdAt: t(-14), startDate: d(-14), endDate: d(75) },
       { id: 'p2', name: 'กิจกรรม 5ส ประจำปี', description: 'จัดระเบียบอุปกรณ์และสายไฟ', createdBy: 'u1', createdAt: t(-7), startDate: d(-7), endDate: d(21) },
-      { id: 'p3', name: 'แผนซ่อมบำรุงประจำไตรมาส (Q3)', description: 'ตรวจสอบอุปกรณ์ Network ทั่วตึก', createdBy: 'u1', createdAt: t(-3), startDate: d(-3), endDate: d(60) },
+      { id: 'p3', name: 'แผนซ่อมบำรุงประจำไตรมาส (Q3)', description: 'ตรวจสอบอุปกรณ์ Network ทั่วตึก — ขยายสัญญารออะไหล่', createdBy: 'u1', createdAt: t(-3), startDate: d(-3), endDate: d(75) },
       { id: 'p4', name: 'ระบบประเมินผลประจำปี', description: 'โปรเจกต์แผนก HR — สิทธิ์แยกตามแผนก', createdBy: 'u5', createdAt: t(-10), startDate: d(-10), endDate: d(30) },
       { id: 'p5', name: 'จัดทำงบประมาณปี 69', description: 'โปรเจกต์แผนก Finance', createdBy: 'u7', createdAt: t(-5), startDate: d(-5), endDate: d(40) },
     ],
@@ -58,6 +58,29 @@ function buildDemoSeed() {
       { id: 'm14', projectId: 'p4', title: 'ปิดรอบประเมิน', description: 'สรุปคะแนน', plannedStart: d(14), plannedEnd: d(30), weight: 20, sortOrder: 3, completed: false, completedAt: null },
       { id: 'm15', projectId: 'p5', title: 'รวบรวมคำของบ', description: 'จากทุกกอง', plannedStart: d(-5), plannedEnd: d(7), weight: 50, sortOrder: 1, completed: false, completedAt: null },
       { id: 'm16', projectId: 'p5', title: 'ปรับยอด & อนุมัติ', description: 'เสนอ ผอ.', plannedStart: d(7), plannedEnd: d(40), weight: 50, sortOrder: 2, completed: false, completedAt: null },
+    ],
+    contractExtensions: [
+      {
+        id: 'ce_demo_1', projectId: 'p1', extensionNo: 1,
+        fromDate: d(45), toDate: d(60), startMilestoneId: 'm4',
+        reason: 'รอผลทดสอบ UAT และปรับแก้ตามข้อเสนอแนะของผู้ใช้งาน',
+        approvalRef: 'บันทึกอนุมัติ IT-EXT-001/2569', approvedAt: d(-2),
+        createdBy: 'u1', createdAt: t(-2), updatedAt: t(-2),
+      },
+      {
+        id: 'ce_demo_2', projectId: 'p1', extensionNo: 2,
+        fromDate: d(60), toDate: d(75), startMilestoneId: 'm5',
+        reason: 'เลื่อนการขึ้นระบบจริงเพื่อรอการเชื่อมต่อระบบกลาง',
+        approvalRef: 'บันทึกอนุมัติ IT-EXT-002/2569', approvedAt: d(-1),
+        createdBy: 'u1', createdAt: t(-1), updatedAt: t(-1),
+      },
+      {
+        id: 'ce_demo_3', projectId: 'p3', extensionNo: 1,
+        fromDate: d(60), toDate: d(75), startMilestoneId: 'm11',
+        reason: 'รออะไหล่ Network เพิ่มเติมจากผู้จำหน่าย',
+        approvalRef: 'บันทึกอนุมัติ NET-EXT-001/2569', approvedAt: d(0),
+        createdBy: 'u1', createdAt: t(0), updatedAt: t(0),
+      },
     ],
     tasks: [
       { id: 1, projectId: 'p1', title: 'ออกแบบหน้า Login ใหม่', description: 'ใช้โทนสีองค์กร — สถานะเสร็จสิ้น', createdBy: 'u1', assignedTo: 'u2', status: 'Completed', type: 'Assigned', dueDate: t(-2), isRecurring: false, createdAt: t(-7), completedAt: t(-2) },
@@ -177,6 +200,7 @@ const localHandlers = {
       comments: [],
       commentCounts: {},
       milestones: db.milestones || [],
+      contractExtensions: db.contractExtensions || [],
       orgUnits: (db.orgUnits || []).filter((o) => o.active !== false),
       serverTime: new Date().toISOString(),
     };
@@ -542,6 +566,75 @@ const localHandlers = {
   deleteMilestone(payload) {
     const db = getLocalDb();
     db.milestones = (db.milestones || []).filter((m) => m.id !== payload.id);
+    return { ok: true, id: payload.id };
+  },
+  createContractExtension(payload) {
+    const db = getLocalDb();
+    if (!db.contractExtensions) db.contractExtensions = [];
+    const project = db.projects.find((p) => String(p.id) === String(payload.projectId));
+    if (!project) throw new Error('ไม่พบโปรเจกต์');
+    if (!payload.fromDate || !payload.toDate) throw new Error('กรุณาระบุช่วงวันที่ขยายสัญญา');
+    if (new Date(payload.toDate).getTime() < new Date(payload.fromDate).getTime()) {
+      throw new Error('วันสิ้นสุดใหม่ต้องไม่น้อยกว่าวันเริ่มขยาย');
+    }
+    if (!payload.startMilestoneId) throw new Error('กรุณาระบุขั้นตอนที่เริ่มขยาย');
+    if (!String(payload.reason || '').trim()) throw new Error('กรุณาระบุเหตุผลการขยายสัญญา');
+    const mine = db.contractExtensions.filter((x) => String(x.projectId) === String(payload.projectId));
+    const extensionNo = mine.reduce((max, x) => Math.max(max, Number(x.extensionNo) || 0), 0) + 1;
+    const now = new Date().toISOString();
+    const extension = {
+      id: `ce_${Date.now()}`,
+      projectId: String(payload.projectId),
+      extensionNo,
+      fromDate: payload.fromDate,
+      toDate: payload.toDate,
+      startMilestoneId: String(payload.startMilestoneId),
+      reason: String(payload.reason || '').trim(),
+      approvalRef: String(payload.approvalRef || '').trim(),
+      approvedAt: payload.approvedAt || null,
+      createdBy: String(payload.createdBy || ''),
+      createdAt: now,
+      updatedAt: now,
+    };
+    db.contractExtensions = [...db.contractExtensions, extension];
+    const updatedProject = (!project.endDate || new Date(extension.toDate).getTime() > new Date(project.endDate).getTime())
+      ? { ...project, endDate: extension.toDate }
+      : { ...project };
+    db.projects = db.projects.map((p) => String(p.id) === String(project.id) ? updatedProject : p);
+    return { extension, project: updatedProject };
+  },
+  updateContractExtension(payload) {
+    const db = getLocalDb();
+    if (!db.contractExtensions) db.contractExtensions = [];
+    const idx = db.contractExtensions.findIndex((x) => String(x.id) === String(payload.id));
+    if (idx < 0) throw new Error('ไม่พบรายการขยายสัญญา');
+    const extension = {
+      ...db.contractExtensions[idx],
+      ...payload,
+      id: db.contractExtensions[idx].id,
+      projectId: db.contractExtensions[idx].projectId,
+      extensionNo: db.contractExtensions[idx].extensionNo,
+      updatedAt: new Date().toISOString(),
+    };
+    if (new Date(extension.toDate).getTime() < new Date(extension.fromDate).getTime()) {
+      throw new Error('วันสิ้นสุดใหม่ต้องไม่น้อยกว่าวันเริ่มขยาย');
+    }
+    db.contractExtensions = db.contractExtensions.map((x, i) => i === idx ? extension : x);
+    const project = db.projects.find((p) => String(p.id) === String(extension.projectId));
+    const updatedProject = project && (!project.endDate || new Date(extension.toDate).getTime() > new Date(project.endDate).getTime())
+      ? { ...project, endDate: extension.toDate }
+      : (project ? { ...project } : null);
+    if (updatedProject) {
+      db.projects = db.projects.map((p) => String(p.id) === String(updatedProject.id) ? updatedProject : p);
+    }
+    return { extension, project: updatedProject };
+  },
+  deleteContractExtension(payload) {
+    const db = getLocalDb();
+    if (!db.contractExtensions) db.contractExtensions = [];
+    const before = db.contractExtensions.length;
+    db.contractExtensions = db.contractExtensions.filter((x) => String(x.id) !== String(payload.id));
+    if (before === db.contractExtensions.length) throw new Error('ไม่พบรายการขยายสัญญา');
     return { ok: true, id: payload.id };
   },
   createTask(payload) {

@@ -8,6 +8,7 @@ var TASKS_SHEET = 'Tasks';
 var LOGS_SHEET = 'TaskLogs';
 var COMMENTS_SHEET = 'Comments';
 var MILESTONES_SHEET = 'Milestones';
+var CONTRACT_EXTENSIONS_SHEET = 'ContractExtensions';
 var STICKY_NOTES_SHEET = 'StickyNotes';
 var ORG_UNITS_SHEET = 'OrgUnits';
 
@@ -26,6 +27,11 @@ var COMMENT_HEADERS = ['id', 'taskId', 'timestamp', 'authorId', 'text'];
 var MILESTONE_HEADERS = [
   'id', 'projectId', 'title', 'description', 'plannedStart', 'plannedEnd',
   'weight', 'sortOrder', 'completed', 'completedAt'
+];
+var CONTRACT_EXTENSION_HEADERS = [
+  'id', 'projectId', 'extensionNo', 'fromDate', 'toDate',
+  'startMilestoneId', 'reason', 'approvalRef', 'approvedAt',
+  'createdBy', 'createdAt', 'updatedAt'
 ];
 var STICKY_NOTE_HEADERS = [
   'id', 'userId', 'title', 'body', 'color', 'emoji',
@@ -173,6 +179,9 @@ function dispatchApi_(fn, payload, hasPayload) {
   if (fn === 'createMilestone') return createMilestone(payload || {});
   if (fn === 'updateMilestone') return updateMilestone(payload || {});
   if (fn === 'deleteMilestone') return deleteMilestone(payload || {});
+  if (fn === 'createContractExtension') return createContractExtension(payload || {});
+  if (fn === 'updateContractExtension') return updateContractExtension(payload || {});
+  if (fn === 'deleteContractExtension') return deleteContractExtension(payload || {});
   if (fn === 'createTask') return createTask(payload || {});
   if (fn === 'updateTaskStatus') return updateTaskStatus(payload || {});
   if (fn === 'forwardTask') return forwardTask(payload || {});
@@ -214,8 +223,8 @@ function include_(filename) {
   return include(filename);
 }
 
-var SCHEMA_VERSION = '11';
-var BOOT_CACHE_KEY = 'gtp_boot_v7';
+var SCHEMA_VERSION = '12';
+var BOOT_CACHE_KEY = 'gtp_boot_v8';
 var BOOT_CACHE_TTL = 90;
 var _ssCache = null;
 var _sheetHeaderCache = {};
@@ -265,6 +274,7 @@ function getBootstrap(opt) {
       comments: [],
       commentCounts: {},
       milestones: listMilestonesFromSs_(ss),
+      contractExtensions: listContractExtensionsFromSs_(ss),
       orgUnits: listOrgUnitsFromSs_(ss),
       serverTime: new Date().toISOString()
     };
@@ -402,6 +412,106 @@ function deleteMilestone(payload) {
     }
   }
   throw new Error('ไม่พบขั้นตอน');
+}
+
+function createContractExtension(payload) {
+  openDatabase_(false);
+  var projectId = String(payload.projectId || '');
+  if (!projectId) throw new Error('ต้องระบุโปรเจกต์');
+  var project = findProjectById_(projectId);
+  if (!project) throw new Error('ไม่พบโปรเจกต์');
+
+  var fromDate = payload.fromDate ? String(payload.fromDate).slice(0, 10) : '';
+  var toDate = payload.toDate ? String(payload.toDate).slice(0, 10) : '';
+  if (!fromDate || !toDate) throw new Error('กรุณาระบุช่วงวันที่ขยายสัญญา');
+  if (new Date(toDate).getTime() < new Date(fromDate).getTime()) {
+    throw new Error('วันสิ้นสุดใหม่ต้องไม่น้อยกว่าวันเริ่มขยาย');
+  }
+
+  var existing = listContractExtensions_().filter(function (x) {
+    return String(x.projectId) === projectId;
+  });
+  var maxNo = 0;
+  for (var i = 0; i < existing.length; i++) {
+    maxNo = Math.max(maxNo, Number(existing[i].extensionNo) || 0);
+  }
+  var now = new Date().toISOString();
+  var row = {
+    id: 'ce_' + Date.now() + '_' + Math.floor(Math.random() * 1000),
+    projectId: projectId,
+    extensionNo: maxNo + 1,
+    fromDate: fromDate,
+    toDate: toDate,
+    startMilestoneId: String(payload.startMilestoneId || ''),
+    reason: String(payload.reason || '').trim(),
+    approvalRef: String(payload.approvalRef || '').trim(),
+    approvedAt: payload.approvedAt ? String(payload.approvedAt).slice(0, 10) : '',
+    createdBy: String(payload.createdBy || ''),
+    createdAt: now,
+    updatedAt: now
+  };
+  if (!row.startMilestoneId) throw new Error('กรุณาระบุขั้นตอนที่เริ่มขยาย');
+  if (!row.reason) throw new Error('กรุณาระบุเหตุผลการขยายสัญญา');
+
+  appendObject_(CONTRACT_EXTENSIONS_SHEET, CONTRACT_EXTENSION_HEADERS, row);
+  var updatedProject = project;
+  if (!project.endDate || new Date(toDate).getTime() > new Date(project.endDate).getTime()) {
+    var foundProject = updateRowById_(PROJECTS_SHEET, projectId, { endDate: toDate });
+    if (foundProject) updatedProject = normalizeProject_(foundProject);
+  }
+  invalidateBootstrapCache_();
+  return { extension: normalizeContractExtension_(row), project: updatedProject };
+}
+
+function updateContractExtension(payload) {
+  openDatabase_(false);
+  var id = String(payload.id || '');
+  if (!id) throw new Error('ไม่พบรายการขยายสัญญา');
+  var updates = { updatedAt: new Date().toISOString() };
+  if (payload.fromDate !== undefined) updates.fromDate = payload.fromDate ? String(payload.fromDate).slice(0, 10) : '';
+  if (payload.toDate !== undefined) updates.toDate = payload.toDate ? String(payload.toDate).slice(0, 10) : '';
+  if (payload.startMilestoneId !== undefined) updates.startMilestoneId = String(payload.startMilestoneId || '');
+  if (payload.reason !== undefined) updates.reason = String(payload.reason || '').trim();
+  if (payload.approvalRef !== undefined) updates.approvalRef = String(payload.approvalRef || '').trim();
+  if (payload.approvedAt !== undefined) updates.approvedAt = payload.approvedAt ? String(payload.approvedAt).slice(0, 10) : '';
+  if (updates.fromDate && updates.toDate && new Date(updates.toDate).getTime() < new Date(updates.fromDate).getTime()) {
+    throw new Error('วันสิ้นสุดใหม่ต้องไม่น้อยกว่าวันเริ่มขยาย');
+  }
+  var found = updateRowById_(CONTRACT_EXTENSIONS_SHEET, id, updates);
+  if (!found) throw new Error('ไม่พบรายการขยายสัญญา');
+  var extension = normalizeContractExtension_(found);
+  var project = findProjectById_(extension.projectId);
+  if (project && extension.toDate && (!project.endDate || new Date(extension.toDate).getTime() > new Date(project.endDate).getTime())) {
+    var projectRow = updateRowById_(PROJECTS_SHEET, extension.projectId, { endDate: extension.toDate });
+    if (projectRow) project = normalizeProject_(projectRow);
+  }
+  invalidateBootstrapCache_();
+  return { extension: extension, project: project };
+}
+
+function deleteContractExtension(payload) {
+  openDatabase_(false);
+  var id = String(payload.id || '');
+  if (!id) throw new Error('ไม่พบรายการขยายสัญญา');
+  var sheet = getSheet_(CONTRACT_EXTENSIONS_SHEET);
+  var data = sheet.getDataRange().getValues();
+  if (data.length < 2) throw new Error('ไม่พบรายการขยายสัญญา');
+  var idIdx = data[0].indexOf('id');
+  for (var i = 1; i < data.length; i++) {
+    if (String(data[i][idIdx]) !== id) continue;
+    sheet.deleteRow(i + 1);
+    invalidateBootstrapCache_();
+    return { ok: true, id: id };
+  }
+  throw new Error('ไม่พบรายการขยายสัญญา');
+}
+
+function findProjectById_(projectId) {
+  var rows = listProjects_();
+  for (var i = 0; i < rows.length; i++) {
+    if (String(rows[i].id) === String(projectId)) return rows[i];
+  }
+  return null;
 }
 
 function createTask(payload) {
@@ -892,6 +1002,7 @@ function ensureSheets_(ss) {
   ensureSheetWithHeaders_(ss, LOGS_SHEET, LOG_HEADERS);
   ensureSheetWithHeaders_(ss, COMMENTS_SHEET, COMMENT_HEADERS);
   ensureSheetWithHeaders_(ss, MILESTONES_SHEET, MILESTONE_HEADERS);
+  ensureSheetWithHeaders_(ss, CONTRACT_EXTENSIONS_SHEET, CONTRACT_EXTENSION_HEADERS);
   ensureSheetWithHeaders_(ss, STICKY_NOTES_SHEET, STICKY_NOTE_HEADERS);
   ensureSheetWithHeaders_(ss, ORG_UNITS_SHEET, ORG_HEADERS);
 
@@ -1676,7 +1787,7 @@ function ensureDemoShowcase_() {
   function d(n) { return dateOnly_(now + DAY * n); }
   function iso(n, h) { return new Date(now + DAY * n + HOUR * (h || 0)).toISOString(); }
 
-  var added = { users: 0, projects: 0, tasks: 0, milestones: 0, orgs: 0, comments: 0, logs: 0, stickies: 0 };
+  var added = { users: 0, projects: 0, tasks: 0, milestones: 0, contractExtensions: 0, orgs: 0, comments: 0, logs: 0, stickies: 0 };
 
   ensureOrgUnitExists_('department', 'IT', '', 'IT');
   ensureOrgUnitExists_('department', 'SYSTEM', '', 'SYSTEM');
@@ -1708,9 +1819,9 @@ function ensureDemoShowcase_() {
   }
 
   var demoProjects = [
-    ['p1', 'พัฒนาระบบ Intranet กอง', 'อัปเกรดระบบภายใน (Next-Gen) — ดู Gantt / Milestone ได้', 'u1', iso(-14), d(-14), d(45)],
+    ['p1', 'พัฒนาระบบ Intranet กอง', 'อัปเกรดระบบภายใน (Next-Gen) — มีประวัติขยายสัญญา 2 ครั้ง', 'u1', iso(-14), d(-14), d(75)],
     ['p2', 'กิจกรรม 5ส ประจำปี', 'จัดระเบียบอุปกรณ์และสายไฟ', 'u1', iso(-7), d(-7), d(21)],
-    ['p3', 'แผนซ่อมบำรุงประจำไตรมาส (Q3)', 'ตรวจสอบอุปกรณ์ Network ทั่วตึก', 'u1', iso(-3), d(-3), d(60)],
+    ['p3', 'แผนซ่อมบำรุงประจำไตรมาส (Q3)', 'ตรวจสอบอุปกรณ์ Network ทั่วตึก — ขยายสัญญารออะไหล่', 'u1', iso(-3), d(-3), d(75)],
     ['p4', 'ระบบประเมินผลประจำปี', 'โปรเจกต์แผนก HR — สิทธิ์แยกตามแผนก', 'u5', iso(-10), d(-10), d(30)],
     ['p5', 'จัดทำงบประมาณปี 69', 'โปรเจกต์แผนก Finance', 'u7', iso(-5), d(-5), d(40)]
   ];
@@ -1745,6 +1856,21 @@ function ensureDemoShowcase_() {
       added.milestones++;
     }
   }
+
+  var demoExtensions = [
+    ['ce_demo_1', 'p1', 1, d(45), d(60), 'm4', 'รอผลทดสอบ UAT และปรับแก้ตามข้อเสนอแนะของผู้ใช้งาน', 'บันทึกอนุมัติ IT-EXT-001/2569', d(-2), 'u1', iso(-2), iso(-2)],
+    ['ce_demo_2', 'p1', 2, d(60), d(75), 'm5', 'เลื่อนการขึ้นระบบจริงเพื่อรอการเชื่อมต่อระบบกลาง', 'บันทึกอนุมัติ IT-EXT-002/2569', d(-1), 'u1', iso(-1), iso(-1)],
+    ['ce_demo_3', 'p3', 1, d(60), d(75), 'm11', 'รออะไหล่ Network เพิ่มเติมจากผู้จำหน่าย', 'บันทึกอนุมัติ NET-EXT-001/2569', d(0), 'u1', iso(0), iso(0)]
+  ];
+  for (var cei = 0; cei < demoExtensions.length; cei++) {
+    if (!sheetHasId_(CONTRACT_EXTENSIONS_SHEET, demoExtensions[cei][0])) {
+      writeRows_(getSheet_(CONTRACT_EXTENSIONS_SHEET), getSheet_(CONTRACT_EXTENSIONS_SHEET).getLastRow() + 1, [demoExtensions[cei]]);
+      added.contractExtensions++;
+    }
+  }
+  // Demo projects reflect the latest approved contract end date.
+  if (sheetHasId_(PROJECTS_SHEET, 'p1')) updateRowById_(PROJECTS_SHEET, 'p1', { endDate: d(75) });
+  if (sheetHasId_(PROJECTS_SHEET, 'p3')) updateRowById_(PROJECTS_SHEET, 'p3', { endDate: d(75) });
 
   var demoTasks = [
     [1, 'p1', 'ออกแบบหน้า Login ใหม่', 'ใช้โทนสีองค์กร — สถานะเสร็จสิ้น', 'u1', 'u2', 'Completed', 'Assigned', iso(-2), 'FALSE', iso(-7), iso(-2)],
@@ -1990,6 +2116,15 @@ function listMilestonesFromSs_(ss) {
   });
 }
 
+function listContractExtensionsFromSs_(ss) {
+  return listObjectsFromSheet_(ss.getSheetByName(CONTRACT_EXTENSIONS_SHEET))
+    .map(normalizeContractExtension_)
+    .sort(function (a, b) {
+      if (a.projectId !== b.projectId) return String(a.projectId).localeCompare(String(b.projectId));
+      return (a.extensionNo || 0) - (b.extensionNo || 0);
+    });
+}
+
 function listUsers_() {
   return listUsersFromSs_(openDatabase_(false));
 }
@@ -2014,6 +2149,27 @@ function listMilestones_() {
   return listObjects_(MILESTONES_SHEET).map(normalizeMilestone_).sort(function (a, b) {
     return (a.sortOrder || 0) - (b.sortOrder || 0);
   });
+}
+
+function listContractExtensions_() {
+  return listObjects_(CONTRACT_EXTENSIONS_SHEET).map(normalizeContractExtension_);
+}
+
+function normalizeContractExtension_(x) {
+  return {
+    id: String(x.id || ''),
+    projectId: String(x.projectId || ''),
+    extensionNo: Number(x.extensionNo) || 0,
+    fromDate: x.fromDate ? toDateOnly_(x.fromDate) : null,
+    toDate: x.toDate ? toDateOnly_(x.toDate) : null,
+    startMilestoneId: String(x.startMilestoneId || ''),
+    reason: String(x.reason || ''),
+    approvalRef: String(x.approvalRef || ''),
+    approvedAt: x.approvedAt ? toDateOnly_(x.approvedAt) : null,
+    createdBy: String(x.createdBy || ''),
+    createdAt: toIso_(x.createdAt) || new Date().toISOString(),
+    updatedAt: toIso_(x.updatedAt) || toIso_(x.createdAt) || new Date().toISOString()
+  };
 }
 
 function normalizeMilestone_(m) {

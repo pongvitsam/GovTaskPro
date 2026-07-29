@@ -1,7 +1,8 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ArrowLeft, Calendar as CalendarIcon, CheckCircle2, Plus, Trash2,
-  Settings2, LineChart, ListChecks, KanbanSquare, Loader2, Save, Download, ImageDown
+  Settings2, LineChart, ListChecks, KanbanSquare, Loader2, Save, Download, ImageDown,
+  FileClock, CalendarRange, Milestone, FileText
 } from 'lucide-react';
 import {
   buildSCurve, buildSCurveSheet, toTimelinePolyline, toTimelinePoints, timeToRatio,
@@ -13,6 +14,7 @@ import ThaiDateField from './ThaiDateField';
 
 const TABS = [
   { id: 'plan', label: 'แผนงาน / ขั้นตอน', icon: ListChecks },
+  { id: 'contract', label: 'ขยายสัญญา', icon: FileClock },
   { id: 'scurve', label: 'S-Curve', icon: LineChart },
   { id: 'settings', label: 'ตั้งค่าโปรเจกต์', icon: Settings2 },
 ];
@@ -26,6 +28,14 @@ const ROW_H = 44;
 const HEADER_H = 42;
 const CURVE_PAD_Y = 10;
 const WEEK_COL_W = 56;
+
+function daysBetween(fromDate, toDate) {
+  if (!fromDate || !toDate) return 0;
+  const from = new Date(`${String(fromDate).slice(0, 10)}T12:00:00`);
+  const to = new Date(`${String(toDate).slice(0, 10)}T12:00:00`);
+  if (Number.isNaN(from.getTime()) || Number.isNaN(to.getTime())) return 0;
+  return Math.max(0, Math.round((to - from) / 86400000));
+}
 
 function MilestoneEditor({ m, idx, busy, onUpdate, onDelete }) {
   const [draft, setDraft] = useState({
@@ -185,6 +195,7 @@ function MilestoneEditor({ m, idx, busy, onUpdate, onDelete }) {
 export default function ProjectDetail({
   project,
   milestones,
+  contractExtensions,
   tasks,
   currentUser,
   busy,
@@ -194,6 +205,9 @@ export default function ProjectDetail({
   onCreateMilestone,
   onUpdateMilestone,
   onDeleteMilestone,
+  onCreateContractExtension,
+  onUpdateContractExtension,
+  onDeleteContractExtension,
   showToast,
 }) {
   const [tab, setTab] = useState('plan');
@@ -229,6 +243,47 @@ export default function ProjectDetail({
       .sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0)),
     [milestones, project.id]
   );
+
+  const projectExtensions = useMemo(
+    () => (contractExtensions || [])
+      .filter((x) => String(x.projectId) === String(project.id))
+      .sort((a, b) => (Number(a.extensionNo) || 0) - (Number(b.extensionNo) || 0)),
+    [contractExtensions, project.id]
+  );
+
+  const originalContractEnd = projectExtensions[0]?.fromDate || project.endDate;
+  const effectiveContractEnd = projectExtensions.reduce((latest, x) => {
+    if (!x.toDate) return latest;
+    if (!latest || new Date(x.toDate).getTime() > new Date(latest).getTime()) return x.toDate;
+    return latest;
+  }, project.endDate || null);
+  const totalExtensionDays = projectExtensions.reduce(
+    (sum, x) => sum + daysBetween(x.fromDate, x.toDate),
+    0
+  );
+
+  const defaultExtensionMilestone = projectMilestones.find((m) => !m.completed)?.id
+    || projectMilestones[projectMilestones.length - 1]?.id
+    || '';
+  const [newExtension, setNewExtension] = useState({
+    fromDate: '',
+    toDate: '',
+    startMilestoneId: '',
+    reason: '',
+    approvalRef: '',
+    approvedAt: '',
+  });
+
+  useEffect(() => {
+    setNewExtension({
+      fromDate: toInputDate(effectiveContractEnd),
+      toDate: '',
+      startMilestoneId: defaultExtensionMilestone,
+      reason: '',
+      approvalRef: '',
+      approvedAt: '',
+    });
+  }, [project.id, effectiveContractEnd, defaultExtensionMilestone, projectExtensions.length]);
 
   const progress = useMemo(() => {
     const c = buildSCurve(project, projectMilestones, { maxPoints: 2 });
@@ -323,6 +378,35 @@ export default function ProjectDetail({
     });
   };
 
+  const handleAddContractExtension = async (e) => {
+    e.preventDefault();
+    if (!canEdit || busy) return;
+    if (!newExtension.fromDate || !newExtension.toDate || !newExtension.startMilestoneId || !newExtension.reason.trim()) {
+      showToast('กรุณากรอกช่วงวันที่ ขั้นตอน และเหตุผลให้ครบ');
+      return;
+    }
+    const row = await onCreateContractExtension({
+      projectId: project.id,
+      fromDate: newExtension.fromDate,
+      toDate: newExtension.toDate,
+      startMilestoneId: newExtension.startMilestoneId,
+      reason: newExtension.reason.trim(),
+      approvalRef: newExtension.approvalRef.trim(),
+      approvedAt: newExtension.approvedAt || null,
+      createdBy: currentUser.id,
+    });
+    if (row) {
+      setNewExtension({
+        fromDate: row.toDate || newExtension.toDate,
+        toDate: '',
+        startMilestoneId: row.startMilestoneId || defaultExtensionMilestone,
+        reason: '',
+        approvalRef: '',
+        approvedAt: '',
+      });
+    }
+  };
+
   return (
     <div className="p-6 md:p-8 overflow-y-auto h-full">
       <div className="flex flex-col lg:flex-row lg:items-start justify-between gap-4 mb-6">
@@ -346,9 +430,16 @@ export default function ProjectDetail({
             <span className="text-[11px] font-bold px-3 py-1.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200">
               งานในบอร์ด {tasks.filter((t) => t.projectId === project.id).length}
             </span>
+            <span className={`text-[11px] font-bold px-3 py-1.5 rounded-full border ${
+              projectExtensions.length
+                ? 'bg-amber-50 text-amber-800 border-amber-200'
+                : 'bg-slate-50 text-slate-500 border-slate-200'
+            }`}>
+              ขยายสัญญา {projectExtensions.length} ครั้ง
+            </span>
           </div>
           <div className="mt-4 max-w-xl">
-            <ProjectTimeBar startDate={project.startDate} endDate={project.endDate} />
+            <ProjectTimeBar startDate={project.startDate} endDate={effectiveContractEnd} />
           </div>
         </div>
         <button
@@ -492,6 +583,191 @@ export default function ProjectDetail({
                   <CheckCircle2 className="w-10 h-10 mx-auto mb-3 text-slate-300" />
                   <p className="font-bold text-slate-500">ยังไม่มีขั้นตอนในแผน</p>
                   <p className="text-xs mt-1">เพิ่มงานย่อยในช่วงเวลาโครงการ เพื่อสร้าง S-Curve</p>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {tab === 'contract' && (
+        <div className="space-y-6">
+          <div className="grid grid-cols-2 xl:grid-cols-4 gap-3">
+            {[
+              { label: 'ขยายแล้ว', value: `${projectExtensions.length} ครั้ง`, tone: 'text-amber-700', bg: 'from-amber-50' },
+              { label: 'วันสิ้นสุดเดิม', value: formatThaiDateLong(originalContractEnd, { emptyLabel: 'ไม่ระบุ' }), tone: 'text-slate-700', bg: 'from-slate-50' },
+              { label: 'วันสิ้นสุดปัจจุบัน', value: formatThaiDateLong(effectiveContractEnd, { emptyLabel: 'ไม่ระบุ' }), tone: 'text-blue-700', bg: 'from-blue-50' },
+              { label: 'ระยะเวลาที่ขยายรวม', value: `${totalExtensionDays} วัน`, tone: 'text-emerald-700', bg: 'from-emerald-50' },
+            ].map((stat) => (
+              <div key={stat.label} className={`bg-gradient-to-br ${stat.bg} to-white border border-slate-200 rounded-2xl p-4 shadow-sm`}>
+                <p className="text-[11px] font-bold text-slate-500 mb-1">{stat.label}</p>
+                <p className={`text-lg font-black leading-tight ${stat.tone}`}>{stat.value}</p>
+              </div>
+            ))}
+          </div>
+
+          <form onSubmit={handleAddContractExtension} className="bg-white border border-amber-200 rounded-3xl p-5 md:p-6 shadow-sm space-y-5">
+            <div className="flex items-start gap-3">
+              <span className="p-2.5 rounded-2xl bg-amber-100 text-amber-700">
+                <CalendarRange className="w-5 h-5" />
+              </span>
+              <div>
+                <h3 className="font-extrabold text-slate-800">บันทึกการขยายสัญญาครั้งใหม่</h3>
+                <p className="text-xs text-slate-500 font-medium mt-0.5">
+                  ระบบจะนับเป็นครั้งที่ {projectExtensions.length + 1} และปรับวันสิ้นสุดโปรเจกต์ให้อัตโนมัติ
+                </p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="text-xs font-bold text-slate-600 mb-1.5 block">ขยายจากวันที่ *</label>
+                <ThaiDateField
+                  required
+                  value={newExtension.fromDate}
+                  placeholder="วันที่สิ้นสุดเดิม พ.ศ."
+                  onChange={(v) => setNewExtension((prev) => ({ ...prev, fromDate: v }))}
+                />
+              </div>
+              <div>
+                <label className="text-xs font-bold text-slate-600 mb-1.5 block">ขยายถึงวันที่ *</label>
+                <ThaiDateField
+                  required
+                  value={newExtension.toDate}
+                  placeholder="วันที่สิ้นสุดใหม่ พ.ศ."
+                  onChange={(v) => setNewExtension((prev) => ({ ...prev, toDate: v }))}
+                />
+              </div>
+              <div>
+                <label className="text-xs font-bold text-slate-600 mb-1.5 block">เริ่มขยายตั้งแต่ขั้นตอน *</label>
+                <select
+                  required
+                  value={newExtension.startMilestoneId}
+                  onChange={(e) => setNewExtension((prev) => ({ ...prev, startMilestoneId: e.target.value }))}
+                  className="w-full border border-slate-200 rounded-2xl p-3.5 text-sm font-bold text-slate-700 bg-white outline-none focus:border-amber-400"
+                >
+                  <option value="">— เลือกขั้นตอน —</option>
+                  {projectMilestones.map((m, idx) => (
+                    <option key={m.id} value={m.id}>{idx + 1}. {m.title}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="text-xs font-bold text-slate-600 mb-1.5 block">วันที่อนุมัติ</label>
+                <ThaiDateField
+                  clearable
+                  value={newExtension.approvedAt}
+                  placeholder="วันที่อนุมัติ พ.ศ."
+                  onChange={(v) => setNewExtension((prev) => ({ ...prev, approvedAt: v }))}
+                />
+              </div>
+              <div className="md:col-span-2">
+                <label className="text-xs font-bold text-slate-600 mb-1.5 block">เหตุผลการขยายสัญญา *</label>
+                <textarea
+                  required
+                  rows={3}
+                  value={newExtension.reason}
+                  onChange={(e) => setNewExtension((prev) => ({ ...prev, reason: e.target.value }))}
+                  placeholder="เช่น รอผล UAT, รอส่งมอบอุปกรณ์, มีงานเพิ่มเติม..."
+                  className="w-full border border-slate-200 rounded-2xl p-3.5 text-sm font-medium outline-none focus:border-amber-400"
+                />
+              </div>
+              <div className="md:col-span-2">
+                <label className="text-xs font-bold text-slate-600 mb-1.5 block">เลขที่หนังสือ / เอกสารอนุมัติ</label>
+                <input
+                  value={newExtension.approvalRef}
+                  onChange={(e) => setNewExtension((prev) => ({ ...prev, approvalRef: e.target.value }))}
+                  placeholder="เช่น บันทึกอนุมัติ IT-EXT-003/2569"
+                  className="w-full border border-slate-200 rounded-2xl p-3.5 text-sm font-medium outline-none focus:border-amber-400"
+                />
+              </div>
+            </div>
+
+            <button
+              type="submit"
+              disabled={busy || !canEdit || projectMilestones.length === 0}
+              className="bg-amber-500 hover:bg-amber-600 text-white px-5 py-3 rounded-2xl text-sm font-extrabold flex items-center disabled:opacity-50"
+            >
+              {busy ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Plus className="w-4 h-4 mr-2" />}
+              บันทึกขยายสัญญาครั้งที่ {projectExtensions.length + 1}
+            </button>
+            {projectMilestones.length === 0 && (
+              <p className="text-xs font-bold text-rose-500">ต้องเพิ่มขั้นตอนในแผนงานก่อน จึงจะระบุจุดเริ่มขยายสัญญาได้</p>
+            )}
+          </form>
+
+          <div className="bg-white border border-slate-200 rounded-3xl shadow-sm overflow-hidden">
+            <div className="px-5 py-4 bg-slate-50 border-b border-slate-200">
+              <h3 className="font-extrabold text-slate-800">ประวัติการขยายสัญญา</h3>
+              <p className="text-[11px] text-slate-500 font-medium mt-0.5">
+                แสดงลำดับ ช่วงวันที่ เหตุผล และขั้นตอนที่ได้รับผลกระทบ
+              </p>
+            </div>
+            <div className="p-5 space-y-4">
+              {projectExtensions.map((ext, idx) => {
+                const milestone = projectMilestones.find((m) => String(m.id) === String(ext.startMilestoneId));
+                const extensionDays = daysBetween(ext.fromDate, ext.toDate);
+                return (
+                  <article key={ext.id} className="relative border border-amber-200 bg-gradient-to-br from-amber-50/70 to-white rounded-2xl p-5 pl-16">
+                    <div className="absolute left-4 top-5 w-9 h-9 rounded-full bg-amber-500 text-white flex items-center justify-center font-black shadow-md">
+                      {ext.extensionNo || idx + 1}
+                    </div>
+                    {idx < projectExtensions.length - 1 && (
+                      <div className="absolute left-[2rem] top-14 bottom-[-1.1rem] w-0.5 bg-amber-200" />
+                    )}
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div>
+                        <h4 className="font-black text-slate-800">ขยายสัญญาครั้งที่ {ext.extensionNo || idx + 1}</h4>
+                        <div className="flex flex-wrap gap-2 mt-2">
+                          <span className="inline-flex items-center text-xs font-bold text-blue-700 bg-blue-50 border border-blue-100 px-2.5 py-1 rounded-full">
+                            <CalendarRange className="w-3.5 h-3.5 mr-1.5" />
+                            {formatThaiDateLong(ext.fromDate)} → {formatThaiDateLong(ext.toDate)}
+                          </span>
+                          <span className="text-xs font-bold text-emerald-700 bg-emerald-50 border border-emerald-100 px-2.5 py-1 rounded-full">
+                            +{extensionDays} วัน
+                          </span>
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        disabled={busy}
+                        onClick={() => onDeleteContractExtension(ext.id)}
+                        className="p-2 text-rose-500 hover:bg-rose-50 rounded-xl disabled:opacity-50"
+                        title="ลบประวัติรายการนี้"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+
+                    <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
+                      <div className="flex items-start gap-2 p-3 rounded-xl bg-white/80 border border-slate-100">
+                        <Milestone className="w-4 h-4 mt-0.5 text-violet-500 shrink-0" />
+                        <div>
+                          <p className="text-[10px] font-bold text-slate-400 uppercase">เริ่มขยายตั้งแต่ขั้นตอน</p>
+                          <p className="font-bold text-slate-700 mt-0.5">{milestone?.title || 'ไม่พบขั้นตอน'}</p>
+                        </div>
+                      </div>
+                      <div className="flex items-start gap-2 p-3 rounded-xl bg-white/80 border border-slate-100">
+                        <FileText className="w-4 h-4 mt-0.5 text-blue-500 shrink-0" />
+                        <div>
+                          <p className="text-[10px] font-bold text-slate-400 uppercase">เอกสารอนุมัติ</p>
+                          <p className="font-bold text-slate-700 mt-0.5">{ext.approvalRef || 'ไม่ระบุ'}</p>
+                          {ext.approvedAt && <p className="text-[11px] text-slate-500 mt-0.5">อนุมัติ {formatThaiDateLong(ext.approvedAt)}</p>}
+                        </div>
+                      </div>
+                    </div>
+                    <div className="mt-3 p-3 rounded-xl bg-white/80 border border-slate-100">
+                      <p className="text-[10px] font-bold text-slate-400 uppercase mb-1">เหตุผลการขยายสัญญา</p>
+                      <p className="text-sm font-medium text-slate-700 leading-relaxed">{ext.reason}</p>
+                    </div>
+                  </article>
+                );
+              })}
+              {projectExtensions.length === 0 && (
+                <div className="py-12 text-center text-slate-400">
+                  <FileClock className="w-11 h-11 mx-auto mb-3 text-slate-300" />
+                  <p className="font-bold text-slate-600">ยังไม่เคยขยายสัญญา</p>
+                  <p className="text-xs mt-1">เมื่อบันทึกแล้ว ประวัติทั้งหมดจะแสดงเรียงตามครั้งที่ขยาย</p>
                 </div>
               )}
             </div>

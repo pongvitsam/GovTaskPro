@@ -69,6 +69,7 @@ export default function App() {
   const [comments, setComments] = useState([]);
   const [commentCounts, setCommentCounts] = useState({});
   const [milestones, setMilestones] = useState([]);
+  const [contractExtensions, setContractExtensions] = useState([]);
   const [busy, setBusy] = useState(false);
   const [activityLoading, setActivityLoading] = useState(false);
 
@@ -125,6 +126,7 @@ export default function App() {
     setComments(data.comments || []);
     setCommentCounts(data.commentCounts || {});
     setMilestones(data.milestones || []);
+    setContractExtensions(data.contractExtensions || []);
 
     if (restoreSession) {
       const session = readSession();
@@ -830,6 +832,62 @@ export default function App() {
     }
   };
 
+  const handleCreateContractExtension = async (payload) => {
+    if (busy) return null;
+    setBusy(true);
+    try {
+      const result = await api('createContractExtension', payload);
+      if (result?.extension) {
+        setContractExtensions((prev) => [...prev, result.extension]);
+      }
+      if (result?.project) {
+        setProjects((prev) => upsertById(prev, result.project));
+      }
+      showToast(`✅ บันทึกขยายสัญญาครั้งที่ ${result?.extension?.extensionNo || ''} แล้ว`);
+      return result?.extension || null;
+    } catch (err) {
+      showToast('❌ ' + (err?.message || String(err)));
+      return null;
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleUpdateContractExtension = async (payload) => {
+    if (busy) return null;
+    setBusy(true);
+    try {
+      const result = await api('updateContractExtension', payload);
+      if (result?.extension) {
+        setContractExtensions((prev) => upsertById(prev, result.extension));
+      }
+      if (result?.project) {
+        setProjects((prev) => upsertById(prev, result.project));
+      }
+      showToast('✅ แก้ไขประวัติขยายสัญญาแล้ว');
+      return result?.extension || null;
+    } catch (err) {
+      showToast('❌ ' + (err?.message || String(err)));
+      return null;
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleDeleteContractExtension = async (id) => {
+    if (busy || !window.confirm('ลบประวัติการขยายสัญญารายการนี้?')) return;
+    setBusy(true);
+    try {
+      await api('deleteContractExtension', { id });
+      setContractExtensions((prev) => prev.filter((x) => String(x.id) !== String(id)));
+      showToast('ลบประวัติการขยายสัญญาแล้ว');
+    } catch (err) {
+      showToast('❌ ' + (err?.message || String(err)));
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const detailProject = projects.find((p) => p.id === detailProjectId);
 
   const reportData = useMemo(() => {
@@ -1238,6 +1296,7 @@ export default function App() {
             <ProjectDetail
               project={detailProject}
               milestones={milestones}
+              contractExtensions={contractExtensions}
               tasks={tasks}
               currentUser={currentUser}
               busy={busy}
@@ -1247,6 +1306,9 @@ export default function App() {
               onCreateMilestone={handleCreateMilestone}
               onUpdateMilestone={handleUpdateMilestone}
               onDeleteMilestone={handleDeleteMilestone}
+              onCreateContractExtension={handleCreateContractExtension}
+              onUpdateContractExtension={handleUpdateContractExtension}
+              onDeleteContractExtension={handleDeleteContractExtension}
               showToast={showToast}
             />
           </Suspense>
