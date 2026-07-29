@@ -988,7 +988,7 @@ function updateRowById_(sheetName, id, updates) {
     if (changed) {
       var writeRow = [];
       for (var c = 0; c < colCount; c++) writeRow.push(data[i][c]);
-      sheet.getRange(i + 1, 1, i + 1, colCount).setValues([writeRow]);
+      sheet.getRange(i + 1, 1, 1, colCount).setValues([writeRow]);
     }
     return rowToObject_(headers, data[i]);
   }
