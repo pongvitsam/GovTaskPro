@@ -14,7 +14,8 @@ import { readSession, saveSession, clearSession } from './session';
 import ThaiDateField from './ThaiDateField';
 
 const ProjectDetail = lazy(() => import('./ProjectDetail'));
-const StickyNotes = lazy(() => import('./StickyNotes'));
+const loadStickyNotesModule = () => import('./StickyNotes');
+const StickyNotes = lazy(loadStickyNotesModule);
 const SettingsPage = lazy(() => import('./Settings'));
 const AdminUsers = lazy(() => import('./AdminUsers'));
 
@@ -93,6 +94,7 @@ export default function App() {
   const [syncing, setSyncing] = useState(false);
   const [stickyRemindersDue, setStickyRemindersDue] = useState(0);
   const [stickyReminderNotes, setStickyReminderNotes] = useState([]);
+  const [stickyNotesSnapshot, setStickyNotesSnapshot] = useState(null);
   const [bellOpen, setBellOpen] = useState(false);
   const [seenBellKeys, setSeenBellKeys] = useState(() => {
     try {
@@ -696,10 +698,12 @@ export default function App() {
     if (!currentUser?.id) {
       setStickyRemindersDue(0);
       setStickyReminderNotes([]);
+      setStickyNotesSnapshot(null);
       return;
     }
     try {
       const rows = await api('listStickyNotes', { userId: currentUser.id });
+      setStickyNotesSnapshot(Array.isArray(rows) ? rows : []);
       const today = dayKeyLocal(Date.now());
       const due = (rows || []).filter((n) => {
         if (!n || n.trashed || n.archived || !n.reminderAt) return false;
@@ -736,6 +740,17 @@ export default function App() {
       clearInterval(timer);
       document.removeEventListener('visibilitychange', onVisible);
     };
+  }, [currentUser?.id, bootLoading]);
+
+  // Warm the largest lazy page after login so opening Reminders feels instant.
+  useEffect(() => {
+    if (!currentUser?.id || bootLoading) return undefined;
+    if (typeof requestIdleCallback === 'function') {
+      const id = requestIdleCallback(() => loadStickyNotesModule(), { timeout: 1500 });
+      return () => cancelIdleCallback(id);
+    }
+    const timer = setTimeout(() => loadStickyNotesModule(), 350);
+    return () => clearTimeout(timer);
   }, [currentUser?.id, bootLoading]);
 
   const statusCounts = useMemo(() => ({
@@ -1694,6 +1709,7 @@ export default function App() {
               currentUser={currentUser}
               showToast={showToast}
               onRemindersChange={setStickyRemindersDue}
+              initialNotes={stickyNotesSnapshot}
             />
           </Suspense>
         )}

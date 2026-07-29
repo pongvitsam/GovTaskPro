@@ -62,9 +62,12 @@ function newItem(text = '') {
   return { id: `i_${Date.now()}_${Math.floor(Math.random() * 1000)}`, text, done: false };
 }
 
-export default function StickyNotes({ currentUser, showToast, onRemindersChange }) {
-  const [notes, setNotes] = useState([]);
-  const [loading, setLoading] = useState(true);
+export default function StickyNotes({ currentUser, showToast, onRemindersChange, initialNotes = null }) {
+  const hasInitialNotes = Array.isArray(initialNotes);
+  const [notes, setNotes] = useState(() => (
+    hasInitialNotes ? initialNotes.map(normalizeNote) : []
+  ));
+  const [loading, setLoading] = useState(!hasInitialNotes);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
   const [selectedId, setSelectedId] = useState(null);
@@ -76,6 +79,14 @@ export default function StickyNotes({ currentUser, showToast, onRemindersChange 
   const saveTimerRef = useRef({});
   const topZRef = useRef(1);
   const remindedRef = useRef(new Set());
+
+  useEffect(() => {
+    if (!Array.isArray(initialNotes) || !loading) return;
+    const list = initialNotes.map(normalizeNote);
+    setNotes(list);
+    topZRef.current = list.reduce((m, n) => Math.max(m, n.zIndex || 0), 1);
+    setLoading(false);
+  }, [initialNotes, loading]);
 
   const dayKeyLocal = (value) => {
     const d = new Date(value);
@@ -95,8 +106,8 @@ export default function StickyNotes({ currentUser, showToast, onRemindersChange 
     onRemindersChange?.(countDueToday(notes));
   }, [notes, onRemindersChange, countDueToday]);
 
-  const loadNotes = useCallback(async () => {
-    setLoading(true);
+  const loadNotes = useCallback(async ({ background = false } = {}) => {
+    if (!background) setLoading(true);
     setError(null);
     try {
       const rows = await api('listStickyNotes', { userId: currentUser.id });
@@ -111,11 +122,17 @@ export default function StickyNotes({ currentUser, showToast, onRemindersChange 
   }, [currentUser.id]);
 
   useEffect(() => {
-    loadNotes();
+    // App preloads the same rows for the bell badge. Paint those immediately,
+    // then refresh quietly instead of showing a full-page spinner.
+    const timer = setTimeout(
+      () => loadNotes({ background: hasInitialNotes }),
+      hasInitialNotes ? 500 : 0
+    );
     return () => {
+      clearTimeout(timer);
       Object.values(saveTimerRef.current).forEach((t) => clearTimeout(t));
     };
-  }, [loadNotes]);
+  }, [loadNotes, hasInitialNotes]);
 
   const queueSave = useCallback((id, patch) => {
     if (saveTimerRef.current[id]) clearTimeout(saveTimerRef.current[id]);

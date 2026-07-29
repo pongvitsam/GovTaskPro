@@ -677,10 +677,32 @@ function addComment(payload) {
 /** Personal sticky notes — Google Keep–style fields, scoped to payload.userId */
 function listStickyNotes(payload) {
   openDatabase_(false);
-  ensureStickyHeaders_();
   var userId = String((payload && payload.userId) || '');
   if (!userId) throw new Error('ต้องระบุผู้ใช้');
-  return listStickyNotesForUser_(userId);
+  var cache = CacheService.getScriptCache();
+  var key = stickyCacheKey_(userId);
+  if (!payload || !payload.force) {
+    try {
+      var cached = cache.get(key);
+      if (cached) return JSON.parse(cached);
+    } catch (e) { /* read Sheets below */ }
+  }
+  var rows = listStickyNotesForUser_(userId);
+  try {
+    var json = JSON.stringify(rows);
+    if (json.length < 95000) cache.put(key, json, 120);
+  } catch (e2) { /* cache is optional */ }
+  return rows;
+}
+
+function stickyCacheKey_(userId) {
+  return 'gtp_sticky_' + String(userId || '').replace(/[^A-Za-z0-9_-]/g, '_').slice(0, 80);
+}
+
+function invalidateStickyCache_(userId) {
+  try {
+    CacheService.getScriptCache().remove(stickyCacheKey_(userId));
+  } catch (e) { /* ignore */ }
 }
 
 function boolFlag_(v, fallback) {
@@ -788,6 +810,7 @@ function createStickyNote(payload) {
     imageUrl: String(payload.imageUrl || '').trim()
   };
   appendObject_(STICKY_NOTES_SHEET, STICKY_NOTE_HEADERS, row);
+  invalidateStickyCache_(userId);
   return normalizeStickyNote_(row);
 }
 
@@ -832,6 +855,7 @@ function updateStickyNote(payload) {
 
   var found = updateRowById_(STICKY_NOTES_SHEET, id, updates);
   if (!found) throw new Error('ไม่พบโน้ต');
+  invalidateStickyCache_(userId);
   return normalizeStickyNote_(found);
 }
 
@@ -868,6 +892,7 @@ function deleteStickyNote(payload) {
     if (!normalized.trashed) {
       throw new Error('ชีต StickyNotes ยังไม่มีคอลัมน์ถังขยะ — รีเฟรชหน้าแล้วลองใหม่');
     }
+    invalidateStickyCache_(userId);
     return { ok: true, id: id, trashed: true, note: normalized };
   }
 
@@ -878,6 +903,7 @@ function deleteStickyNote(payload) {
   for (var i = 1; i < data.length; i++) {
     if (String(data[i][idIdx]) === id) {
       sheet.deleteRow(i + 1);
+      invalidateStickyCache_(userId);
       return { ok: true, id: id, deleted: true };
     }
   }
@@ -905,6 +931,7 @@ function emptyStickyTrash(payload) {
     sheet.deleteRow(i + 1);
     removed++;
   }
+  invalidateStickyCache_(userId);
   return { ok: true, removed: removed };
 }
 
