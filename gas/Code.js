@@ -1969,7 +1969,13 @@ function ensureDemoShowcase_() {
     ['l5', 5, iso(0, -2), 'u3', 'Status Changed', 'เปลี่ยนสถานะเป็น "รอตรวจ"'],
     ['l6', 9, iso(-2), 'u5', 'Created', 'มอบหมายงานให้ มาลี'],
     ['l7', 10, iso(0, -3), 'u6', 'Status Changed', 'ส่งตรวจหัวหน้า HR'],
-    ['l8', 12, iso(-3), 'u7', 'Created', 'มอบหมายงานให้ วิชัย']
+    ['l8', 12, iso(-3), 'u7', 'Created', 'มอบหมายงานให้ วิชัย'],
+    ['l9', 1, iso(-7), 'u1', 'Created', 'มอบหมายงานให้ สมชาย'],
+    ['l10', 1, iso(-2), 'u2', 'Status Changed', 'เปลี่ยนสถานะเป็น "เสร็จสิ้น" · วันเสร็จ'],
+    ['l11', 2, iso(-1), 'u1', 'Created', 'มอบหมายงานพัฒนา API'],
+    ['l12', 2, iso(0, -4), 'u2', 'Status Changed', 'เปลี่ยนสถานะเป็น "กำลังทำ"'],
+    ['l13', 3, iso(-3), 'u3', 'Status Changed', 'เปลี่ยนสถานะเป็น "เสร็จสิ้น" · วันเสร็จ'],
+    ['l14', 8, iso(0, -1), 'u1', 'Created', 'มอบหมายงานเขียนคู่มือ']
   ];
   for (var li = 0; li < demoLogs.length; li++) {
     if (!sheetHasId_(LOGS_SHEET, demoLogs[li][0])) {

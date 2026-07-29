@@ -259,7 +259,6 @@ export default function ProjectDetail({
       } catch (err) {
         if (!cancelled) {
           setActivityLoadError(err?.message || String(err));
-          setProjectTaskLogs([]);
         }
       } finally {
         if (!cancelled) setActivityLoading(false);
@@ -289,7 +288,7 @@ export default function ProjectDetail({
 
   const projectMilestones = useMemo(
     () => (milestones || [])
-      .filter((m) => m.projectId === project.id)
+      .filter((m) => String(m.projectId) === String(project.id))
       .sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0)),
     [milestones, project.id]
   );

@@ -88,6 +88,24 @@ export function buildProjectActivityEvents({
     });
   });
 
+  const taskIdsWithCompleteLog = new Set(
+    events.filter((e) => e.category === 'task' && isTaskCompletedLog(e)).map((e) => String(e.taskId)),
+  );
+  (projectTasks || []).forEach((task) => {
+    if (task.status !== 'Completed' || !task.completedAt) return;
+    if (taskIdsWithCompleteLog.has(String(task.id))) return;
+    events.push({
+      id: `task-done-${task.id}`,
+      category: 'task',
+      timestamp: task.completedAt,
+      actorId: task.assignedTo || task.createdBy || '',
+      title: `งานเสร็จ: “${task.title}”`,
+      detail: `ปิดงานในบอร์ด · วันเสร็จ ${formatThaiDateLong(task.completedAt, { emptyLabel: '—' })}`,
+      taskId: task.id,
+      actionType: 'Status Changed',
+    });
+  });
+
   events.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
   return events;
 }
@@ -133,7 +151,8 @@ export function groupActivityByDay(events, now = new Date()) {
 export function isTaskCompletedLog(event) {
   if (event.category !== 'task') return false;
   const d = String(event.detail || '');
-  return d.includes('เสร็จสิ้น') || d.includes('Completed');
+  const title = String(event.title || '');
+  return d.includes('เสร็จสิ้น') || d.includes('Completed') || d.includes('ปิดงาน') || title.includes('งานเสร็จ');
 }
 
 /** Short summary for project header (last N days). */
@@ -164,6 +183,30 @@ export function summarizeRecentActivity(events, days = 7, now = new Date()) {
   if (!parts.length) parts.push('ยังไม่มีความเคลื่อนไหว');
 
   return { days, parts, label: parts.join(' · '), recentCount: recent.length };
+}
+
+/** Build timeline for one project (no API required if bootstrap has tasks/logs/milestones/extensions). */
+export function buildProjectActivityForProject(projectId, {
+  projects,
+  tasks,
+  taskLogs,
+  milestones,
+  contractExtensions,
+}) {
+  const project = (projects || []).find((p) => String(p.id) === String(projectId));
+  if (!project) return [];
+  const projectTasks = (tasks || []).filter((t) => String(t.projectId) === String(projectId));
+  const projectMilestones = (milestones || []).filter((m) => String(m.projectId) === String(projectId));
+  const projectExtensions = (contractExtensions || []).filter((x) => String(x.projectId) === String(projectId));
+  const taskIds = new Set(projectTasks.map((t) => String(t.id)));
+  const logs = (taskLogs || []).filter((l) => taskIds.has(String(l.taskId)));
+  return buildProjectActivityEvents({
+    project,
+    projectTasks,
+    taskLogs: logs,
+    milestones: projectMilestones,
+    contractExtensions: projectExtensions,
+  });
 }
 
 export const CATEGORY_STYLE = {

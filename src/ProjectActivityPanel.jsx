@@ -1,5 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import { History, Loader2, KanbanSquare, ListChecks, FileClock, FolderKanban } from 'lucide-react';
+import { isProductionHost } from './api';
 import {
   ACTIVITY_FILTERS,
   buildProjectActivityEvents,
@@ -76,6 +77,9 @@ export default function ProjectActivityPanel({
           <div>
             <h3 className="font-extrabold text-slate-800 text-sm">ความเคลื่อนไหวในโปรเจกต์</h3>
             <p className="text-[11px] text-slate-500 font-medium">รวมงานในบอร์ด ขั้นตอนแผน และการขยายสัญญา</p>
+            {!isProductionHost() && (
+              <p className="text-[10px] text-teal-700 font-bold mt-1">โหมด demo — กด Ctrl+F5 ถ้าไม่เห็นข้อมูลตัวอย่าง</p>
+            )}
           </div>
         </div>
 

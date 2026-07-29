@@ -1,6 +1,6 @@
 /** Local mock DB for Vite DEV only (stripped from production bundle) */
 
-const SEED_VERSION = 5;
+const SEED_VERSION = 6;
 
 function buildDemoSeed() {
   const NOW = Date.now();
@@ -202,8 +202,8 @@ const localHandlers = {
       users: db.users.map(publicUser),
       projects: db.projects,
       tasks: db.tasks,
-      taskLogs: [],
-      comments: [],
+      taskLogs: db.taskLogs || [],
+      comments: db.comments || [],
       commentCounts: {},
       milestones: db.milestones || [],
       contractExtensions: db.contractExtensions || [],

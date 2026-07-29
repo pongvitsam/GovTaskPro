@@ -12,6 +12,7 @@ import { formatThaiDate, formatThaiDateLong, formatThaiMonthYear } from './forma
 import ProjectTimeBar from './ProjectTimeBar';
 import { readSession, saveSession, clearSession } from './session';
 import ThaiDateField from './ThaiDateField';
+import { buildProjectActivityForProject, summarizeRecentActivity } from './projectActivity';
 
 const ProjectDetail = lazy(() => import('./ProjectDetail'));
 const loadStickyNotesModule = () => import('./StickyNotes');
@@ -1459,6 +1460,16 @@ export default function App() {
                 const progress = projMs.length
                   ? Math.round((doneW / totalW) * 100)
                   : (projTasks.length === 0 ? 0 : Math.round((projTasks.filter((t) => t.status === 'Completed').length / projTasks.length) * 100));
+                const activityPreview = summarizeRecentActivity(
+                  buildProjectActivityForProject(proj.id, {
+                    projects,
+                    tasks,
+                    taskLogs,
+                    milestones,
+                    contractExtensions,
+                  }),
+                  7,
+                );
                 return (
                   <div
                     key={proj.id}
@@ -1475,6 +1486,10 @@ export default function App() {
                     </div>
                     <h3 className="gtp-display font-extrabold text-lg text-[#1e3a4c] mb-2 group-hover:text-teal-700">{proj.name}</h3>
                     <p className="text-sm text-[#5b7a8a] line-clamp-2 mb-3 flex-1 font-medium leading-relaxed">{proj.description}</p>
+                    <p className="text-[11px] font-bold text-teal-700/90 mb-2 line-clamp-1" title={activityPreview.label}>
+                      <History className="w-3 h-3 inline mr-1 -mt-0.5" />
+                      7 วันล่าสุด: {activityPreview.label}
+                    </p>
                     <p className="text-[11px] font-bold text-[#8aa3b0] mb-2">
                       {formatThaiDate(proj.startDate)} → {formatThaiDate(proj.endDate)}
                     </p>
