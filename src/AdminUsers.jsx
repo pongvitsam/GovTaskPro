@@ -34,7 +34,8 @@ export default function AdminUsers({
 }) {
   const [tab, setTab] = useState('org');
   const [adminList, setAdminList] = useState([]);
-  const [loadingList, setLoadingList] = useState(true);
+  const [loadingList, setLoadingList] = useState(false);
+  const [rightsTabLoaded, setRightsTabLoaded] = useState(false);
   const [editingId, setEditingId] = useState(null);
   const [editDraft, setEditDraft] = useState(null);
   const [filterDept, setFilterDept] = useState('all');
@@ -113,8 +114,10 @@ export default function AdminUsers({
   }, [departments, divParent]);
 
   useEffect(() => {
-    if (tab === 'org') refreshLineOrgs();
-  }, [tab]);
+    if (tab !== 'rights' || rightsTabLoaded) return;
+    refreshAdminList().finally(() => setRightsTabLoaded(true));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tab, rightsTabLoaded]);
 
   const refreshLineOrgs = async () => {
     if (!onLoadOrgUnits) return;
@@ -129,8 +132,24 @@ export default function AdminUsers({
     }
   };
 
-  const openLineEditor = (org) => {
-    const full = lineOrgs.find((o) => String(o.id) === String(org.id)) || org;
+  const openLineEditor = async (org) => {
+    let full = lineOrgs.find((o) => String(o.id) === String(org.id));
+    if (!full?.lineChannelToken && onLoadOrgUnits) {
+      setLoadingLineOrgs(true);
+      try {
+        const list = await onLoadOrgUnits({ adminId: currentUser.id });
+        const arr = Array.isArray(list) ? list : [];
+        setLineOrgs(arr);
+        full = arr.find((o) => String(o.id) === String(org.id)) || org;
+      } catch (err) {
+        showToast('❌ ' + (err?.message || String(err)));
+        full = org;
+      } finally {
+        setLoadingLineOrgs(false);
+      }
+    } else {
+      full = full || org;
+    }
     setLineOpenId(org.id);
     setLineDraft({
       lineEnabled: !!full.lineEnabled,
@@ -179,11 +198,6 @@ export default function AdminUsers({
       setLoadingList(false);
     }
   };
-
-  useEffect(() => {
-    refreshAdminList();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentUser?.id]);
 
   const startEdit = (u) => {
     setEditingId(u.id);
@@ -276,7 +290,6 @@ export default function AdminUsers({
       department: form.department,
       division: '',
     });
-    await refreshAdminList();
   };
 
   const handleCreateDept = async (e) => {

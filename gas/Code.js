@@ -2013,6 +2013,7 @@ function adminSeedDemoData(payload) {
   requireAdmin_(payload.adminId);
   var result = ensureDemoShowcase_();
   invalidateBootstrapCache_();
+  result.bootstrap = getBootstrap({ force: true });
   return result;
 }
 

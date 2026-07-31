@@ -248,7 +248,7 @@ export default function ProjectDetail({
   );
 
   useEffect(() => {
-    if (!project?.id) return;
+    if (!project?.id || tab !== 'activity') return undefined;
     let cancelled = false;
     (async () => {
       setActivityLoading(true);
@@ -265,7 +265,7 @@ export default function ProjectDetail({
       }
     })();
     return () => { cancelled = true; };
-  }, [project?.id]);
+  }, [project?.id, tab]);
 
   const mergedProjectTaskLogs = useMemo(() => {
     const byId = new Map();

@@ -41,6 +41,18 @@ export function clearSession() {
 }
 
 /** Short-lived bootstrap cache — speeds up re-login / page refresh */
+export function bootstrapCacheAgeMs() {
+  try {
+    const raw = localStorage.getItem(BOOT_CACHE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (!parsed?.savedAt) return null;
+    return Date.now() - parsed.savedAt;
+  } catch {
+    return null;
+  }
+}
+
 export function readBootstrapCache() {
   try {
     const raw = localStorage.getItem(BOOT_CACHE_KEY);

@@ -62,8 +62,10 @@ function newItem(text = '') {
   return { id: `i_${Date.now()}_${Math.floor(Math.random() * 1000)}`, text, done: false };
 }
 
-export default function StickyNotes({ currentUser, showToast, onRemindersChange, initialNotes = null }) {
+export default function StickyNotes({ currentUser, showToast, onRemindersChange, initialNotes = null, initialNotesFetchedAt = 0 }) {
   const hasInitialNotes = Array.isArray(initialNotes);
+  const snapshotFresh = hasInitialNotes && initialNotesFetchedAt > 0
+    && (Date.now() - initialNotesFetchedAt < 45000);
   const [notes, setNotes] = useState(() => (
     hasInitialNotes ? initialNotes.map(normalizeNote) : []
   ));
@@ -122,6 +124,7 @@ export default function StickyNotes({ currentUser, showToast, onRemindersChange,
   }, [currentUser.id]);
 
   useEffect(() => {
+    if (snapshotFresh) return undefined;
     // App preloads the same rows for the bell badge. Paint those immediately,
     // then refresh quietly instead of showing a full-page spinner.
     const timer = setTimeout(
@@ -132,7 +135,7 @@ export default function StickyNotes({ currentUser, showToast, onRemindersChange,
       clearTimeout(timer);
       Object.values(saveTimerRef.current).forEach((t) => clearTimeout(t));
     };
-  }, [loadNotes, hasInitialNotes]);
+  }, [loadNotes, hasInitialNotes, snapshotFresh]);
 
   const queueSave = useCallback((id, patch) => {
     if (saveTimerRef.current[id]) clearTimeout(saveTimerRef.current[id]);

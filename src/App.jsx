@@ -10,7 +10,7 @@ import { api, isProductionGas, isProductionHost } from './api';
 import LoginScreen from './LoginScreen';
 import { formatThaiDate, formatThaiDateLong, formatThaiMonthYear } from './formatThaiDate';
 import ProjectTimeBar from './ProjectTimeBar';
-import { readSession, saveSession, clearSession, readBootstrapCache, writeBootstrapCache } from './session';
+import { readSession, saveSession, clearSession, readBootstrapCache, writeBootstrapCache, bootstrapCacheAgeMs } from './session';
 import ThaiDateField from './ThaiDateField';
 import { buildProjectActivityForProject, summarizeRecentActivity } from './projectActivity';
 
@@ -21,6 +21,11 @@ const SettingsPage = lazy(() => import('./Settings'));
 const AdminUsers = lazy(() => import('./AdminUsers'));
 
 const DAY = 86400000;
+const SYNC_INTERVAL_MS = 90000;
+const SYNC_DEBOUNCE_MS = 20000;
+const BOOT_SKIP_NETWORK_MS = 45000;
+const STICKY_STALE_MS = 45000;
+const TASK_ACTIVITY_CACHE_MS = 120000;
 
 function ModuleLoading({ label }) {
   return (
@@ -96,6 +101,7 @@ export default function App() {
   const [stickyRemindersDue, setStickyRemindersDue] = useState(0);
   const [stickyReminderNotes, setStickyReminderNotes] = useState([]);
   const [stickyNotesSnapshot, setStickyNotesSnapshot] = useState(null);
+  const [stickyNotesFetchedAt, setStickyNotesFetchedAt] = useState(0);
   const [bellOpen, setBellOpen] = useState(false);
   const [bellAnchor, setBellAnchor] = useState(null);
   const [seenBellKeys, setSeenBellKeys] = useState(() => {
@@ -109,6 +115,8 @@ export default function App() {
   });
   const softRefreshingRef = useRef(false);
   const lastSyncAtRef = useRef(0);
+  const lastStickySyncAtRef = useRef(0);
+  const taskActivityCacheRef = useRef(new Map());
   const desktopBellRef = useRef(null);
   const mobileBellRef = useRef(null);
   const bellPanelRef = useRef(null);
@@ -170,14 +178,29 @@ export default function App() {
   const formatDate = (iso) => formatThaiDate(iso);
   const isOverdue = (dueDate, status) => dueDate && status !== 'Completed' && new Date(dueDate).setHours(0, 0, 0, 0) < new Date().setHours(0, 0, 0, 0);
 
-  const applyBootstrap = (data, { restoreSession = true } = {}) => {
+  const applyBootstrap = (data, { restoreSession = true, mergeLazy = false } = {}) => {
     setUsers(data.users || []);
     setOrgUnits(data.orgUnits || []);
     setProjects(data.projects || []);
     setTasks(data.tasks || []);
-    setTaskLogs(data.taskLogs || []);
-    setComments(data.comments || []);
-    setCommentCounts(data.commentCounts || {});
+    if (mergeLazy) {
+      setTaskLogs((prev) => {
+        const incoming = data.taskLogs || [];
+        return incoming.length ? incoming : prev;
+      });
+      setComments((prev) => {
+        const incoming = data.comments || [];
+        return incoming.length ? incoming : prev;
+      });
+      setCommentCounts((prev) => {
+        const incoming = data.commentCounts;
+        return incoming && Object.keys(incoming).length ? incoming : prev;
+      });
+    } else {
+      setTaskLogs(data.taskLogs || []);
+      setComments(data.comments || []);
+      setCommentCounts(data.commentCounts || {});
+    }
     setMilestones(data.milestones || []);
     setContractExtensions(data.contractExtensions || []);
 
@@ -202,18 +225,42 @@ export default function App() {
     writeBootstrapCache(data);
   };
 
-  const softRefresh = async ({ silent = true } = {}) => {
+  const applyStickySnapshot = (rows) => {
+    const list = Array.isArray(rows) ? rows : [];
+    setStickyNotesSnapshot(list);
+    setStickyNotesFetchedAt(Date.now());
+    const today = dayKeyLocal(Date.now());
+    const due = list.filter((n) => {
+      if (!n || n.trashed || n.archived || !n.reminderAt) return false;
+      return dayKeyLocal(n.reminderAt) === today;
+    });
+    setStickyReminderNotes(due);
+    setStickyRemindersDue(due.length);
+  };
+
+  const runBackgroundSync = async ({ silent = true, force = false } = {}) => {
     if (softRefreshingRef.current || bootLoading || !currentUser) return;
     const now = Date.now();
-    if (silent && now - lastSyncAtRef.current < 15000) return;
+    if (silent && !force && now - lastSyncAtRef.current < SYNC_DEBOUNCE_MS) return;
+
     softRefreshingRef.current = true;
     if (!silent) setSyncing(true);
     try {
-      // Silent sync uses CacheService; manual sync forces fresh Sheets read
-      const data = await api('getBootstrap', silent ? {} : { force: true });
-      if (!data || !Array.isArray(data.users)) return;
-      applyBootstrap(data, { restoreSession: false });
-      lastSyncAtRef.current = Date.now();
+      const stickyStale = force || now - lastStickySyncAtRef.current >= STICKY_STALE_MS;
+      const bootPromise = api('getBootstrap', silent && !force ? {} : { force: true });
+      const stickyPromise = stickyStale
+        ? api('listStickyNotes', { userId: currentUser.id })
+        : Promise.resolve(null);
+      const [data, stickyRows] = await Promise.all([bootPromise, stickyPromise]);
+
+      if (data && Array.isArray(data.users)) {
+        applyBootstrap(data, { restoreSession: false, mergeLazy: silent && !force });
+        lastSyncAtRef.current = Date.now();
+      }
+      if (stickyRows) {
+        applyStickySnapshot(stickyRows);
+        lastStickySyncAtRef.current = Date.now();
+      }
       if (!silent) showToast('🔄 ซิงก์ข้อมูลล่าสุดแล้ว');
     } catch (err) {
       if (!silent) showToast('❌ ซิงก์ไม่สำเร็จ: ' + (err?.message || String(err)));
@@ -222,6 +269,8 @@ export default function App() {
       setSyncing(false);
     }
   };
+
+  const softRefresh = async (opts) => runBackgroundSync(opts);
 
   const patchTask = (task, log) => {
     if (!task) return;
@@ -257,10 +306,16 @@ export default function App() {
     }
 
     const cached = readBootstrapCache();
+    const cacheAge = bootstrapCacheAgeMs();
+    const cacheFresh = cacheAge !== null && cacheAge < BOOT_SKIP_NETWORK_MS;
     if (cached?.users) {
       applyBootstrap(cached, { restoreSession: true });
       setBootLoading(false);
       lastSyncAtRef.current = Date.now();
+    }
+
+    if (cacheFresh) {
+      return undefined;
     }
 
     (async () => {
@@ -286,17 +341,19 @@ export default function App() {
   useEffect(() => {
     if (!currentUser || bootLoading) return undefined;
 
+    runBackgroundSync({ silent: true, force: true });
+
     const onVisible = () => {
-      if (document.visibilityState === 'visible') softRefresh({ silent: true });
+      if (document.visibilityState === 'visible') runBackgroundSync({ silent: true });
     };
-    const onOnline = () => softRefresh({ silent: false });
+    const onOnline = () => runBackgroundSync({ silent: false, force: true });
 
     document.addEventListener('visibilitychange', onVisible);
     window.addEventListener('online', onOnline);
 
     const timer = setInterval(() => {
-      if (document.visibilityState === 'visible') softRefresh({ silent: true });
-    }, 60000);
+      if (document.visibilityState === 'visible') runBackgroundSync({ silent: true });
+    }, SYNC_INTERVAL_MS);
 
     return () => {
       document.removeEventListener('visibilitychange', onVisible);
@@ -308,22 +365,45 @@ export default function App() {
   useEffect(() => {
     if (!selectedTask) return undefined;
     const taskId = selectedTask.id;
+    const cacheKey = String(taskId);
+    const cached = taskActivityCacheRef.current.get(cacheKey);
     let cancelled = false;
+
+    if (cached && Date.now() - cached.fetchedAt < TASK_ACTIVITY_CACHE_MS) {
+      setComments((prev) => {
+        const others = prev.filter((c) => String(c.taskId) !== cacheKey);
+        return [...others, ...cached.comments];
+      });
+      setTaskLogs((prev) => {
+        const others = prev.filter((l) => String(l.taskId) !== cacheKey);
+        return [...others, ...cached.taskLogs];
+      });
+      setCommentCounts((prev) => ({ ...prev, [cacheKey]: cached.comments.length }));
+      setActivityLoading(false);
+      return undefined;
+    }
+
     setActivityLoading(true);
     (async () => {
       try {
         const data = await api('getTaskActivity', { taskId });
         if (cancelled) return;
         const nextComments = data.comments || [];
+        const nextLogs = data.taskLogs || [];
+        taskActivityCacheRef.current.set(cacheKey, {
+          comments: nextComments,
+          taskLogs: nextLogs,
+          fetchedAt: Date.now(),
+        });
         setComments((prev) => {
-          const others = prev.filter((c) => String(c.taskId) !== String(taskId));
+          const others = prev.filter((c) => String(c.taskId) !== cacheKey);
           return [...others, ...nextComments];
         });
         setTaskLogs((prev) => {
-          const others = prev.filter((l) => String(l.taskId) !== String(taskId));
-          return [...others, ...(data.taskLogs || [])];
+          const others = prev.filter((l) => String(l.taskId) !== cacheKey);
+          return [...others, ...nextLogs];
         });
-        setCommentCounts((prev) => ({ ...prev, [String(taskId)]: nextComments.length }));
+        setCommentCounts((prev) => ({ ...prev, [cacheKey]: nextComments.length }));
       } catch (err) {
         if (!cancelled) showToast('❌ โหลดประวัติงานไม่สำเร็จ');
       } finally {
@@ -701,7 +781,7 @@ export default function App() {
     setBusy(true);
     try {
       const result = await api('adminSeedDemoData', { adminId: currentUser.id });
-      const data = await api('getBootstrap', { force: true });
+      const data = result?.bootstrap || await api('getBootstrap', { force: true });
       if (data && Array.isArray(data.users)) {
         applyBootstrap(data, { restoreSession: false });
       }
@@ -792,28 +872,6 @@ export default function App() {
     setBellOpen(false);
   };
 
-  const refreshStickyReminders = async () => {
-    if (!currentUser?.id) {
-      setStickyRemindersDue(0);
-      setStickyReminderNotes([]);
-      setStickyNotesSnapshot(null);
-      return;
-    }
-    try {
-      const rows = await api('listStickyNotes', { userId: currentUser.id });
-      setStickyNotesSnapshot(Array.isArray(rows) ? rows : []);
-      const today = dayKeyLocal(Date.now());
-      const due = (rows || []).filter((n) => {
-        if (!n || n.trashed || n.archived || !n.reminderAt) return false;
-        return dayKeyLocal(n.reminderAt) === today;
-      });
-      setStickyReminderNotes(due);
-      setStickyRemindersDue(due.length);
-    } catch (_) {
-      /* non-fatal — badge just stays as-is */
-    }
-  };
-
   useEffect(() => {
     if (!bellOpen) return undefined;
     const onDoc = (e) => {
@@ -826,20 +884,6 @@ export default function App() {
     document.addEventListener('mousedown', onDoc);
     return () => document.removeEventListener('mousedown', onDoc);
   }, [bellOpen]);
-
-  useEffect(() => {
-    if (!currentUser?.id || bootLoading) return undefined;
-    refreshStickyReminders();
-    const timer = setInterval(refreshStickyReminders, 60000);
-    const onVisible = () => {
-      if (document.visibilityState === 'visible') refreshStickyReminders();
-    };
-    document.addEventListener('visibilitychange', onVisible);
-    return () => {
-      clearInterval(timer);
-      document.removeEventListener('visibilitychange', onVisible);
-    };
-  }, [currentUser?.id, bootLoading]);
 
   // Warm the largest lazy page after login so opening Reminders feels instant.
   useEffect(() => {
@@ -1068,11 +1112,16 @@ export default function App() {
     setBusy(true);
     try {
       const row = await api('addComment', { taskId: selectedTask.id, authorId: currentUser.id, text });
+      const cacheKey = String(selectedTask.id);
       setComments((prev) => [...prev, row]);
-      setCommentCounts((prev) => {
-        const k = String(selectedTask.id);
-        return { ...prev, [k]: (prev[k] || 0) + 1 };
-      });
+      setCommentCounts((prev) => ({ ...prev, [cacheKey]: (prev[cacheKey] || 0) + 1 }));
+      const cached = taskActivityCacheRef.current.get(cacheKey);
+      if (cached) {
+        taskActivityCacheRef.current.set(cacheKey, {
+          ...cached,
+          comments: [...cached.comments, row],
+        });
+      }
       e.target.reset();
     } catch (err) {
       showToast('❌ ' + (err?.message || String(err)));
@@ -1902,6 +1951,7 @@ export default function App() {
               showToast={showToast}
               onRemindersChange={setStickyRemindersDue}
               initialNotes={stickyNotesSnapshot}
+              initialNotesFetchedAt={stickyNotesFetchedAt}
             />
           </Suspense>
         )}

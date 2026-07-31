@@ -1,6 +1,7 @@
 /** google.script.run (GAS embed) · HTTP form bridge (GitHub Pages) · mock (Vite DEV) */
 
 import { httpRun } from './gasHttp';
+import { dedupeInFlight } from './apiDedup';
 
 function isGas() {
   return typeof google !== 'undefined' && google?.script?.run;
@@ -43,17 +44,19 @@ function gasRun(fnName, ...args) {
 }
 
 export async function api(fnName, payload) {
-  if (isGas()) {
-    return payload === undefined ? gasRun(fnName) : gasRun(fnName, payload);
-  }
+  return dedupeInFlight(fnName, payload, async () => {
+    if (isGas()) {
+      return payload === undefined ? gasRun(fnName) : gasRun(fnName, payload);
+    }
 
-  // Production GitHub Pages (and optional DEV against live GAS)
-  if (import.meta.env.PROD || import.meta.env.VITE_USE_GAS === '1') {
-    return httpRun(fnName, payload);
-  }
+    // Production GitHub Pages (and optional DEV against live GAS)
+    if (import.meta.env.PROD || import.meta.env.VITE_USE_GAS === '1') {
+      return httpRun(fnName, payload);
+    }
 
-  const { runLocal } = await import('./mockDb.js');
-  return runLocal(fnName, payload);
+    const { runLocal } = await import('./mockDb.js');
+    return runLocal(fnName, payload);
+  });
 }
 
 export function isProductionGas() {
