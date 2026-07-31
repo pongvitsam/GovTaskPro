@@ -4,7 +4,7 @@ import {
   ArrowRightLeft, History, FolderKanban, Briefcase, KanbanSquare, Bell, Calendar as CalendarIcon,
   BarChart2, MessageSquare, Paperclip, Repeat, Download, FileText, Smartphone, Search,
   Users, CalendarDays, Grab, ShieldCheck, Loader2, Settings2, StickyNote, KeyRound,
-  Menu, X, MoreHorizontal, RefreshCw
+  Menu, X, MoreHorizontal, RefreshCw, Trash2
 } from 'lucide-react';
 import { api, isProductionGas, isProductionHost } from './api';
 import LoginScreen from './LoginScreen';
@@ -424,6 +424,16 @@ export default function App() {
       || (currentUser.role === 'Head' && selectedAssignee?.department === currentUser.department)
     )
   );
+  const canDeleteTask = (task) => {
+    if (!task || !currentUser) return false;
+    if (currentUser.role === 'Admin') return true;
+    if (String(task.createdBy) === String(currentUser.id)) return true;
+    if (currentUser.role === 'Head') {
+      const assignee = usersById.get(task.assignedTo);
+      return assignee?.department === currentUser.department;
+    }
+    return false;
+  };
 
   const finishLogin = async (user) => {
     if (!user?.id) throw new Error('เข้าสู่ระบบไม่สำเร็จ');
@@ -946,6 +956,34 @@ export default function App() {
       patchTask(result?.task || result, result?.log);
       setSelectedTask(null);
       showToast(`โอนงานให้ ${name} เรียบร้อยแล้ว`);
+    } catch (err) {
+      showToast('❌ ' + (err?.message || String(err)));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleDeleteTask = async (taskId) => {
+    if (busy || !currentUser) return;
+    const task = tasks.find((t) => String(t.id) === String(taskId));
+    if (!task || !canDeleteTask(task)) {
+      showToast('❌ ไม่มีสิทธิ์ลบงานนี้');
+      return;
+    }
+    if (!window.confirm(`ลบงาน "${task.title}" ถาวร?\n(ลบประวัติและความคิดเห็นด้วย)`)) return;
+    setBusy(true);
+    try {
+      await api('deleteTask', { taskId, userId: currentUser.id });
+      setTasks((prev) => prev.filter((t) => String(t.id) !== String(taskId)));
+      setTaskLogs((prev) => prev.filter((l) => String(l.taskId) !== String(taskId)));
+      setComments((prev) => prev.filter((c) => String(c.taskId) !== String(taskId)));
+      setCommentCounts((prev) => {
+        const next = { ...prev };
+        delete next[String(taskId)];
+        return next;
+      });
+      if (selectedTask && String(selectedTask.id) === String(taskId)) setSelectedTask(null);
+      showToast('ลบงานแล้ว');
     } catch (err) {
       showToast('❌ ' + (err?.message || String(err)));
     } finally {
@@ -1672,6 +1710,16 @@ export default function App() {
                             >
                               <div className={`absolute left-0 top-3 bottom-3 w-1 rounded-r-full ${theme.accent}`} />
                               {task.isRecurring && <Repeat className="w-4 h-4 absolute top-3.5 right-3.5 text-slate-300" />}
+                              {canDeleteTask(task) && (
+                                <button
+                                  type="button"
+                                  title="ลบงาน"
+                                  onClick={(e) => { e.stopPropagation(); handleDeleteTask(task.id); }}
+                                  className={`absolute top-3 p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 md:opacity-0 md:group-hover:opacity-100 transition-all z-10 ${task.isRecurring ? 'right-10' : 'right-3'}`}
+                                >
+                                  <Trash2 className="w-4 h-4" />
+                                </button>
+                              )}
                               {isMyTask && status === 'Pending' && <div className="absolute -top-2 -right-2 bg-amber-500 text-white text-[9px] font-bold px-2 py-0.5 rounded-full shadow-md">งานใหม่!</div>}
                               {!isMyTask && overdue && <div className="absolute -top-2 -right-2 bg-rose-500 text-white text-[9px] font-bold px-2 py-0.5 rounded-full shadow-md">เลยกำหนด</div>}
                               {task.projectId && !activeProjectId && (
@@ -2263,6 +2311,20 @@ export default function App() {
                             </div>
                             <button disabled={busy} onClick={() => handleTakeover(selectedTask.id)} className="bg-teal-600 hover:bg-teal-700 text-white px-6 py-3 rounded-xl text-sm font-black shadow-lg shrink-0 w-full sm:w-auto disabled:opacity-60">ดึงงานมาทำ</button>
                           </div>
+                        </div>
+                      )}
+
+                      {canDeleteTask(selectedTask) && (
+                        <div className="pt-2">
+                          <button
+                            type="button"
+                            disabled={busy}
+                            onClick={() => handleDeleteTask(selectedTask.id)}
+                            className="w-full flex items-center justify-center gap-2 py-3 rounded-2xl border-2 border-rose-200 text-rose-600 font-extrabold text-sm hover:bg-rose-50 disabled:opacity-60"
+                          >
+                            <Trash2 className="w-4 h-4" /> ลบงานถาวร
+                          </button>
+                          <p className="text-[10px] text-slate-400 font-medium text-center mt-2">ลบประวัติและความคิดเห็นของงานนี้ด้วย</p>
                         </div>
                       )}
                     </div>

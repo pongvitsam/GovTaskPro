@@ -191,6 +191,7 @@ function dispatchApi_(fn, payload, hasPayload) {
   if (fn === 'updateTaskStatus') return updateTaskStatus(payload || {});
   if (fn === 'forwardTask') return forwardTask(payload || {});
   if (fn === 'takeoverTask') return takeoverTask(payload || {});
+  if (fn === 'deleteTask') return deleteTask(payload || {});
   if (fn === 'addComment') return addComment(payload || {});
   if (fn === 'listStickyNotes') return listStickyNotes(payload || {});
   if (fn === 'createStickyNote') return createStickyNote(payload || {});
@@ -719,6 +720,56 @@ function takeoverTask(payload) {
   var takeLog = addLog_(taskId, userId, 'Takeover', 'ดึงงานมาจาก ' + findUserName_(oldAssignee) + ' เพื่อดำเนินการต่อ');
   invalidateBootstrapCache_();
   return { task: normalizeTask_(found), log: takeLog };
+}
+
+function deleteTask(payload) {
+  openDatabase_(false);
+  var taskId = String(payload.taskId || '');
+  var userId = String(payload.userId || '');
+  if (!taskId) throw new Error('ไม่พบงาน');
+  if (!userId) throw new Error('ต้องระบุผู้ใช้');
+  var task = findTaskById_(taskId);
+  if (!task) throw new Error('ไม่พบงาน');
+  assertCanDeleteTask_(userId, task);
+  deleteRowsByField_(TASKS_SHEET, 'id', taskId);
+  deleteRowsByField_(LOGS_SHEET, 'taskId', taskId);
+  deleteRowsByField_(COMMENTS_SHEET, 'taskId', taskId);
+  invalidateBootstrapCache_();
+  return { ok: true, id: taskId };
+}
+
+function findTaskById_(taskId) {
+  var rows = listObjects_(TASKS_SHEET);
+  var needle = String(taskId);
+  for (var i = 0; i < rows.length; i++) {
+    if (String(rows[i].id) === needle) return normalizeTask_(rows[i]);
+  }
+  return null;
+}
+
+function assertCanDeleteTask_(userId, task) {
+  var user = findUserById_(userId);
+  if (!user || String(user.active) === 'FALSE') throw new Error('ไม่พบผู้ใช้');
+  if (user.role === 'Admin') return;
+  if (String(task.createdBy) === String(userId)) return;
+  if (user.role === 'Head') {
+    var assignee = findUserById_(task.assignedTo);
+    if (assignee && String(assignee.department || '') === String(user.department || '')) return;
+  }
+  throw new Error('ไม่มีสิทธิ์ลบงานนี้');
+}
+
+function deleteRowsByField_(sheetName, field, value) {
+  var sheet = getSheet_(sheetName);
+  var data = sheet.getDataRange().getValues();
+  if (data.length <= 1) return;
+  var headers = data[0];
+  var idx = headers.indexOf(field);
+  if (idx < 0) return;
+  var needle = String(value);
+  for (var i = data.length - 1; i >= 1; i--) {
+    if (String(data[i][idx]) === needle) sheet.deleteRow(i + 1);
+  }
 }
 
 function addComment(payload) {

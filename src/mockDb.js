@@ -190,6 +190,18 @@ function assertDeptAssign(db, actorId, assigneeId) {
   }
 }
 
+function assertCanDeleteTask(db, userId, task) {
+  const user = db.users.find((u) => String(u.id) === String(userId));
+  if (!user || user.active === false) throw new Error('ไม่พบผู้ใช้');
+  if (user.role === 'Admin') return;
+  if (String(task.createdBy) === String(userId)) return;
+  if (user.role === 'Head') {
+    const assignee = db.users.find((u) => String(u.id) === String(task.assignedTo));
+    if (assignee && String(assignee.department || '') === String(user.department || '')) return;
+  }
+  throw new Error('ไม่มีสิทธิ์ลบงานนี้');
+}
+
 function publicOrgUnit(o) {
   if (!o) return o;
   const token = String(o.lineChannelToken || '').trim();
@@ -889,6 +901,18 @@ const localHandlers = {
       task: db.tasks.find((t) => String(t.id) === String(payload.taskId)),
       log: db.taskLogs[0],
     };
+  },
+  deleteTask(payload) {
+    const db = getLocalDb();
+    const taskId = String(payload.taskId || '');
+    const userId = String(payload.userId || '');
+    const task = db.tasks.find((t) => String(t.id) === taskId);
+    if (!task) throw new Error('ไม่พบงาน');
+    assertCanDeleteTask(db, userId, task);
+    db.tasks = db.tasks.filter((t) => String(t.id) !== taskId);
+    db.taskLogs = (db.taskLogs || []).filter((l) => String(l.taskId) !== taskId);
+    db.comments = (db.comments || []).filter((c) => String(c.taskId) !== taskId);
+    return { ok: true, id: taskId };
   },
   addComment(payload) {
     const db = getLocalDb();
