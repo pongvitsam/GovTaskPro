@@ -1,6 +1,6 @@
 /** Local mock DB for Vite DEV only (stripped from production bundle) */
 
-const SEED_VERSION = 6;
+const SEED_VERSION = 7;
 
 function buildDemoSeed() {
   const NOW = Date.now();
@@ -35,11 +35,11 @@ function buildDemoSeed() {
       user({ id: 'u9', name: 'บัญชีปิดใช้ (ตัวอย่าง)', role: 'Staff', department: 'IT', division: 'กองเทคโนโลยี', username: 'olduser', active: false }),
     ],
     projects: [
-      { id: 'p1', name: 'พัฒนาระบบ Intranet กอง', description: 'อัปเกรดระบบภายใน (Next-Gen) — มีประวัติขยายสัญญา 2 ครั้ง', createdBy: 'u1', createdAt: t(-14), startDate: d(-14), endDate: d(75) },
-      { id: 'p2', name: 'กิจกรรม 5ส ประจำปี', description: 'จัดระเบียบอุปกรณ์และสายไฟ', createdBy: 'u1', createdAt: t(-7), startDate: d(-7), endDate: d(21) },
-      { id: 'p3', name: 'แผนซ่อมบำรุงประจำไตรมาส (Q3)', description: 'ตรวจสอบอุปกรณ์ Network ทั่วตึก — ขยายสัญญารออะไหล่', createdBy: 'u1', createdAt: t(-3), startDate: d(-3), endDate: d(75) },
-      { id: 'p4', name: 'ระบบประเมินผลประจำปี', description: 'โปรเจกต์แผนก HR — สิทธิ์แยกตามแผนก', createdBy: 'u5', createdAt: t(-10), startDate: d(-10), endDate: d(30) },
-      { id: 'p5', name: 'จัดทำงบประมาณปี 69', description: 'โปรเจกต์แผนก Finance', createdBy: 'u7', createdAt: t(-5), startDate: d(-5), endDate: d(40) },
+      { id: 'p1', name: 'พัฒนาระบบ Intranet กอง', description: 'อัปเกรดระบบภายใน (Next-Gen) — มีประวัติขยายสัญญา 2 ครั้ง', createdBy: 'u1', department: 'IT', createdAt: t(-14), startDate: d(-14), endDate: d(75) },
+      { id: 'p2', name: 'กิจกรรม 5ส ประจำปี', description: 'จัดระเบียบอุปกรณ์และสายไฟ', createdBy: 'u1', department: 'IT', createdAt: t(-7), startDate: d(-7), endDate: d(21) },
+      { id: 'p3', name: 'แผนซ่อมบำรุงประจำไตรมาส (Q3)', description: 'ตรวจสอบอุปกรณ์ Network ทั่วตึก — ขยายสัญญารออะไหล่', createdBy: 'u1', department: 'IT', createdAt: t(-3), startDate: d(-3), endDate: d(75) },
+      { id: 'p4', name: 'ระบบประเมินผลประจำปี', description: 'โปรเจกต์แผนก HR — สิทธิ์แยกตามแผนก', createdBy: 'u5', department: 'HR', createdAt: t(-10), startDate: d(-10), endDate: d(30) },
+      { id: 'p5', name: 'จัดทำงบประมาณปี 69', description: 'โปรเจกต์แผนก Finance', createdBy: 'u7', department: 'Finance', createdAt: t(-5), startDate: d(-5), endDate: d(40) },
     ],
     milestones: [
       { id: 'm1', projectId: 'p1', title: 'เก็บความต้องการ & ออกแบบ', description: 'ประชุมผู้ใช้และออกแบบ UI/DB', plannedStart: d(-14), plannedEnd: d(-7), weight: 20, sortOrder: 1, completed: true, completedAt: t(-6) },
@@ -514,15 +514,18 @@ const localHandlers = {
   },
   createProject(payload) {
     const db = getLocalDb();
+    const creator = db.users.find((u) => String(u.id) === String(payload.createdBy));
     const row = {
       id: `p_${Date.now()}`,
       name: payload.name,
       description: payload.description || '',
       createdBy: payload.createdBy,
+      department: String(payload.department || creator?.department || '').trim(),
       createdAt: new Date().toISOString(),
       startDate: payload.startDate || null,
       endDate: payload.endDate || null,
     };
+    if (!row.department) throw new Error('ต้องระบุแผนกของโปรเจกต์');
     db.projects = [row, ...db.projects];
     return row;
   },

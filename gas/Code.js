@@ -17,7 +17,7 @@ var USER_HEADERS = [
   'email', 'notifyEmail', 'notifyAssign', 'notifyStatus', 'notifyReview', 'notifyLineDefault',
   'username', 'password'
 ];
-var PROJECT_HEADERS = ['id', 'name', 'description', 'createdBy', 'createdAt', 'startDate', 'endDate'];
+var PROJECT_HEADERS = ['id', 'name', 'description', 'createdBy', 'department', 'createdAt', 'startDate', 'endDate'];
 var TASK_HEADERS = [
   'id', 'projectId', 'title', 'description', 'createdBy', 'assignedTo',
   'status', 'type', 'dueDate', 'isRecurring', 'createdAt', 'completedAt'
@@ -224,8 +224,8 @@ function include_(filename) {
   return include(filename);
 }
 
-var SCHEMA_VERSION = '12';
-var BOOT_CACHE_KEY = 'gtp_boot_v8';
+var SCHEMA_VERSION = '13';
+var BOOT_CACHE_KEY = 'gtp_boot_v9';
 var BOOT_CACHE_TTL = 90;
 var _ssCache = null;
 var _sheetHeaderCache = {};
@@ -354,16 +354,19 @@ function getProjectActivity(payload) {
 function createProject(payload) {
   openDatabase_(false);
   var id = 'p_' + Date.now();
+  var dept = resolveProjectDepartment_(payload);
   var row = {
     id: id,
     name: String(payload.name || '').trim(),
     description: String(payload.description || ''),
     createdBy: String(payload.createdBy || ''),
+    department: dept,
     createdAt: new Date().toISOString(),
     startDate: payload.startDate ? String(payload.startDate) : '',
     endDate: payload.endDate ? String(payload.endDate) : ''
   };
   if (!row.name) throw new Error('ชื่อโปรเจกต์จำเป็น');
+  if (!row.department) throw new Error('ต้องระบุแผนกของโปรเจกต์');
   appendObject_(PROJECTS_SHEET, PROJECT_HEADERS, row);
   invalidateBootstrapCache_();
   return normalizeProject_(row);
@@ -1054,6 +1057,7 @@ function maybeMigrateAndSeed_(ss) {
   try { ensureProjectDates_(); } catch (pdErr) { /* non-fatal */ }
   try { ensureUserAuthDefaults_(); } catch (uaErr) { /* non-fatal */ }
   try { ensureOrgUnitsSeed_(); } catch (orgErr) { /* non-fatal */ }
+  try { ensureProjectDepartments_(); } catch (pdDeptErr) { /* non-fatal */ }
   try { ensureDemoShowcase_(); } catch (demoErr) { /* non-fatal */ }
   ensureAdminUser_();
   props.setProperty('SCHEMA_VERSION', SCHEMA_VERSION);
@@ -1883,11 +1887,11 @@ function ensureDemoShowcase_() {
   }
 
   var demoProjects = [
-    ['p1', 'พัฒนาระบบ Intranet กอง', 'อัปเกรดระบบภายใน (Next-Gen) — มีประวัติขยายสัญญา 2 ครั้ง', 'u1', iso(-14), d(-14), d(75)],
-    ['p2', 'กิจกรรม 5ส ประจำปี', 'จัดระเบียบอุปกรณ์และสายไฟ', 'u1', iso(-7), d(-7), d(21)],
-    ['p3', 'แผนซ่อมบำรุงประจำไตรมาส (Q3)', 'ตรวจสอบอุปกรณ์ Network ทั่วตึก — ขยายสัญญารออะไหล่', 'u1', iso(-3), d(-3), d(75)],
-    ['p4', 'ระบบประเมินผลประจำปี', 'โปรเจกต์แผนก HR — สิทธิ์แยกตามแผนก', 'u5', iso(-10), d(-10), d(30)],
-    ['p5', 'จัดทำงบประมาณปี 69', 'โปรเจกต์แผนก Finance', 'u7', iso(-5), d(-5), d(40)]
+    ['p1', 'พัฒนาระบบ Intranet กอง', 'อัปเกรดระบบภายใน (Next-Gen) — มีประวัติขยายสัญญา 2 ครั้ง', 'u1', 'IT', iso(-14), d(-14), d(75)],
+    ['p2', 'กิจกรรม 5ส ประจำปี', 'จัดระเบียบอุปกรณ์และสายไฟ', 'u1', 'IT', iso(-7), d(-7), d(21)],
+    ['p3', 'แผนซ่อมบำรุงประจำไตรมาส (Q3)', 'ตรวจสอบอุปกรณ์ Network ทั่วตึก — ขยายสัญญารออะไหล่', 'u1', 'IT', iso(-3), d(-3), d(75)],
+    ['p4', 'ระบบประเมินผลประจำปี', 'โปรเจกต์แผนก HR — สิทธิ์แยกตามแผนก', 'u5', 'HR', iso(-10), d(-10), d(30)],
+    ['p5', 'จัดทำงบประมาณปี 69', 'โปรเจกต์แผนก Finance', 'u7', 'Finance', iso(-5), d(-5), d(40)]
   ];
   for (var pi = 0; pi < demoProjects.length; pi++) {
     if (!sheetHasId_(PROJECTS_SHEET, demoProjects[pi][0])) {
@@ -2209,10 +2213,41 @@ function normalizeProject_(p) {
     name: String(p.name || ''),
     description: String(p.description || ''),
     createdBy: String(p.createdBy || ''),
+    department: String(p.department || ''),
     createdAt: toIso_(p.createdAt),
     startDate: p.startDate ? toDateOnly_(p.startDate) : null,
     endDate: p.endDate ? toDateOnly_(p.endDate) : null
   };
+}
+
+function resolveProjectDepartment_(payload) {
+  var dept = String((payload && payload.department) || '').trim();
+  if (dept) return dept;
+  var creatorId = String((payload && payload.createdBy) || '');
+  if (creatorId) {
+    var creator = findUserById_(creatorId);
+    if (creator && String(creator.department || '').trim()) {
+      return String(creator.department).trim();
+    }
+  }
+  return '';
+}
+
+/** Backfill department on legacy projects (from creator or known demo ids) */
+function ensureProjectDepartments_() {
+  var rows = listObjects_(PROJECTS_SHEET);
+  if (!rows.length) return;
+  var known = { p1: 'IT', p2: 'IT', p3: 'IT', p4: 'HR', p5: 'Finance' };
+  for (var i = 0; i < rows.length; i++) {
+    var p = rows[i];
+    if (String(p.department || '').trim()) continue;
+    var dept = known[String(p.id)] || '';
+    if (!dept && p.createdBy) {
+      var creator = findUserById_(String(p.createdBy));
+      if (creator) dept = String(creator.department || '').trim();
+    }
+    if (dept) updateRowById_(PROJECTS_SHEET, p.id, { department: dept });
+  }
 }
 
 function listMilestones_() {
@@ -2444,9 +2479,9 @@ function ensureSeed_() {
   writeRows_(users, 2, seedUsers);
 
   var projects = [
-    ['p1', 'พัฒนาระบบ Intranet กอง', 'อัปเกรดระบบภายในให้รองรับการทำงานแบบใหม่ (Next-Gen)', 'u1', new Date(now - DAY * 10).toISOString(), dateOnly_(now - DAY * 14), dateOnly_(now + DAY * 45)],
-    ['p2', 'กิจกรรม 5ส ประจำปี', 'จัดระเบียบอุปกรณ์และสายไฟ', 'u1', new Date(now - DAY * 8).toISOString(), dateOnly_(now - DAY * 7), dateOnly_(now + DAY * 21)],
-    ['p3', 'แผนซ่อมบำรุงประจำไตรมาส (Q3)', 'ตรวจสอบอุปกรณ์ Network ทั่วตึก', 'u1', new Date(now - DAY * 5).toISOString(), dateOnly_(now - DAY * 3), dateOnly_(now + DAY * 60)]
+    ['p1', 'พัฒนาระบบ Intranet กอง', 'อัปเกรดระบบภายในให้รองรับการทำงานแบบใหม่ (Next-Gen)', 'u1', 'IT', new Date(now - DAY * 10).toISOString(), dateOnly_(now - DAY * 14), dateOnly_(now + DAY * 45)],
+    ['p2', 'กิจกรรม 5ส ประจำปี', 'จัดระเบียบอุปกรณ์และสายไฟ', 'u1', 'IT', new Date(now - DAY * 8).toISOString(), dateOnly_(now - DAY * 7), dateOnly_(now + DAY * 21)],
+    ['p3', 'แผนซ่อมบำรุงประจำไตรมาส (Q3)', 'ตรวจสอบอุปกรณ์ Network ทั่วตึก', 'u1', 'IT', new Date(now - DAY * 5).toISOString(), dateOnly_(now - DAY * 3), dateOnly_(now + DAY * 60)]
   ];
   writeRows_(ss.getSheetByName(PROJECTS_SHEET), 2, projects);
 

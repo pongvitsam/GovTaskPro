@@ -374,6 +374,34 @@ export default function App() {
   }, [tasks, usersById, currentUser, activeProjectId]);
 
   const activeUsers = useMemo(() => users.filter((u) => u.active !== false), [users]);
+  const visibleProjects = useMemo(() => {
+    if (!currentUser) return [];
+    if (currentUser.role === 'Admin') return projects;
+    return projects.filter((p) => String(p.department || '') === String(currentUser.department || ''));
+  }, [projects, currentUser]);
+
+  const projectDeptOptions = useMemo(() => {
+    const fromOrg = (orgUnits || [])
+      .filter((o) => o.type === 'department' && o.active !== false)
+      .map((o) => o.name);
+    const fromUsers = activeUsers.map((u) => u.department).filter(Boolean);
+    return [...new Set([...fromOrg, ...fromUsers])].sort((a, b) => String(a).localeCompare(String(b), 'th'));
+  }, [orgUnits, activeUsers]);
+
+  useEffect(() => {
+    if (!detailProjectId) return;
+    if (!visibleProjects.some((p) => String(p.id) === String(detailProjectId))) {
+      setDetailProjectId(null);
+    }
+  }, [detailProjectId, visibleProjects]);
+
+  useEffect(() => {
+    if (!activeProjectId) return;
+    if (!visibleProjects.some((p) => String(p.id) === String(activeProjectId))) {
+      setActiveProjectId(null);
+    }
+  }, [activeProjectId, visibleProjects]);
+
   const deptUsers = useMemo(() => {
     if (!currentUser) return [];
     if (currentUser.role === 'Admin') return activeUsers;
@@ -816,6 +844,9 @@ export default function App() {
           name: formData.get('name'),
           description: formData.get('description'),
           createdBy: currentUser.id,
+          department: currentUser.role === 'Admin'
+            ? String(formData.get('department') || currentUser.department || '').trim()
+            : currentUser.department,
           startDate: formData.get('startDate') || null,
           endDate: formData.get('endDate') || null,
         });
@@ -1053,7 +1084,7 @@ export default function App() {
     }
   };
 
-  const detailProject = projects.find((p) => p.id === detailProjectId);
+  const detailProject = visibleProjects.find((p) => p.id === detailProjectId);
 
   const reportData = useMemo(() => {
     let filtered = visibleTasks;
@@ -1456,11 +1487,22 @@ export default function App() {
             <div className="flex justify-between items-end mb-8">
               <div>
                 <h2 className="gtp-display text-2xl font-extrabold text-[#1e3a4c]">โปรเจกต์ทั้งหมด</h2>
-                <p className="text-[#5b7a8a] text-sm mt-1 font-medium">ตั้งค่าช่วงเวลา · แผนขั้นตอน · S-Curve</p>
+                <p className="text-[#5b7a8a] text-sm mt-1 font-medium">
+                  {currentUser.role === 'Admin'
+                    ? 'ตั้งค่าช่วงเวลา · แผนขั้นตอน · S-Curve (ทุกแผนก)'
+                    : `แสดงเฉพาะโปรเจกต์แผนก ${currentUser.department || 'ของคุณ'}`}
+                </p>
               </div>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
-              {projects.map((proj) => {
+              {visibleProjects.length === 0 && (
+                <div className="md:col-span-2 xl:col-span-3 gtp-card p-10 text-center text-slate-500">
+                  <FolderKanban className="w-12 h-12 mx-auto mb-3 text-slate-300" />
+                  <p className="font-bold text-slate-600">ยังไม่มีโปรเจกต์ในแผนกนี้</p>
+                  <p className="text-sm mt-1">สร้างโปรเจกต์ใหม่ได้จากเมนู 「สร้างงาน」</p>
+                </div>
+              )}
+              {visibleProjects.map((proj) => {
                 const projTasks = tasksByProjectId.get(String(proj.id)) || [];
                 const projMs = milestonesByProjectId.get(String(proj.id)) || [];
                 const completedMs = projMs.filter((m) => m.completed).length;
@@ -1471,7 +1513,7 @@ export default function App() {
                   : (projTasks.length === 0 ? 0 : Math.round((projTasks.filter((t) => t.status === 'Completed').length / projTasks.length) * 100));
                 const activityPreview = summarizeRecentActivity(
                   buildProjectActivityForProject(proj.id, {
-                    projects,
+                    projects: visibleProjects,
                     tasks,
                     taskLogs,
                     milestones,
@@ -1555,7 +1597,7 @@ export default function App() {
                 กระดานงาน
                 {activeProjectId && (
                   <span className="ml-3 text-sm font-bold text-teal-700 bg-teal-50 border border-teal-100 px-3 py-1 rounded-full">
-                    {projects.find((p) => p.id === activeProjectId)?.name}
+                    {visibleProjects.find((p) => p.id === activeProjectId)?.name}
                   </span>
                 )}
               </h2>
@@ -1884,6 +1926,16 @@ export default function App() {
                 </div>
                 {createType === 'project' && (
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                    {currentUser.role === 'Admin' && (
+                      <div className="md:col-span-2">
+                        <label className="block text-sm font-extrabold text-slate-700 mb-2">แผนกเจ้าของโปรเจกต์ <span className="text-rose-500">*</span></label>
+                        <select name="department" required defaultValue={currentUser.department === 'SYSTEM' ? 'IT' : currentUser.department} className="w-full border border-slate-100 rounded-2xl p-3.5 text-slate-800 font-bold outline-none bg-white focus:border-teal-400">
+                          {projectDeptOptions.map((dept) => (
+                            <option key={dept} value={dept}>{dept}</option>
+                          ))}
+                        </select>
+                      </div>
+                    )}
                     <div>
                       <label className="block text-sm font-extrabold text-slate-700 mb-2">วันเริ่มบริหารโครงการ</label>
                       <ThaiDateField clearable inputName="startDate" placeholder="วันเริ่ม พ.ศ." />
@@ -1922,7 +1974,7 @@ export default function App() {
                       <label className="block text-sm font-extrabold text-slate-700 mb-2">จัดอยู่ในโปรเจกต์</label>
                       <select name="projectId" className="w-full border border-slate-100 rounded-2xl p-3.5 text-slate-800 font-bold outline-none bg-white focus:border-teal-400">
                         <option value="">-- ไม่ระบุ (งานทั่วไป) --</option>
-                        {projects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+                        {visibleProjects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
                       </select>
                     </div>
                     <div className="flex flex-col sm:flex-row sm:items-center space-y-3 sm:space-y-0 sm:space-x-6 pt-2 bg-[#f3f9fc] p-4 rounded-2xl border border-slate-200">
