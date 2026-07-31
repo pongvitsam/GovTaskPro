@@ -218,6 +218,7 @@ function dispatchApi_(fn, payload, hasPayload) {
   if (fn === 'adminUpdateOrgUnit') return adminUpdateOrgUnit(payload || {});
   if (fn === 'adminDeleteOrgUnit') return adminDeleteOrgUnit(payload || {});
   if (fn === 'adminSeedDemoData') return adminSeedDemoData(payload || {});
+  if (fn === 'adminGetDatabaseInfo') return adminGetDatabaseInfo(payload || {});
 
   throw new Error('Unknown API: ' + fn);
 }
@@ -2015,6 +2016,28 @@ function adminSeedDemoData(payload) {
   invalidateBootstrapCache_();
   result.bootstrap = getBootstrap({ force: true });
   return result;
+}
+
+/** Admin: link to the live Google Sheet backing this deployment */
+function adminGetDatabaseInfo(payload) {
+  openDatabase_(false);
+  requireAdmin_(payload.adminId);
+  var ss = openDatabase_(false);
+  function rowCount_(name) {
+    var sh = ss.getSheetByName(name);
+    if (!sh) return 0;
+    return Math.max(0, sh.getLastRow() - 1);
+  }
+  return {
+    url: ss.getUrl(),
+    name: ss.getName(),
+    id: ss.getId(),
+    counts: {
+      users: rowCount_(USERS_SHEET),
+      projects: rowCount_(PROJECTS_SHEET),
+      tasks: rowCount_(TASKS_SHEET),
+    },
+  };
 }
 
 function sheetHasId_(sheetName, id) {

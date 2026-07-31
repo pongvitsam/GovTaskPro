@@ -466,6 +466,21 @@ const localHandlers = {
     requireAdmin(db, payload.adminId);
     return db.users.map(adminUser);
   },
+  adminGetDatabaseInfo(payload) {
+    const db = getLocalDb();
+    requireAdmin(db, payload.adminId);
+    return {
+      localMode: true,
+      url: null,
+      name: 'GovTaskPro_Database (local mock)',
+      id: 'local-mock',
+      counts: {
+        users: db.users.length,
+        projects: db.projects.length,
+        tasks: db.tasks.length,
+      },
+    };
+  },
   adminCreateUser(payload) {
     const db = getLocalDb();
     requireAdmin(db, payload.adminId);

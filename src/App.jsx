@@ -762,6 +762,11 @@ export default function App() {
 
   const handleAdminLoadOrgUnits = async (payload) => api('adminGetOrgUnits', payload);
 
+  const handleAdminOpenDatabase = async () => {
+    if (!currentUser?.id) throw new Error('ไม่พบผู้ใช้');
+    return api('adminGetDatabaseInfo', { adminId: currentUser.id });
+  };
+
   const handleAdminDeleteOrg = async (payload) => {
     if (busy) return;
     setBusy(true);
@@ -1985,6 +1990,7 @@ export default function App() {
               onLoadOrgUnits={handleAdminLoadOrgUnits}
               onDeleteOrg={handleAdminDeleteOrg}
               onSeedDemo={handleAdminSeedDemo}
+              onOpenDatabase={handleAdminOpenDatabase}
               showToast={showToast}
             />
           </Suspense>

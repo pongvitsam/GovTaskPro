@@ -1,7 +1,8 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   Users, Plus, KeyRound, Loader2, UserX, UserCheck, Shield,
-  Building2, Save, Trash2, RefreshCw, Smartphone, ChevronDown, ChevronUp
+  Building2, Save, Trash2, RefreshCw, Smartphone, ChevronDown, ChevronUp,
+  ExternalLink,
 } from 'lucide-react';
 
 const ROLES = [
@@ -30,12 +31,14 @@ export default function AdminUsers({
   onDeleteOrg,
   onLoadOrgUnits,
   onSeedDemo,
+  onOpenDatabase,
   showToast,
 }) {
   const [tab, setTab] = useState('org');
   const [adminList, setAdminList] = useState([]);
   const [loadingList, setLoadingList] = useState(false);
   const [rightsTabLoaded, setRightsTabLoaded] = useState(false);
+  const [openingSheet, setOpeningSheet] = useState(false);
   const [editingId, setEditingId] = useState(null);
   const [editDraft, setEditDraft] = useState(null);
   const [filterDept, setFilterDept] = useState('all');
@@ -185,6 +188,28 @@ export default function AdminUsers({
   };
 
   const lineOrgOf = (orgId) => lineOrgs.find((o) => String(o.id) === String(orgId));
+
+  const handleOpenDatabase = async () => {
+    if (!onOpenDatabase || openingSheet) return;
+    setOpeningSheet(true);
+    try {
+      const info = await onOpenDatabase();
+      if (info?.localMode || !info?.url) {
+        const c = info?.counts;
+        const summary = c ? `Users ${c.users} · Projects ${c.projects} · Tasks ${c.tasks}` : '';
+        showToast(`💻 โหมดพัฒนา (mock DB) — ไม่มี Google Sheet${summary ? ` · ${summary}` : ''}`);
+        return;
+      }
+      window.open(info.url, '_blank', 'noopener,noreferrer');
+      const c = info.counts;
+      const summary = c ? `Users ${c.users} · Projects ${c.projects} · Tasks ${c.tasks}` : info.name;
+      showToast(`📊 เปิด ${info.name || 'Google Sheet'} (${summary})`);
+    } catch (err) {
+      showToast('❌ ' + (err?.message || String(err)));
+    } finally {
+      setOpeningSheet(false);
+    }
+  };
 
   const refreshAdminList = async () => {
     if (!onLoadUsers) return;
@@ -453,6 +478,17 @@ export default function AdminUsers({
             </p>
           </div>
           <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+            {onOpenDatabase && (
+              <button
+                type="button"
+                disabled={busy || openingSheet}
+                onClick={handleOpenDatabase}
+                className="text-xs font-extrabold px-3.5 py-2.5 rounded-2xl border border-slate-200 bg-white text-[#1e3a4c] hover:bg-slate-50 disabled:opacity-50 flex items-center justify-center gap-1.5"
+              >
+                {openingSheet ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ExternalLink className="w-3.5 h-3.5" />}
+                เปิด Google Sheet
+              </button>
+            )}
             {onSeedDemo && (
               <button
                 type="button"
