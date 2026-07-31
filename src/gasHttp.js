@@ -64,7 +64,7 @@ function jsonpRun(fnName, payload) {
     script.src = `${GAS_EXEC_URL}?${params.toString()}`;
     script.async = true;
     script.onerror = () => {
-      finish(() => reject(new Error('โหลด API จาก Google Apps Script ไม่สำเร็จ')));
+      finish(() => reject(new Error('JSONP_LOAD_FAILED')));
     };
     document.body.appendChild(script);
   });
@@ -142,8 +142,33 @@ function formPostRun(fnName, payload) {
  * @param {string} fnName
  * @param {unknown} [payload]
  */
-export function httpRun(fnName, payload) {
+export async function httpRun(fnName, payload) {
   const size = payload === undefined ? 0 : JSON.stringify(payload).length;
-  if (size <= JSONP_PAYLOAD_MAX) return jsonpRun(fnName, payload);
-  return formPostRun(fnName, payload);
+  if (size > JSONP_PAYLOAD_MAX) {
+    return formPostRun(fnName, payload);
+  }
+
+  try {
+    return await jsonpRun(fnName, payload);
+  } catch (err) {
+    const msg = err?.message || String(err);
+    // Script tag often fails (adblock, transient Google redirect, MIME) — retry via form POST
+    if (
+      msg === 'JSONP_LOAD_FAILED'
+      || msg.includes('หมดเวลา')
+      || msg.includes('โหลด API')
+    ) {
+      try {
+        return await formPostRun(fnName, payload);
+      } catch (postErr) {
+        const postMsg = postErr?.message || String(postErr);
+        throw new Error(
+          postMsg.includes('หมดเวลา')
+            ? postMsg
+            : `เชื่อมต่อ Google Apps Script ไม่สำเร็จ (${postMsg}) — รีเฟรชหน้า หรือตรวจ Deploy = Anyone`,
+        );
+      }
+    }
+    throw err;
+  }
 }
