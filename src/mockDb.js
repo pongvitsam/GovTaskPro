@@ -966,10 +966,18 @@ const localHandlers = {
         throw new Error('ไม่มีสิทธิ์ใช้โปรเจกต์นี้');
       }
     }
+    if (payload.title !== undefined) {
+      const title = String(payload.title || '').trim();
+      if (!title) throw new Error('กรอกชื่องาน');
+    }
     db.tasks = db.tasks.map((t) => {
       if (String(t.id) !== taskId) return t;
       const next = { ...t };
       if (projectId !== undefined) next.projectId = projectId;
+      if (payload.title !== undefined) next.title = String(payload.title || '').trim();
+      if (payload.description !== undefined) next.description = String(payload.description || '');
+      if (payload.dueDate !== undefined) next.dueDate = payload.dueDate ? String(payload.dueDate) : null;
+      if (payload.isRecurring !== undefined) next.isRecurring = !!payload.isRecurring;
       return next;
     });
     const updated = db.tasks.find((t) => String(t.id) === taskId);

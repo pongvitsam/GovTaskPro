@@ -751,6 +751,20 @@ function updateTask(payload) {
   assertCanEditTask_(userId, task);
 
   var updates = {};
+  if (payload.title !== undefined) {
+    var title = String(payload.title || '').trim();
+    if (!title) throw new Error('กรอกชื่องาน');
+    updates.title = title;
+  }
+  if (payload.description !== undefined) {
+    updates.description = String(payload.description || '');
+  }
+  if (payload.dueDate !== undefined) {
+    updates.dueDate = payload.dueDate ? String(payload.dueDate) : '';
+  }
+  if (payload.isRecurring !== undefined) {
+    updates.isRecurring = payload.isRecurring ? 'TRUE' : 'FALSE';
+  }
   if (payload.projectId !== undefined) {
     var pid = String(payload.projectId || '').trim();
     if (pid) {

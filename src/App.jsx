@@ -4,11 +4,11 @@ import {
   ArrowRightLeft, History, FolderKanban, Briefcase, KanbanSquare, Bell, Calendar as CalendarIcon,
   BarChart2, MessageSquare, Paperclip, Repeat, Download, FileText, Smartphone, Search,
   Users, CalendarDays, Grab, ShieldCheck, Loader2, Settings2, StickyNote, KeyRound,
-  Menu, X, MoreHorizontal, RefreshCw, Trash2
+  Menu, X, MoreHorizontal, RefreshCw, Trash2, Save
 } from 'lucide-react';
 import { api, isProductionGas, isProductionHost } from './api';
 import LoginScreen from './LoginScreen';
-import { formatThaiDate, formatThaiDateLong, formatThaiMonthYear } from './formatThaiDate';
+import { formatThaiDate, formatThaiDateLong, formatThaiMonthYear, toDateInputValue } from './formatThaiDate';
 import ProjectTimeBar from './ProjectTimeBar';
 import { readSession, saveSession, clearSession, readBootstrapCache, writeBootstrapCache, bootstrapCacheAgeMs } from './session';
 import ThaiDateField from './ThaiDateField';
@@ -85,6 +85,7 @@ export default function App() {
   const [detailProjectId, setDetailProjectId] = useState(null);
   const [selectedTask, setSelectedTask] = useState(null);
   const [taskModalTab, setTaskModalTab] = useState('details');
+  const [taskEditDraft, setTaskEditDraft] = useState(null);
   const [createType, setCreateType] = useState('task');
   const [toastMsg, setToastMsg] = useState(null);
 
@@ -412,6 +413,25 @@ export default function App() {
     })();
     return () => { cancelled = true; };
   }, [selectedTask?.id]);
+
+  useEffect(() => {
+    if (!selectedTask) {
+      setTaskEditDraft(null);
+      return;
+    }
+    setTaskEditDraft({
+      title: selectedTask.title || '',
+      description: selectedTask.description || '',
+      dueDate: toDateInputValue(selectedTask.dueDate),
+      isRecurring: !!selectedTask.isRecurring,
+    });
+  }, [
+    selectedTask?.id,
+    selectedTask?.title,
+    selectedTask?.description,
+    selectedTask?.dueDate,
+    selectedTask?.isRecurring,
+  ]);
 
   const usersById = useMemo(() => {
     const m = new Map();
@@ -1060,6 +1080,42 @@ export default function App() {
       });
       patchTask(result?.task || result, result?.log);
       showToast(`✅ จัดอยู่ในโปรเจกต์: ${projName}`);
+    } catch (err) {
+      showToast('❌ ' + (err?.message || String(err)));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleSaveTaskDetails = async () => {
+    if (busy || !currentUser || !selectedTask || !taskEditDraft || !canEditTaskProject) return;
+    const title = taskEditDraft.title.trim();
+    if (!title) {
+      showToast('❌ กรอกชื่องาน');
+      return;
+    }
+    const dueDate = taskEditDraft.dueDate || null;
+    const unchanged = title === (selectedTask.title || '')
+      && (taskEditDraft.description || '') === (selectedTask.description || '')
+      && (dueDate || null) === (selectedTask.dueDate ? toDateInputValue(selectedTask.dueDate) : null)
+      && !!taskEditDraft.isRecurring === !!selectedTask.isRecurring;
+    if (unchanged) {
+      showToast('ไม่มีการเปลี่ยนแปลง');
+      return;
+    }
+    setBusy(true);
+    try {
+      const result = await api('updateTask', {
+        taskId: selectedTask.id,
+        userId: currentUser.id,
+        title,
+        description: taskEditDraft.description || '',
+        dueDate,
+        isRecurring: taskEditDraft.isRecurring,
+        logDetail: 'แก้ไขข้อความและรายละเอียดงาน',
+      });
+      patchTask(result?.task || result, result?.log);
+      showToast('✅ บันทึกข้อความงานแล้ว');
     } catch (err) {
       showToast('❌ ' + (err?.message || String(err)));
     } finally {
@@ -2269,7 +2325,20 @@ export default function App() {
                     </span>
                   )}
                 </div>
-                <h2 className="text-2xl md:text-3xl font-black text-slate-800 leading-tight tracking-tight">{selectedTask.title}</h2>
+                <h2 className="text-2xl md:text-3xl font-black text-slate-800 leading-tight tracking-tight">
+                  {canEditTaskProject && taskEditDraft ? (
+                    <input
+                      type="text"
+                      value={taskEditDraft.title}
+                      disabled={busy}
+                      onChange={(e) => setTaskEditDraft((d) => ({ ...d, title: e.target.value }))}
+                      className="w-full bg-transparent border-b-2 border-teal-200 focus:border-teal-500 outline-none py-1"
+                      placeholder="ชื่องาน"
+                    />
+                  ) : (
+                    selectedTask.title
+                  )}
+                </h2>
               </div>
               <button onClick={() => setSelectedTask(null)} className="absolute top-5 md:top-7 right-5 md:right-7 text-slate-400 hover:text-rose-600 bg-slate-100 hover:bg-rose-50 rounded-full p-2">
                 <Plus className="w-6 h-6 rotate-45" />
@@ -2370,7 +2439,53 @@ export default function App() {
 
                     <div>
                       <h4 className="text-xs font-black text-slate-400 uppercase tracking-widest mb-3 flex items-center"><FileText className="w-4 h-4 mr-1.5" /> รายละเอียดงาน</h4>
-                      <p className="text-slate-700 whitespace-pre-wrap text-sm leading-relaxed bg-slate-50 p-5 rounded-2xl border border-slate-100 font-medium">{selectedTask.description || 'ไม่มีรายละเอียดเพิ่มเติม'}</p>
+                      {canEditTaskProject && taskEditDraft ? (
+                        <div className="space-y-4">
+                          <textarea
+                            value={taskEditDraft.description}
+                            disabled={busy}
+                            onChange={(e) => setTaskEditDraft((d) => ({ ...d, description: e.target.value }))}
+                            rows={5}
+                            placeholder="รายละเอียดงาน..."
+                            className="w-full text-slate-700 text-sm leading-relaxed bg-slate-50 p-5 rounded-2xl border border-slate-200 font-medium outline-none focus:border-teal-400 resize-y min-h-[120px]"
+                          />
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                            <div>
+                              <label className="text-xs font-bold text-slate-500 mb-1.5 block">วันครบกำหนด</label>
+                              <ThaiDateField
+                                clearable
+                                value={taskEditDraft.dueDate}
+                                disabled={busy}
+                                onChange={(v) => setTaskEditDraft((d) => ({ ...d, dueDate: v }))}
+                                placeholder="วันกำหนดส่ง พ.ศ."
+                              />
+                            </div>
+                            <label className="flex items-center gap-3 cursor-pointer p-4 bg-slate-50 rounded-2xl border border-slate-100 self-end">
+                              <input
+                                type="checkbox"
+                                checked={taskEditDraft.isRecurring}
+                                disabled={busy}
+                                onChange={(e) => setTaskEditDraft((d) => ({ ...d, isRecurring: e.target.checked }))}
+                                className="w-5 h-5 accent-teal-600"
+                              />
+                              <span className="text-sm font-bold text-slate-700 flex items-center gap-1.5">
+                                <Repeat className="w-4 h-4 text-slate-500" /> งานทำซ้ำ
+                              </span>
+                            </label>
+                          </div>
+                          <button
+                            type="button"
+                            disabled={busy}
+                            onClick={handleSaveTaskDetails}
+                            className="w-full sm:w-auto px-6 py-3 rounded-2xl bg-teal-600 hover:bg-teal-700 text-white font-extrabold text-sm shadow-md disabled:opacity-60 flex items-center justify-center gap-2"
+                          >
+                            {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+                            บันทึกข้อความงาน
+                          </button>
+                        </div>
+                      ) : (
+                        <p className="text-slate-700 whitespace-pre-wrap text-sm leading-relaxed bg-slate-50 p-5 rounded-2xl border border-slate-100 font-medium">{selectedTask.description || 'ไม่มีรายละเอียดเพิ่มเติม'}</p>
+                      )}
                     </div>
                     <div className="grid grid-cols-2 gap-4">
                       <div className="bg-[#f3f9fc] p-4 rounded-2xl border border-slate-100">
