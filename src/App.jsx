@@ -4,7 +4,7 @@ import {
   ArrowRightLeft, History, FolderKanban, Briefcase, KanbanSquare, Bell, Calendar as CalendarIcon,
   BarChart2, MessageSquare, Paperclip, Repeat, Download, FileText, Smartphone, Search,
   Users, CalendarDays, Grab, ShieldCheck, Loader2, Settings2, StickyNote, KeyRound,
-  Menu, X, MoreHorizontal, RefreshCw, Trash2, Save
+  Menu, X, MoreHorizontal, RefreshCw, Trash2, Save, Pencil
 } from 'lucide-react';
 import { api, isProductionGas, isProductionHost } from './api';
 import LoginScreen from './LoginScreen';
@@ -86,6 +86,8 @@ export default function App() {
   const [selectedTask, setSelectedTask] = useState(null);
   const [taskModalTab, setTaskModalTab] = useState('details');
   const [taskEditDraft, setTaskEditDraft] = useState(null);
+  const [boardEditingTaskId, setBoardEditingTaskId] = useState(null);
+  const [boardTitleDraft, setBoardTitleDraft] = useState('');
   const [createType, setCreateType] = useState('task');
   const [toastMsg, setToastMsg] = useState(null);
 
@@ -420,14 +422,12 @@ export default function App() {
       return;
     }
     setTaskEditDraft({
-      title: selectedTask.title || '',
       description: selectedTask.description || '',
       dueDate: toDateInputValue(selectedTask.dueDate),
       isRecurring: !!selectedTask.isRecurring,
     });
   }, [
     selectedTask?.id,
-    selectedTask?.title,
     selectedTask?.description,
     selectedTask?.dueDate,
     selectedTask?.isRecurring,
@@ -537,6 +537,17 @@ export default function App() {
     if (!task || !currentUser) return false;
     if (currentUser.role === 'Admin') return true;
     if (String(task.createdBy) === String(currentUser.id)) return true;
+    if (currentUser.role === 'Head') {
+      const assignee = usersById.get(task.assignedTo);
+      return assignee?.department === currentUser.department;
+    }
+    return false;
+  };
+  const canEditTask = (task) => {
+    if (!task || !currentUser) return false;
+    if (currentUser.role === 'Admin') return true;
+    if (String(task.createdBy) === String(currentUser.id)) return true;
+    if (String(task.assignedTo) === String(currentUser.id)) return true;
     if (currentUser.role === 'Head') {
       const assignee = usersById.get(task.assignedTo);
       return assignee?.department === currentUser.department;
@@ -1089,14 +1100,8 @@ export default function App() {
 
   const handleSaveTaskDetails = async () => {
     if (busy || !currentUser || !selectedTask || !taskEditDraft || !canEditTaskProject) return;
-    const title = taskEditDraft.title.trim();
-    if (!title) {
-      showToast('❌ กรอกชื่องาน');
-      return;
-    }
     const dueDate = taskEditDraft.dueDate || null;
-    const unchanged = title === (selectedTask.title || '')
-      && (taskEditDraft.description || '') === (selectedTask.description || '')
+    const unchanged = (taskEditDraft.description || '') === (selectedTask.description || '')
       && (dueDate || null) === (selectedTask.dueDate ? toDateInputValue(selectedTask.dueDate) : null)
       && !!taskEditDraft.isRecurring === !!selectedTask.isRecurring;
     if (unchanged) {
@@ -1108,14 +1113,44 @@ export default function App() {
       const result = await api('updateTask', {
         taskId: selectedTask.id,
         userId: currentUser.id,
-        title,
         description: taskEditDraft.description || '',
         dueDate,
         isRecurring: taskEditDraft.isRecurring,
-        logDetail: 'แก้ไขข้อความและรายละเอียดงาน',
+        logDetail: 'แก้ไขรายละเอียดงาน',
       });
       patchTask(result?.task || result, result?.log);
-      showToast('✅ บันทึกข้อความงานแล้ว');
+      showToast('✅ บันทึกรายละเอียดงานแล้ว');
+    } catch (err) {
+      showToast('❌ ' + (err?.message || String(err)));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleSaveBoardTaskTitle = async (taskId) => {
+    if (busy || !currentUser) return;
+    const title = boardTitleDraft.trim();
+    if (!title) {
+      showToast('❌ กรอกชื่องาน');
+      return;
+    }
+    const task = tasks.find((t) => String(t.id) === String(taskId));
+    if (!task || !canEditTask(task)) return;
+    if (title === (task.title || '')) {
+      setBoardEditingTaskId(null);
+      return;
+    }
+    setBusy(true);
+    try {
+      const result = await api('updateTask', {
+        taskId,
+        userId: currentUser.id,
+        title,
+        logDetail: 'แก้ไขชื่องาน',
+      });
+      patchTask(result?.task || result, result?.log);
+      setBoardEditingTaskId(null);
+      showToast('✅ บันทึกชื่องานแล้ว');
     } catch (err) {
       showToast('❌ ' + (err?.message || String(err)));
     } finally {
@@ -1868,22 +1903,46 @@ export default function App() {
                           return (
                             <div
                               key={task.id}
-                              onClick={() => { setSelectedTask(task); setTaskModalTab('details'); }}
+                              onClick={() => {
+                                if (boardEditingTaskId === task.id) return;
+                                setSelectedTask(task);
+                                setTaskModalTab('details');
+                              }}
                               className={`bg-white p-4 rounded-2xl shadow-sm border-2 relative group cursor-pointer hover:shadow-md hover:-translate-y-0.5 transition-all ${
                                 overdue ? 'border-rose-400 ring-2 ring-rose-100' : `${theme.cardBorder}`
-                              } ${isMyTask && status === 'Pending' ? 'ring-2 ring-amber-200' : ''} ${status === 'Completed' ? 'opacity-90' : ''}`}
+                              } ${isMyTask && status === 'Pending' ? 'ring-2 ring-amber-200' : ''} ${status === 'Completed' ? 'opacity-90' : ''} ${boardEditingTaskId === task.id ? 'ring-2 ring-teal-300 cursor-default' : ''}`}
                             >
                               <div className={`absolute left-0 top-3 bottom-3 w-1 rounded-r-full ${theme.accent}`} />
-                              {task.isRecurring && <Repeat className="w-4 h-4 absolute top-3.5 right-3.5 text-slate-300" />}
-                              {canDeleteTask(task) && (
-                                <button
-                                  type="button"
-                                  title="ลบงาน"
-                                  onClick={(e) => { e.stopPropagation(); handleDeleteTask(task.id); }}
-                                  className={`absolute top-3 p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 md:opacity-0 md:group-hover:opacity-100 transition-all z-10 ${task.isRecurring ? 'right-10' : 'right-3'}`}
-                                >
-                                  <Trash2 className="w-4 h-4" />
-                                </button>
+                              {task.isRecurring && boardEditingTaskId !== task.id && (
+                                <Repeat className="w-4 h-4 absolute top-3.5 right-3.5 text-slate-300" />
+                              )}
+                              {(canEditTask(task) || canDeleteTask(task)) && boardEditingTaskId !== task.id && (
+                                <div className="absolute top-3 right-3 flex items-center gap-0.5 md:opacity-0 md:group-hover:opacity-100 transition-all z-10">
+                                  {canEditTask(task) && (
+                                    <button
+                                      type="button"
+                                      title="แก้ไขชื่องาน"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        setBoardEditingTaskId(task.id);
+                                        setBoardTitleDraft(task.title || '');
+                                      }}
+                                      className="p-1.5 rounded-lg text-slate-400 hover:text-teal-600 hover:bg-teal-50"
+                                    >
+                                      <Pencil className="w-4 h-4" />
+                                    </button>
+                                  )}
+                                  {canDeleteTask(task) && (
+                                    <button
+                                      type="button"
+                                      title="ลบงาน"
+                                      onClick={(e) => { e.stopPropagation(); handleDeleteTask(task.id); }}
+                                      className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50"
+                                    >
+                                      <Trash2 className="w-4 h-4" />
+                                    </button>
+                                  )}
+                                </div>
                               )}
                               {isMyTask && status === 'Pending' && <div className="absolute -top-2 -right-2 bg-amber-500 text-white text-[9px] font-bold px-2 py-0.5 rounded-full shadow-md">งานใหม่!</div>}
                               {!isMyTask && overdue && <div className="absolute -top-2 -right-2 bg-rose-500 text-white text-[9px] font-bold px-2 py-0.5 rounded-full shadow-md">เลยกำหนด</div>}
@@ -1892,7 +1951,34 @@ export default function App() {
                                   {projects.find((p) => p.id === task.projectId)?.name}
                                 </span>
                               )}
-                              <h4 className={`font-bold text-[#1e3a4c] text-sm mb-2 leading-relaxed pr-6 pl-2 ${status === 'Completed' ? 'line-through decoration-slate-300' : ''}`}>{task.title}</h4>
+                              {boardEditingTaskId === task.id ? (
+                                <div className="pl-2 pr-1 mb-2 space-y-2" onClick={(e) => e.stopPropagation()}>
+                                  <input
+                                    type="text"
+                                    value={boardTitleDraft}
+                                    disabled={busy}
+                                    autoFocus
+                                    onChange={(e) => setBoardTitleDraft(e.target.value)}
+                                    onKeyDown={(e) => {
+                                      if (e.key === 'Enter') handleSaveBoardTaskTitle(task.id);
+                                      if (e.key === 'Escape') setBoardEditingTaskId(null);
+                                    }}
+                                    className="w-full text-sm font-bold text-[#1e3a4c] border-2 border-teal-300 rounded-xl px-3 py-2 outline-none focus:border-teal-500 bg-white"
+                                    placeholder="ชื่องาน"
+                                  />
+                                  <button
+                                    type="button"
+                                    disabled={busy}
+                                    onClick={() => handleSaveBoardTaskTitle(task.id)}
+                                    className="w-full flex items-center justify-center gap-1.5 py-2 rounded-xl bg-teal-600 hover:bg-teal-700 text-white text-xs font-extrabold disabled:opacity-60"
+                                  >
+                                    {busy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
+                                    บันทึก
+                                  </button>
+                                </div>
+                              ) : (
+                                <h4 className={`font-bold text-[#1e3a4c] text-sm mb-2 leading-relaxed pr-6 pl-2 ${status === 'Completed' ? 'line-through decoration-slate-300' : ''}`}>{task.title}</h4>
+                              )}
                               {isMyTask && status !== 'Completed' && (
                                 <p className="text-[10px] font-extrabold text-teal-600 mb-3 pl-2">แตะการ์ด → อัปเดตสถานะ</p>
                               )}
@@ -2325,20 +2411,7 @@ export default function App() {
                     </span>
                   )}
                 </div>
-                <h2 className="text-2xl md:text-3xl font-black text-slate-800 leading-tight tracking-tight">
-                  {canEditTaskProject && taskEditDraft ? (
-                    <input
-                      type="text"
-                      value={taskEditDraft.title}
-                      disabled={busy}
-                      onChange={(e) => setTaskEditDraft((d) => ({ ...d, title: e.target.value }))}
-                      className="w-full bg-transparent border-b-2 border-teal-200 focus:border-teal-500 outline-none py-1"
-                      placeholder="ชื่องาน"
-                    />
-                  ) : (
-                    selectedTask.title
-                  )}
-                </h2>
+                <h2 className="text-2xl md:text-3xl font-black text-slate-800 leading-tight tracking-tight">{selectedTask.title}</h2>
               </div>
               <button onClick={() => setSelectedTask(null)} className="absolute top-5 md:top-7 right-5 md:right-7 text-slate-400 hover:text-rose-600 bg-slate-100 hover:bg-rose-50 rounded-full p-2">
                 <Plus className="w-6 h-6 rotate-45" />
@@ -2480,7 +2553,7 @@ export default function App() {
                             className="w-full sm:w-auto px-6 py-3 rounded-2xl bg-teal-600 hover:bg-teal-700 text-white font-extrabold text-sm shadow-md disabled:opacity-60 flex items-center justify-center gap-2"
                           >
                             {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-                            บันทึกข้อความงาน
+                            บันทึกรายละเอียด
                           </button>
                         </div>
                       ) : (
