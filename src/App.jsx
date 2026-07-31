@@ -1898,8 +1898,11 @@ export default function App() {
                           <div className="flex items-center space-x-4">
                             <span className={`text-[10px] font-bold px-2.5 py-1.5 rounded-full border ${getStatusColor(task.status)} uppercase tracking-wide`}>{getStatusText(task.status)}</span>
                             {task.completedAt ? (
-                              <span className="text-xs text-emerald-600 font-bold bg-emerald-50 px-2.5 py-1 rounded-lg border border-emerald-100 text-center min-w-[90px]">
-                                เสร็จ: {new Date(task.completedAt).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })}
+                              <span className="text-xs text-emerald-600 font-bold bg-emerald-50 px-2.5 py-1.5 rounded-lg border border-emerald-100 text-center min-w-[130px]">
+                                <span className="block">เสร็จ {formatThaiDate(task.completedAt)}</span>
+                                <span className="block text-[10px] text-emerald-700/80 font-semibold mt-0.5">
+                                  {new Date(task.completedAt).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })} น.
+                                </span>
                               </span>
                             ) : (
                               <span className="text-xs text-slate-400 font-medium px-2.5 py-1 text-center min-w-[90px]">-</span>
