@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   Users, Plus, KeyRound, Loader2, UserX, UserCheck, Shield,
-  Building2, Save, Trash2, RefreshCw
+  Building2, Save, Trash2, RefreshCw, Smartphone, ChevronDown, ChevronUp
 } from 'lucide-react';
 
 const ROLES = [
@@ -28,6 +28,7 @@ export default function AdminUsers({
   onCreateOrg,
   onUpdateOrg,
   onDeleteOrg,
+  onLoadOrgUnits,
   onSeedDemo,
   showToast,
 }) {
@@ -39,6 +40,10 @@ export default function AdminUsers({
   const [filterDept, setFilterDept] = useState('all');
   const [editingOrgId, setEditingOrgId] = useState(null);
   const [orgDraftCode, setOrgDraftCode] = useState('');
+  const [lineOrgs, setLineOrgs] = useState([]);
+  const [loadingLineOrgs, setLoadingLineOrgs] = useState(false);
+  const [lineOpenId, setLineOpenId] = useState(null);
+  const [lineDraft, setLineDraft] = useState(null);
 
   const [form, setForm] = useState({
     username: '',
@@ -106,6 +111,61 @@ export default function AdminUsers({
       setDivParent(departments.includes('IT') ? 'IT' : departments[0]);
     }
   }, [departments, divParent]);
+
+  useEffect(() => {
+    if (tab === 'org') refreshLineOrgs();
+  }, [tab]);
+
+  const refreshLineOrgs = async () => {
+    if (!onLoadOrgUnits) return;
+    setLoadingLineOrgs(true);
+    try {
+      const list = await onLoadOrgUnits({ adminId: currentUser.id });
+      setLineOrgs(Array.isArray(list) ? list : []);
+    } catch (err) {
+      showToast('❌ ' + (err?.message || String(err)));
+    } finally {
+      setLoadingLineOrgs(false);
+    }
+  };
+
+  const openLineEditor = (org) => {
+    const full = lineOrgs.find((o) => String(o.id) === String(org.id)) || org;
+    setLineOpenId(org.id);
+    setLineDraft({
+      lineEnabled: !!full.lineEnabled,
+      lineGroupId: full.lineGroupId || '',
+      lineChannelToken: full.lineChannelToken || '',
+      lineNotifyAssign: full.lineNotifyAssign !== false,
+      lineNotifyReview: full.lineNotifyReview !== false,
+      lineNotifyComplete: full.lineNotifyComplete !== false,
+    });
+  };
+
+  const saveLineConfig = async (orgId) => {
+    if (!onUpdateOrg || !lineDraft) return;
+    const row = await onUpdateOrg({
+      adminId: currentUser.id,
+      id: orgId,
+      lineEnabled: lineDraft.lineEnabled,
+      lineGroupId: lineDraft.lineGroupId,
+      lineChannelToken: lineDraft.lineChannelToken,
+      lineNotifyAssign: lineDraft.lineNotifyAssign,
+      lineNotifyReview: lineDraft.lineNotifyReview,
+      lineNotifyComplete: lineDraft.lineNotifyComplete,
+    });
+    if (row) {
+      showToast('✅ บันทึกการตั้งค่า LINE แผนกแล้ว');
+      setLineOrgs((prev) => {
+        const without = prev.filter((o) => String(o.id) !== String(orgId));
+        return [...without, row];
+      });
+      setLineOpenId(null);
+      setLineDraft(null);
+    }
+  };
+
+  const lineOrgOf = (orgId) => lineOrgs.find((o) => String(o.id) === String(orgId));
 
   const refreshAdminList = async () => {
     if (!onLoadUsers) return;
@@ -407,7 +467,7 @@ export default function AdminUsers({
               onClick={() => setTab('org')}
               className={`px-4 py-2 rounded-xl text-sm font-extrabold transition-all ${tab === 'org' ? 'bg-white text-teal-700 shadow-sm' : 'text-[#5b7a8a]'}`}
             >
-              Username แผนก
+              แผนก & LINE
             </button>
             </div>
           </div>
@@ -594,19 +654,32 @@ export default function AdminUsers({
                 <Plus className="w-4 h-4 mr-2" /> เพิ่มแผนก
               </button>
               <div className="pt-2 space-y-2">
-                <p className="text-xs font-bold text-[#5b7a8a]">แผนกทั้งหมด ({departments.length})</p>
-                {(orgUnits || []).filter((o) => o.type === 'department').map((o) => (
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-xs font-bold text-[#5b7a8a]">แผนกทั้งหมด ({departments.length})</p>
+                  {loadingLineOrgs && <Loader2 className="w-3.5 h-3.5 animate-spin text-teal-500" />}
+                </div>
+                {(orgUnits || []).filter((o) => o.type === 'department').map((o) => {
+                  const lineMeta = lineOrgOf(o.id) || o;
+                  const lineReady = lineMeta.lineEnabled && lineMeta.lineConfigured;
+                  return (
                   <div key={o.id} className="px-3 py-2.5 rounded-2xl bg-[#f3f9fc] space-y-2">
                     <div className="flex items-center justify-between gap-2">
                       <span className="font-extrabold text-[#1e3a4c] text-sm">{o.name}</span>
-                      <button
-                        type="button"
-                        disabled={busy}
-                        onClick={() => onDeleteOrg({ adminId: currentUser.id, id: o.id })}
-                        className="text-xs font-bold text-rose-500 hover:bg-rose-50 px-2 py-1 rounded-lg flex items-center gap-1"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" /> ลบ
-                      </button>
+                      <div className="flex items-center gap-2">
+                        {lineReady ? (
+                          <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-lg border border-emerald-100">LINE พร้อม</span>
+                        ) : (
+                          <span className="text-[10px] font-bold text-slate-500 bg-white px-2 py-0.5 rounded-lg border border-slate-100">ยังไม่ตั้ง LINE</span>
+                        )}
+                        <button
+                          type="button"
+                          disabled={busy}
+                          onClick={() => onDeleteOrg({ adminId: currentUser.id, id: o.id })}
+                          className="text-xs font-bold text-rose-500 hover:bg-rose-50 px-2 py-1 rounded-lg flex items-center gap-1"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" /> ลบ
+                        </button>
+                      </div>
                     </div>
                     {editingOrgId === o.id ? (
                       <div className="flex flex-wrap gap-2 items-center">
@@ -655,8 +728,87 @@ export default function AdminUsers({
                         </button>
                       </div>
                     )}
+                    <div className="border-t border-slate-100 pt-2 mt-1">
+                      <button
+                        type="button"
+                        disabled={busy}
+                        onClick={() => {
+                          if (lineOpenId === o.id) {
+                            setLineOpenId(null);
+                            setLineDraft(null);
+                          } else {
+                            openLineEditor(o);
+                          }
+                        }}
+                        className="w-full flex items-center justify-between text-xs font-extrabold text-teal-700 hover:bg-white rounded-xl px-2 py-2"
+                      >
+                        <span className="inline-flex items-center gap-1.5">
+                          <Smartphone className="w-3.5 h-3.5" /> ตั้งค่า LINE กลุ่มแผนก
+                        </span>
+                        {lineOpenId === o.id ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                      </button>
+                      {lineOpenId === o.id && lineDraft && (
+                        <div className="mt-2 space-y-3 bg-white rounded-xl border border-teal-100 p-3">
+                          <label className="flex items-center gap-2 cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={lineDraft.lineEnabled}
+                              onChange={(e) => setLineDraft({ ...lineDraft, lineEnabled: e.target.checked })}
+                              className="w-4 h-4 accent-teal-600"
+                            />
+                            <span className="text-xs font-bold text-[#1e3a4c]">เปิดใช้แจ้งเตือน LINE</span>
+                          </label>
+                          <div>
+                            <label className="text-[11px] font-bold text-slate-500 mb-1 block">Group ID (กลุ่มแผนก)</label>
+                            <input
+                              value={lineDraft.lineGroupId}
+                              onChange={(e) => setLineDraft({ ...lineDraft, lineGroupId: e.target.value.trim() })}
+                              placeholder="Cxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+                              className="w-full border border-slate-100 rounded-xl px-2.5 py-2 font-mono text-xs outline-none focus:border-teal-400"
+                            />
+                          </div>
+                          <div>
+                            <label className="text-[11px] font-bold text-slate-500 mb-1 block">Channel Access Token</label>
+                            <input
+                              type="password"
+                              value={lineDraft.lineChannelToken}
+                              onChange={(e) => setLineDraft({ ...lineDraft, lineChannelToken: e.target.value.trim() })}
+                              placeholder="LINE Messaging API token"
+                              className="w-full border border-slate-100 rounded-xl px-2.5 py-2 font-mono text-xs outline-none focus:border-teal-400"
+                            />
+                          </div>
+                          <div className="space-y-2">
+                            <p className="text-[11px] font-bold text-slate-500">แจ้งเมื่อ</p>
+                            <label className="flex items-center gap-2 text-xs font-bold text-[#1e3a4c]">
+                              <input type="checkbox" checked={lineDraft.lineNotifyAssign} onChange={(e) => setLineDraft({ ...lineDraft, lineNotifyAssign: e.target.checked })} className="accent-teal-600" />
+                              มอบหมาย / โอนงาน
+                            </label>
+                            <label className="flex items-center gap-2 text-xs font-bold text-[#1e3a4c]">
+                              <input type="checkbox" checked={lineDraft.lineNotifyReview} onChange={(e) => setLineDraft({ ...lineDraft, lineNotifyReview: e.target.checked })} className="accent-teal-600" />
+                              ส่งงานรอตรวจ
+                            </label>
+                            <label className="flex items-center gap-2 text-xs font-bold text-[#1e3a4c]">
+                              <input type="checkbox" checked={lineDraft.lineNotifyComplete} onChange={(e) => setLineDraft({ ...lineDraft, lineNotifyComplete: e.target.checked })} className="accent-teal-600" />
+                              งานเสร็จสิ้น
+                            </label>
+                          </div>
+                          <p className="text-[10px] text-[#8aa3b0] font-medium leading-relaxed">
+                            ใช้ LINE Official Account (Messaging API) — บอทตัวเดียวแจ้งได้หลายกลุ่ม แยกตามแผนก · ข้อความอย่างเดียว ไม่มีลิงก์
+                          </p>
+                          <button
+                            type="button"
+                            disabled={busy}
+                            onClick={() => saveLineConfig(o.id)}
+                            className="w-full text-xs font-extrabold px-3 py-2 rounded-xl bg-teal-500 text-white disabled:opacity-50 flex items-center justify-center gap-1.5"
+                          >
+                            <Save className="w-3.5 h-3.5" /> บันทึก LINE
+                          </button>
+                        </div>
+                      )}
+                    </div>
                   </div>
-                ))}
+                  );
+                })}
               </div>
             </form>
 

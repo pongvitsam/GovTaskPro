@@ -1,6 +1,6 @@
 /** Local mock DB for Vite DEV only (stripped from production bundle) */
 
-const SEED_VERSION = 7;
+const SEED_VERSION = 8;
 
 function buildDemoSeed() {
   const NOW = Date.now();
@@ -131,10 +131,10 @@ function buildDemoSeed() {
       { id: 'sn5', userId: 'u7', title: 'งบ 69', body: 'นัดประชุมผอ. สัปดาห์หน้า', color: 'blue', emoji: '💰', x: 90, y: 90, width: 240, height: 200, zIndex: 1, createdAt: t(-1), updatedAt: t(-1), noteType: 'text', items: [], labels: ['งบ'], pinned: false, archived: false, trashed: false, reminderAt: null, imageUrl: '' },
     ],
     orgUnits: [
-      { id: 'org_d1', type: 'department', name: 'IT', parent: '', active: true, code: 'IT' },
-      { id: 'org_d2', type: 'department', name: 'SYSTEM', parent: '', active: true, code: 'SYSTEM' },
-      { id: 'org_d3', type: 'department', name: 'HR', parent: '', active: true, code: 'HR' },
-      { id: 'org_d4', type: 'department', name: 'Finance', parent: '', active: true, code: 'FIN' },
+      { id: 'org_d1', type: 'department', name: 'IT', parent: '', active: true, code: 'IT', lineEnabled: false, lineGroupId: '', lineChannelToken: '', lineNotifyAssign: true, lineNotifyReview: true, lineNotifyComplete: true },
+      { id: 'org_d2', type: 'department', name: 'SYSTEM', parent: '', active: true, code: 'SYSTEM', lineEnabled: false, lineGroupId: '', lineChannelToken: '', lineNotifyAssign: true, lineNotifyReview: true, lineNotifyComplete: true },
+      { id: 'org_d3', type: 'department', name: 'HR', parent: '', active: true, code: 'HR', lineEnabled: false, lineGroupId: '', lineChannelToken: '', lineNotifyAssign: true, lineNotifyReview: true, lineNotifyComplete: true },
+      { id: 'org_d4', type: 'department', name: 'Finance', parent: '', active: true, code: 'FIN', lineEnabled: false, lineGroupId: '', lineChannelToken: '', lineNotifyAssign: true, lineNotifyReview: true, lineNotifyComplete: true },
       { id: 'org_v1', type: 'division', name: 'กองเทคโนโลยี', parent: 'IT', active: true, code: '' },
       { id: 'org_v2', type: 'division', name: 'ผู้ดูแลระบบ', parent: 'SYSTEM', active: true, code: '' },
       { id: 'org_v3', type: 'division', name: 'กองบุคคล', parent: 'HR', active: true, code: '' },
@@ -177,6 +177,91 @@ function requireAdmin(db, adminId) {
   return admin;
 }
 
+function publicOrgUnit(o) {
+  if (!o) return o;
+  const token = String(o.lineChannelToken || '').trim();
+  const groupId = String(o.lineGroupId || '').trim();
+  return {
+    id: String(o.id),
+    type: o.type === 'division' ? 'division' : 'department',
+    name: String(o.name || '').trim(),
+    parent: String(o.parent || '').trim(),
+    active: o.active !== false,
+    code: String(o.code || o.name || '').replace(/\s+/g, '').toUpperCase() || String(o.name || '').replace(/\s+/g, '').toUpperCase(),
+    lineEnabled: o.lineEnabled === true,
+    lineConfigured: !!(token && groupId),
+    lineNotifyAssign: o.lineNotifyAssign !== false,
+    lineNotifyReview: o.lineNotifyReview !== false,
+    lineNotifyComplete: o.lineNotifyComplete !== false,
+  };
+}
+
+function adminOrgUnit(o) {
+  if (!o) return o;
+  return {
+    ...publicOrgUnit(o),
+    lineGroupId: String(o.lineGroupId || '').trim(),
+    lineChannelToken: String(o.lineChannelToken || '').trim(),
+  };
+}
+
+function findDeptLineConfig(db, departmentName) {
+  const name = String(departmentName || '').trim();
+  if (!name) return null;
+  const row = (db.orgUnits || []).find((o) => o.type === 'department' && o.active !== false && String(o.name) === name);
+  if (!row) return null;
+  const token = String(row.lineChannelToken || '').trim();
+  const groupId = String(row.lineGroupId || '').trim();
+  if (!token || !groupId || row.lineEnabled !== true) return null;
+  return {
+    deptName: name,
+    notifyAssign: row.lineNotifyAssign !== false,
+    notifyReview: row.lineNotifyReview !== false,
+    notifyComplete: row.lineNotifyComplete !== false,
+  };
+}
+
+function mockNotifyLineDept(db, departmentName, eventKey, message) {
+  const cfg = findDeptLineConfig(db, departmentName);
+  if (!cfg) return false;
+  if (eventKey === 'assign' && !cfg.notifyAssign) return false;
+  if (eventKey === 'review' && !cfg.notifyReview) return false;
+  if (eventKey === 'complete' && !cfg.notifyComplete) return false;
+  console.info('[Mock LINE → ' + cfg.deptName + ']', message);
+  return true;
+}
+
+function buildLineAssignMsg(task, assignee, actor) {
+  const dept = assignee?.department || '';
+  const lines = [`📋 [${dept}] มอบหมายงาน`, `งาน: ${task.title}`];
+  if (assignee?.name) lines.push(`มอบให้: ${assignee.name}`);
+  if (actor?.name) lines.push(`โดย: ${actor.name}`);
+  return lines.join('\n');
+}
+
+function buildLineReviewMsg(task, assignee, actor) {
+  const dept = assignee?.department || '';
+  const lines = [`🔍 [${dept}] ส่งงานรอตรวจ`, `งาน: ${task.title}`];
+  if (assignee?.name) lines.push(`ผู้ทำ: ${assignee.name}`);
+  return lines.join('\n');
+}
+
+function buildLineCompleteMsg(task, assignee, actor) {
+  const dept = assignee?.department || '';
+  const lines = [`✅ [${dept}] งานเสร็จสิ้น`, `งาน: ${task.title}`];
+  if (assignee?.name) lines.push(`ผู้ทำ: ${assignee.name}`);
+  if (actor?.name) lines.push(`ปิดงานโดย: ${actor.name}`);
+  return lines.join('\n');
+}
+
+function buildLineForwardMsg(task, assignee, actor) {
+  const dept = assignee?.department || '';
+  const lines = [`🔁 [${dept}] โอนงาน`, `งาน: ${task.title}`];
+  if (assignee?.name) lines.push(`มอบให้: ${assignee.name}`);
+  if (actor?.name) lines.push(`โดย: ${actor.name}`);
+  return lines.join('\n');
+}
+
 function ensureOrg(db, type, name, parent = '') {
   if (!db.orgUnits) db.orgUnits = [];
   name = String(name || '').trim();
@@ -207,7 +292,7 @@ const localHandlers = {
       commentCounts: {},
       milestones: db.milestones || [],
       contractExtensions: db.contractExtensions || [],
-      orgUnits: (db.orgUnits || []).filter((o) => o.active !== false),
+      orgUnits: (db.orgUnits || []).filter((o) => o.active !== false).map(publicOrgUnit),
       serverTime: new Date().toISOString(),
     };
   },
@@ -468,6 +553,13 @@ const localHandlers = {
     db.orgUnits.push(row);
     return row;
   },
+  adminGetOrgUnits(payload) {
+    const db = getLocalDb();
+    requireAdmin(db, payload.adminId);
+    return (db.orgUnits || [])
+      .filter((o) => o.type === 'department' && o.active !== false && o.name)
+      .map(adminOrgUnit);
+  },
   adminUpdateOrgUnit(payload) {
     const db = getLocalDb();
     requireAdmin(db, payload.adminId);
@@ -490,8 +582,14 @@ const localHandlers = {
       }
       next.code = code;
     }
+    if (payload.lineEnabled !== undefined) next.lineEnabled = !!payload.lineEnabled;
+    if (payload.lineGroupId !== undefined) next.lineGroupId = String(payload.lineGroupId || '').trim();
+    if (payload.lineChannelToken !== undefined) next.lineChannelToken = String(payload.lineChannelToken || '').trim();
+    if (payload.lineNotifyAssign !== undefined) next.lineNotifyAssign = !!payload.lineNotifyAssign;
+    if (payload.lineNotifyReview !== undefined) next.lineNotifyReview = !!payload.lineNotifyReview;
+    if (payload.lineNotifyComplete !== undefined) next.lineNotifyComplete = !!payload.lineNotifyComplete;
     db.orgUnits[idx] = next;
-    return next;
+    return adminOrgUnit(next);
   },
   adminDeleteOrgUnit(payload) {
     const db = getLocalDb();
@@ -671,6 +769,13 @@ const localHandlers = {
       actionType: 'Created',
       detail: payload.logDetail || 'สร้างงาน',
     }, ...db.taskLogs];
+    const assignee = db.users.find((u) => String(u.id) === String(row.assignedTo));
+    const actor = db.users.find((u) => String(u.id) === String(row.createdBy));
+    const dept = assignee?.department || '';
+    const selfAssign = String(row.assignedTo) === String(row.createdBy);
+    if (dept && (payload.notifyLine || selfAssign)) {
+      mockNotifyLineDept(db, dept, 'assign', buildLineAssignMsg(row, assignee, actor));
+    }
     return { task: row, log: db.taskLogs[0] };
   },
   updateTaskStatus(payload) {
@@ -698,8 +803,18 @@ const localHandlers = {
       actionType: 'Status Changed',
       detail: payload.logDetail || defaultDetail,
     }, ...db.taskLogs];
+    const task = db.tasks.find((t) => String(t.id) === String(payload.taskId));
+    const assignee = db.users.find((u) => String(u.id) === String(task?.assignedTo));
+    const actor = db.users.find((u) => String(u.id) === String(payload.userId));
+    const dept = assignee?.department || '';
+    if (dept && payload.status === 'Review') {
+      mockNotifyLineDept(db, dept, 'review', buildLineReviewMsg(task, assignee, actor));
+    }
+    if (dept && payload.status === 'Completed') {
+      mockNotifyLineDept(db, dept, 'complete', buildLineCompleteMsg(task, assignee, actor));
+    }
     return {
-      task: db.tasks.find((t) => String(t.id) === String(payload.taskId)),
+      task,
       log: db.taskLogs[0],
     };
   },
@@ -719,8 +834,15 @@ const localHandlers = {
       actionType: 'Forwarded',
       detail: `โอนงานให้ ${name}`,
     }, ...db.taskLogs];
+    const task = db.tasks.find((t) => String(t.id) === String(payload.taskId));
+    const newAssignee = db.users.find((u) => String(u.id) === String(payload.newAssigneeId));
+    const actor = db.users.find((u) => String(u.id) === String(payload.userId));
+    const dept = newAssignee?.department || '';
+    if (dept && task) {
+      mockNotifyLineDept(db, dept, 'assign', buildLineForwardMsg(task, newAssignee, actor));
+    }
     return {
-      task: db.tasks.find((t) => String(t.id) === String(payload.taskId)),
+      task,
       log: db.taskLogs[0],
     };
   },

@@ -623,7 +623,10 @@ export default function App() {
     setBusy(true);
     try {
       const row = await api('adminUpdateOrgUnit', payload);
-      setOrgUnits((prev) => prev.map((o) => (String(o.id) === String(row.id) ? { ...o, ...row } : o)));
+      if (row) {
+        const { lineChannelToken, lineGroupId, ...publicRow } = row;
+        setOrgUnits((prev) => prev.map((o) => (String(o.id) === String(publicRow.id) ? { ...o, ...publicRow } : o)));
+      }
       return row;
     } catch (err) {
       showToast('❌ ' + (err?.message || String(err)));
@@ -632,6 +635,8 @@ export default function App() {
       setBusy(false);
     }
   };
+
+  const handleAdminLoadOrgUnits = async (payload) => api('adminGetOrgUnits', payload);
 
   const handleAdminDeleteOrg = async (payload) => {
     if (busy) return;
@@ -874,8 +879,10 @@ export default function App() {
             : `มอบหมายงานให้ ${usersById.get(assignedTo)?.name}`,
         });
         patchTask(result?.task || result, result?.log);
-        if (notifyLine) showToast('🔔 ระบบสร้างงานและส่งแจ้งเตือนผ่าน LINE เรียบร้อยแล้ว');
-        else showToast('✅ สร้างงานสำเร็จ');
+        if (notifyLine) showToast('🔔 ระบบสร้างงานและส่งแจ้งกลุ่ม LINE แผนกแล้ว');
+        else if (selfAssign && (orgUnits || []).some((o) => o.type === 'department' && o.name === currentUser.department && o.lineEnabled && o.lineConfigured)) {
+          showToast('🔔 สร้างงานและแจ้งกลุ่ม LINE แผนกแล้ว');
+        } else showToast('✅ สร้างงานสำเร็จ');
         setActiveProjectId(null);
         setCurrentModule('board');
       }
@@ -910,8 +917,11 @@ export default function App() {
         logDetail,
       });
       patchTask(result?.task || result, result?.log);
-      if (notifyLine) showToast(`📱 อัปเดตเป็น ${getStatusText(newStatus)} และแจ้งเตือน LINE แล้ว`);
-      else if (newStatus === 'Completed') showToast(`✅ เสร็จสิ้นเมื่อ ${completedLabel}`);
+      const assigneeDept = usersById.get(task?.assignedTo)?.department;
+      const lineDeptOn = (orgUnits || []).some((o) => o.type === 'department' && o.name === assigneeDept && o.lineEnabled && o.lineConfigured);
+      if (notifyLine || (lineDeptOn && (newStatus === 'Review' || newStatus === 'Completed'))) {
+        showToast(`📱 อัปเดตเป็น ${getStatusText(newStatus)} และแจ้งกลุ่ม LINE แผนกแล้ว`);
+      } else if (newStatus === 'Completed') showToast(`✅ เสร็จสิ้นเมื่อ ${completedLabel}`);
       else showToast(`อัปเดตสถานะเป็น ${getStatusText(newStatus)}`);
     } catch (err) {
       showToast('❌ ' + (err?.message || String(err)));
@@ -1812,6 +1822,7 @@ export default function App() {
               onToggleActive={handleAdminToggleActive}
               onCreateOrg={handleAdminCreateOrg}
               onUpdateOrg={handleAdminUpdateOrg}
+              onLoadOrgUnits={handleAdminLoadOrgUnits}
               onDeleteOrg={handleAdminDeleteOrg}
               onSeedDemo={handleAdminSeedDemo}
               showToast={showToast}
@@ -1985,7 +1996,7 @@ export default function App() {
                       {isManager && (
                         <label className="flex items-center space-x-3 cursor-pointer">
                           <input type="checkbox" name="notifyLine" defaultChecked={!!currentUser.notifyLineDefault} className="w-5 h-5 text-green-600 rounded-md border-slate-300 accent-green-600" />
-                          <span className="text-sm font-bold text-slate-700 flex items-center"><Smartphone className="w-4 h-4 mr-1.5 text-green-500" /> แจ้งเตือนเข้า LINE ทันที</span>
+                          <span className="text-sm font-bold text-slate-700 flex items-center"><Smartphone className="w-4 h-4 mr-1.5 text-green-500" /> แจ้งกลุ่ม LINE แผนก</span>
                         </label>
                       )}
                     </div>
@@ -2136,7 +2147,7 @@ export default function App() {
                               {isStaff && currentUser.id === selectedTask.assignedTo && (
                                 <label className="flex items-center space-x-3 cursor-pointer p-3 bg-emerald-50 rounded-xl border border-emerald-200">
                                   <input type="checkbox" id="notifyHeadToggle" defaultChecked className="accent-emerald-600 w-5 h-5" />
-                                  <span className="font-bold text-emerald-800 text-sm flex items-center"><Smartphone className="w-4 h-4 mr-1.5 text-emerald-600" /> แจ้งเตือนหัวหน้าผ่าน LINE</span>
+                                  <span className="font-bold text-emerald-800 text-sm flex items-center"><Smartphone className="w-4 h-4 mr-1.5 text-emerald-600" /> แจ้งกลุ่ม LINE แผนก (รอตรวจ)</span>
                                 </label>
                               )}
                               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">

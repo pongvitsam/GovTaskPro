@@ -39,7 +39,11 @@ var STICKY_NOTE_HEADERS = [
   'noteType', 'items', 'labels', 'pinned', 'archived', 'trashed',
   'reminderAt', 'imageUrl'
 ];
-var ORG_HEADERS = ['id', 'type', 'name', 'parent', 'active', 'code'];
+var ORG_HEADERS = [
+  'id', 'type', 'name', 'parent', 'active', 'code',
+  'lineEnabled', 'lineGroupId', 'lineChannelToken',
+  'lineNotifyAssign', 'lineNotifyReview', 'lineNotifyComplete'
+];
 
 var FRONTEND_URL = 'https://pongvitsam.github.io/GovTaskPro/';
 
@@ -208,6 +212,7 @@ function dispatchApi_(fn, payload, hasPayload) {
   if (fn === 'adminGetUsers') return adminGetUsers(payload || {});
   if (fn === 'adminUpdateUser') return adminUpdateUser(payload || {});
   if (fn === 'adminCreateOrgUnit') return adminCreateOrgUnit(payload || {});
+  if (fn === 'adminGetOrgUnits') return adminGetOrgUnits(payload || {});
   if (fn === 'adminUpdateOrgUnit') return adminUpdateOrgUnit(payload || {});
   if (fn === 'adminDeleteOrgUnit') return adminDeleteOrgUnit(payload || {});
   if (fn === 'adminSeedDemoData') return adminSeedDemoData(payload || {});
@@ -224,8 +229,8 @@ function include_(filename) {
   return include(filename);
 }
 
-var SCHEMA_VERSION = '13';
-var BOOT_CACHE_KEY = 'gtp_boot_v9';
+var SCHEMA_VERSION = '14';
+var BOOT_CACHE_KEY = 'gtp_boot_v10';
 var BOOT_CACHE_TTL = 90;
 var _ssCache = null;
 var _sheetHeaderCache = {};
@@ -570,9 +575,14 @@ function createTask(payload) {
   if (!row.title) throw new Error('หัวข้องานจำเป็น');
   appendObject_(TASKS_SHEET, TASK_HEADERS, row);
   var log = addLog_(id, row.createdBy, 'Created', payload.logDetail || 'สร้างงาน');
-  if (payload.notifyLine) notifyLine_('งานใหม่: ' + row.title);
   var assignee = findUserById_(row.assignedTo);
-  if (assignee && assignee.notifyAssign && String(row.assignedTo) !== String(row.createdBy)) {
+  var actor = findUserById_(row.createdBy);
+  var dept = assignee ? String(assignee.department || '').trim() : '';
+  var selfAssign = String(row.assignedTo) === String(row.createdBy);
+  if (dept && (payload.notifyLine || selfAssign)) {
+    notifyLineDept_(dept, 'assign', buildLineAssignMsg_(row, assignee, actor));
+  }
+  if (assignee && assignee.notifyAssign && !selfAssign) {
     notifyUserEmail_(assignee, 'ได้รับมอบหมายงานใหม่', 'คุณได้รับมอบหมายงาน: "' + row.title + '"');
   }
   invalidateBootstrapCache_();
@@ -612,8 +622,15 @@ function updateTaskStatus(payload) {
     defaultDetail = 'เปลี่ยนสถานะเป็น เสร็จสิ้น · วันเสร็จ ' + formatThaiDateShort_(doneDate);
   }
   var statusLog = addLog_(taskId, userId, 'Status Changed', payload.logDetail || defaultDetail);
-  if (payload.notifyLine) notifyLine_('อัปเดตงาน: ' + found.title + ' → ' + newStatus);
   var assignee = findUserById_(found.assignedTo);
+  var actor = findUserById_(userId);
+  var dept = assignee ? String(assignee.department || '').trim() : '';
+  if (newStatus === 'Review' && dept) {
+    notifyLineDept_(dept, 'review', buildLineReviewMsg_(found, assignee, actor));
+  }
+  if (newStatus === 'Completed' && dept) {
+    notifyLineDept_(dept, 'complete', buildLineCompleteMsg_(found, assignee, actor));
+  }
   if (assignee && assignee.notifyStatus && String(assignee.id) !== String(userId)) {
     notifyUserEmail_(assignee, 'สถานะงานเปลี่ยน', 'งาน "' + found.title + '" เปลี่ยนเป็น: ' + newStatus);
   }
@@ -653,6 +670,11 @@ function forwardTask(payload) {
   var newAssignee = findUserById_(newAssigneeId);
   if (newAssignee && newAssignee.notifyAssign) {
     notifyUserEmail_(newAssignee, 'ได้รับโอนงาน', 'คุณได้รับโอนงาน: "' + (found.title || '') + '"');
+  }
+  if (newAssignee) {
+    var fwdDept = String(newAssignee.department || '').trim();
+    var fwdActor = findUserById_(userId);
+    if (fwdDept) notifyLineDept_(fwdDept, 'assign', buildLineForwardMsg_(found, newAssignee, fwdActor));
   }
   invalidateBootstrapCache_();
   return { task: normalizeTask_(found), log: fwdLog };
@@ -1263,17 +1285,35 @@ function normalizeUserAdmin_(u) {
 }
 
 function normalizeOrgUnit_(o) {
+  return normalizeOrgUnitPublic_(o);
+}
+
+function normalizeOrgUnitPublic_(o) {
   var name = String(o.name || '').trim();
   var code = String(o.code || '').trim();
   if (!code && name) code = name.replace(/\s+/g, '').toUpperCase();
+  var token = String(o.lineChannelToken || '').trim();
+  var groupId = String(o.lineGroupId || '').trim();
   return {
     id: String(o.id),
     type: String(o.type || 'department') === 'division' ? 'division' : 'department',
     name: name,
     parent: String(o.parent || '').trim(),
     active: String(o.active) !== 'FALSE',
-    code: code
+    code: code,
+    lineEnabled: truthy_(o.lineEnabled),
+    lineConfigured: !!(token && groupId),
+    lineNotifyAssign: o.lineNotifyAssign === undefined || o.lineNotifyAssign === '' ? true : truthy_(o.lineNotifyAssign),
+    lineNotifyReview: o.lineNotifyReview === undefined || o.lineNotifyReview === '' ? true : truthy_(o.lineNotifyReview),
+    lineNotifyComplete: o.lineNotifyComplete === undefined || o.lineNotifyComplete === '' ? true : truthy_(o.lineNotifyComplete)
   };
+}
+
+function normalizeOrgUnitAdmin_(o) {
+  var base = normalizeOrgUnitPublic_(o);
+  base.lineGroupId = String(o.lineGroupId || '').trim();
+  base.lineChannelToken = String(o.lineChannelToken || '').trim();
+  return base;
 }
 
 function listOrgUnitsFromSs_(ss) {
@@ -1775,7 +1815,17 @@ function adminCreateOrgUnit(payload) {
   return normalizeOrgUnit_(row);
 }
 
-/** แก้ Username แผนก (1 แผนก = 1 username) — ทุกคนในแผนกใช้รหัสนี้เข้า */
+/** แก้ Username / LINE แผนก — ทุกคนในแผนกใช้ username นี้เข้า */
+function adminGetOrgUnits(payload) {
+  openDatabase_(false);
+  requireAdmin_(payload.adminId);
+  return listOrgUnitsRaw_()
+    .map(normalizeOrgUnitAdmin_)
+    .filter(function (o) {
+      return o.active && o.name && o.type === 'department';
+    });
+}
+
 function adminUpdateOrgUnit(payload) {
   openDatabase_(false);
   requireAdmin_(payload.adminId);
@@ -1810,12 +1860,18 @@ function adminUpdateOrgUnit(payload) {
     }
     updates.code = code;
   }
+  if (payload.lineEnabled !== undefined) updates.lineEnabled = payload.lineEnabled ? 'TRUE' : 'FALSE';
+  if (payload.lineGroupId !== undefined) updates.lineGroupId = String(payload.lineGroupId || '').trim();
+  if (payload.lineChannelToken !== undefined) updates.lineChannelToken = String(payload.lineChannelToken || '').trim();
+  if (payload.lineNotifyAssign !== undefined) updates.lineNotifyAssign = payload.lineNotifyAssign ? 'TRUE' : 'FALSE';
+  if (payload.lineNotifyReview !== undefined) updates.lineNotifyReview = payload.lineNotifyReview ? 'TRUE' : 'FALSE';
+  if (payload.lineNotifyComplete !== undefined) updates.lineNotifyComplete = payload.lineNotifyComplete ? 'TRUE' : 'FALSE';
   if (!Object.keys(updates).length) throw new Error('ไม่มีข้อมูลที่ต้องอัปเดต');
 
   var row = updateRowById_(ORG_UNITS_SHEET, id, updates);
   if (!row) throw new Error('ไม่พบแผนก');
   invalidateBootstrapCache_();
-  return normalizeOrgUnit_(row);
+  return normalizeOrgUnitAdmin_(row);
 }
 
 function adminDeleteOrgUnit(payload) {
@@ -2457,6 +2513,104 @@ function notifyLine_(message) {
   } catch (e) {
     return false;
   }
+}
+
+function truthy_(v) {
+  if (v === true || v === 'TRUE' || v === 'true' || v === 1 || v === '1') return true;
+  return false;
+}
+
+function findDeptLineConfig_(departmentName) {
+  var name = String(departmentName || '').trim();
+  if (!name) return null;
+  var raw = listOrgUnitsRaw_();
+  for (var i = 0; i < raw.length; i++) {
+    if (String(raw[i].type) !== 'department') continue;
+    if (String(raw[i].active).toUpperCase() === 'FALSE') continue;
+    if (String(raw[i].name || '').trim() !== name) continue;
+    var token = String(raw[i].lineChannelToken || '').trim();
+    var groupId = String(raw[i].lineGroupId || '').trim();
+    if (!token || !groupId) return null;
+    return {
+      enabled: truthy_(raw[i].lineEnabled),
+      channelToken: token,
+      groupId: groupId,
+      notifyAssign: raw[i].lineNotifyAssign === undefined || raw[i].lineNotifyAssign === '' ? true : truthy_(raw[i].lineNotifyAssign),
+      notifyReview: raw[i].lineNotifyReview === undefined || raw[i].lineNotifyReview === '' ? true : truthy_(raw[i].lineNotifyReview),
+      notifyComplete: raw[i].lineNotifyComplete === undefined || raw[i].lineNotifyComplete === '' ? true : truthy_(raw[i].lineNotifyComplete),
+      deptName: name
+    };
+  }
+  return null;
+}
+
+function pushLineGroupMessage_(token, groupId, text) {
+  if (!token || !groupId) return false;
+  try {
+    var res = UrlFetchApp.fetch('https://api.line.me/v2/bot/message/push', {
+      method: 'post',
+      headers: {
+        Authorization: 'Bearer ' + token,
+        'Content-Type': 'application/json'
+      },
+      payload: JSON.stringify({
+        to: groupId,
+        messages: [{ type: 'text', text: String(text).slice(0, 5000) }]
+      }),
+      muteHttpExceptions: true
+    });
+    var code = res.getResponseCode();
+    return code >= 200 && code < 300;
+  } catch (e) {
+    return false;
+  }
+}
+
+function notifyLineDept_(departmentName, eventKey, message) {
+  var cfg = findDeptLineConfig_(departmentName);
+  if (!cfg || !cfg.enabled) return false;
+  if (eventKey === 'assign' && !cfg.notifyAssign) return false;
+  if (eventKey === 'review' && !cfg.notifyReview) return false;
+  if (eventKey === 'complete' && !cfg.notifyComplete) return false;
+  return pushLineGroupMessage_(cfg.channelToken, cfg.groupId, message);
+}
+
+function buildLineAssignMsg_(task, assignee, actor) {
+  var dept = assignee ? String(assignee.department || '') : '';
+  var lines = ['📋 [' + dept + '] มอบหมายงาน', 'งาน: ' + String(task.title || '')];
+  if (assignee && assignee.name) lines.push('มอบให้: ' + assignee.name);
+  if (actor && actor.name) lines.push('โดย: ' + actor.name);
+  if (task.dueDate) {
+    try { lines.push('ครบกำหนด: ' + formatThaiDateShort_(toDateOnly_(task.dueDate))); } catch (e) {}
+  }
+  return lines.join('\n');
+}
+
+function buildLineForwardMsg_(task, assignee, actor) {
+  var dept = assignee ? String(assignee.department || '') : '';
+  var lines = ['🔁 [' + dept + '] โอนงาน', 'งาน: ' + String(task.title || '')];
+  if (assignee && assignee.name) lines.push('มอบให้: ' + assignee.name);
+  if (actor && actor.name) lines.push('โดย: ' + actor.name);
+  return lines.join('\n');
+}
+
+function buildLineReviewMsg_(task, assignee, actor) {
+  var dept = assignee ? String(assignee.department || '') : '';
+  var lines = ['🔍 [' + dept + '] ส่งงานรอตรวจ', 'งาน: ' + String(task.title || '')];
+  if (assignee && assignee.name) lines.push('ผู้ทำ: ' + assignee.name);
+  if (actor && actor.name && String(actor.id) !== String(assignee && assignee.id)) lines.push('โดย: ' + actor.name);
+  return lines.join('\n');
+}
+
+function buildLineCompleteMsg_(task, assignee, actor) {
+  var dept = assignee ? String(assignee.department || '') : '';
+  var lines = ['✅ [' + dept + '] งานเสร็จสิ้น', 'งาน: ' + String(task.title || '')];
+  if (assignee && assignee.name) lines.push('ผู้ทำ: ' + assignee.name);
+  if (task.completedAt) {
+    try { lines.push('วันเสร็จ: ' + formatThaiDateShort_(toDateOnly_(task.completedAt))); } catch (e) {}
+  }
+  if (actor && actor.name) lines.push('ปิดงานโดย: ' + actor.name);
+  return lines.join('\n');
 }
 
 function ensureSeed_() {
