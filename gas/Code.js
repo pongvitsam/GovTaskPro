@@ -563,6 +563,9 @@ function findProjectById_(projectId) {
 
 function createTask(payload) {
   openDatabase_(false);
+  var creatorId = String(payload.createdBy || '');
+  var assigneeId = String(payload.assignedTo || creatorId);
+  assertDeptAssign_(creatorId, assigneeId);
   var id = String(Date.now());
   var status = payload.status || 'Pending';
   var row = {
@@ -653,6 +656,7 @@ function forwardTask(payload) {
   var taskId = String(payload.taskId);
   var newAssigneeId = String(payload.newAssigneeId);
   var userId = String(payload.userId || '');
+  assertDeptAssign_(userId, newAssigneeId);
   var sheet = getSheet_(TASKS_SHEET);
   var data = sheet.getDataRange().getValues();
   var headers = data[0];
@@ -2503,6 +2507,19 @@ function toIso_(v) {
   var d = new Date(s);
   if (!isNaN(d.getTime())) return d.toISOString();
   return s;
+}
+
+function assertDeptAssign_(actorId, assigneeId) {
+  var actor = findUserById_(actorId);
+  var assignee = findUserById_(assigneeId);
+  if (!actor || String(actor.active) === 'FALSE') throw new Error('ไม่พบผู้มอบหมาย');
+  if (!assignee || String(assignee.active) === 'FALSE') throw new Error('ไม่พบผู้รับงาน');
+  if (actor.role === 'Admin') return;
+  var actorDept = String(actor.department || '').trim();
+  var assigneeDept = String(assignee.department || '').trim();
+  if (!actorDept || actorDept !== assigneeDept) {
+    throw new Error('มอบหมายได้เฉพาะคนในแผนกเดียวกัน');
+  }
 }
 
 function notifyLine_(message) {

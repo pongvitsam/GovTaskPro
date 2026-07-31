@@ -177,6 +177,19 @@ function requireAdmin(db, adminId) {
   return admin;
 }
 
+function assertDeptAssign(db, actorId, assigneeId) {
+  const actor = db.users.find((u) => String(u.id) === String(actorId));
+  const assignee = db.users.find((u) => String(u.id) === String(assigneeId));
+  if (!actor || actor.active === false) throw new Error('ไม่พบผู้มอบหมาย');
+  if (!assignee || assignee.active === false) throw new Error('ไม่พบผู้รับงาน');
+  if (actor.role === 'Admin') return;
+  const actorDept = String(actor.department || '').trim();
+  const assigneeDept = String(assignee.department || '').trim();
+  if (!actorDept || actorDept !== assigneeDept) {
+    throw new Error('มอบหมายได้เฉพาะคนในแผนกเดียวกัน');
+  }
+}
+
 function publicOrgUnit(o) {
   if (!o) return o;
   const token = String(o.lineChannelToken || '').trim();
@@ -753,6 +766,7 @@ const localHandlers = {
   },
   createTask(payload) {
     const db = getLocalDb();
+    assertDeptAssign(db, payload.createdBy, payload.assignedTo || payload.createdBy);
     const row = {
       id: Date.now(),
       projectId: payload.projectId || null,
@@ -827,6 +841,7 @@ const localHandlers = {
   },
   forwardTask(payload) {
     const db = getLocalDb();
+    assertDeptAssign(db, payload.userId, payload.newAssigneeId);
     const name = db.users.find((u) => u.id === payload.newAssigneeId)?.name || payload.newAssigneeId;
     db.tasks = db.tasks.map((t) =>
       String(t.id) === String(payload.taskId)

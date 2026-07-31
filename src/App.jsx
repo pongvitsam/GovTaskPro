@@ -407,6 +407,12 @@ export default function App() {
     if (currentUser.role === 'Admin') return activeUsers;
     return activeUsers.filter((u) => u.department === currentUser.department);
   }, [activeUsers, currentUser]);
+  /** คนที่มอบหมายงานได้ — ทุกคนในแผนก (ไม่รวม Admin ระบบ) */
+  const assignableUsers = useMemo(() => {
+    if (!currentUser) return [];
+    if (currentUser.role === 'Admin') return activeUsers.filter((u) => u.role !== 'Admin');
+    return deptUsers.filter((u) => u.role !== 'Admin');
+  }, [deptUsers, activeUsers, currentUser]);
   const isManager = currentUser?.role === 'Head' || currentUser?.role === 'Admin';
   const isStaff = currentUser?.role === 'Staff';
   const selectedAssignee = selectedTask ? usersById.get(selectedTask.assignedTo) : null;
@@ -859,7 +865,7 @@ export default function App() {
         setCurrentModule('projects');
         showToast('✅ สร้างโปรเจกต์สำเร็จ');
       } else {
-        const rawAssignee = isManager ? String(formData.get('assignedTo') || '') : currentUser.id;
+        const rawAssignee = String(formData.get('assignedTo') || '');
         const selfAssign = !rawAssignee || rawAssignee === currentUser.id;
         const assignedTo = selfAssign ? currentUser.id : rawAssignee;
         const notifyLine = !selfAssign && formData.get('notifyLine') === 'on';
@@ -880,6 +886,7 @@ export default function App() {
         });
         patchTask(result?.task || result, result?.log);
         if (notifyLine) showToast('🔔 ระบบสร้างงานและส่งแจ้งกลุ่ม LINE แผนกแล้ว');
+        else if (!selfAssign) showToast(`✅ มอบหมายงานให้ ${usersById.get(assignedTo)?.name} แล้ว`);
         else if (selfAssign && (orgUnits || []).some((o) => o.type === 'department' && o.name === currentUser.department && o.lineEnabled && o.lineConfigured)) {
           showToast('🔔 สร้างงานและแจ้งกลุ่ม LINE แผนกแล้ว');
         } else showToast('✅ สร้างงานสำเร็จ');
@@ -1485,7 +1492,7 @@ export default function App() {
                 <div className="rounded-[1.75rem] shadow-lg border border-teal-300/30 p-8 text-white flex flex-col justify-center items-center text-center bg-gradient-to-br from-teal-500 via-cyan-500 to-sky-500">
                   <ShieldCheck className="w-14 h-14 mb-4 opacity-90" />
                   <h3 className="gtp-display text-xl font-bold mb-2">ยินดีต้อนรับ, {currentUser.name}</h3>
-                  <p className="text-teal-50 text-sm leading-relaxed max-w-sm">คุณกำลังใช้งานในระดับพนักงาน — ดูงานในแผนก และดึงงานมาทำแทนได้เมื่อจำเป็น</p>
+                  <p className="text-teal-50 text-sm leading-relaxed max-w-sm">มอบหมายงานให้เพื่อนในแผนก สร้างโปรเจกต์ และดึงงานมาทำแทนได้เมื่อจำเป็น</p>
                 </div>
               )}
             </div>
@@ -1918,11 +1925,11 @@ export default function App() {
           <div className="p-6 md:p-8 overflow-y-auto h-full flex justify-center">
             <div className="max-w-3xl w-full gtp-card p-8 md:p-10 my-auto">
               <div className="flex space-x-2 mb-8 bg-slate-100 p-1.5 rounded-2xl">
-                <button type="button" onClick={() => setCreateType('task')} className={`flex-1 py-2.5 text-sm font-extrabold rounded-xl ${createType === 'task' ? 'bg-white shadow-sm text-blue-700' : 'text-slate-500'}`}>📝 {isManager ? 'มอบหมายงาน (Task)' : 'บันทึกงาน (Task)'}</button>
+                <button type="button" onClick={() => setCreateType('task')} className={`flex-1 py-2.5 text-sm font-extrabold rounded-xl ${createType === 'task' ? 'bg-white shadow-sm text-blue-700' : 'text-slate-500'}`}>📝 มอบหมายงาน (Task)</button>
                 <button type="button" onClick={() => setCreateType('project')} className={`flex-1 py-2.5 text-sm font-extrabold rounded-xl ${createType === 'project' ? 'bg-white shadow-sm text-teal-700' : 'text-slate-500'}`}>📁 สร้างโปรเจกต์ (Project)</button>
               </div>
               <h2 className="text-3xl font-black text-slate-800 mb-8 tracking-tight">
-                {createType === 'project' ? 'สร้างโปรเจกต์ใหม่' : (isManager ? 'สร้าง / มอบหมายงาน' : 'บันทึกงานของตัวเอง')}
+                {createType === 'project' ? 'สร้างโปรเจกต์ใหม่' : 'สร้าง / มอบหมายงาน'}
               </h2>
               <form onSubmit={handleCreateSubmit} className="space-y-5">
                 <div>
@@ -1963,19 +1970,21 @@ export default function App() {
                 {createType === 'task' && (
                   <>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-                      {isManager && (
-                        <div>
-                          <label className="block text-sm font-extrabold text-slate-700 mb-2">
-                            มอบหมายให้ <span className="text-slate-400 font-bold">(ไม่บังคับ)</span>
-                          </label>
-                          <select name="assignedTo" defaultValue="" className="w-full border border-slate-100 rounded-2xl p-3.5 text-slate-800 font-bold outline-none bg-white focus:border-teal-400">
-                            <option value="">— ทำเอง (ไม่มอบหมาย) —</option>
-                            <option value={currentUser.id}>{currentUser.name} (ตัวเอง)</option>
-                            {deptUsers.filter((u) => u.role === 'Staff' || (currentUser.role === 'Admin' && u.role !== 'Admin')).map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
-                          </select>
-                          <p className="text-[11px] text-slate-400 font-medium mt-1.5">เว้นว่างหรือเลือกตัวเอง = หัวหน้ารับทำเองทันที</p>
-                        </div>
-                      )}
+                      <div>
+                        <label className="block text-sm font-extrabold text-slate-700 mb-2">
+                          มอบหมายให้ <span className="text-slate-400 font-bold">(ไม่บังคับ)</span>
+                        </label>
+                        <select name="assignedTo" defaultValue="" className="w-full border border-slate-100 rounded-2xl p-3.5 text-slate-800 font-bold outline-none bg-white focus:border-teal-400">
+                          <option value="">— ทำเอง (ไม่มอบหมาย) —</option>
+                          <option value={currentUser.id}>{currentUser.name} (ตัวเอง)</option>
+                          {assignableUsers.filter((u) => u.id !== currentUser.id).map((u) => (
+                            <option key={u.id} value={u.id}>
+                              {u.name}{u.role === 'Head' ? ' (หัวหน้า)' : ''}
+                            </option>
+                          ))}
+                        </select>
+                        <p className="text-[11px] text-slate-400 font-medium mt-1.5">เลือกคนในแผนก {currentUser.department || ''} — เว้นว่าง = ทำเอง</p>
+                      </div>
                       <div>
                         <label className="block text-sm font-extrabold text-slate-700 mb-2">
                           กำหนดส่ง (Deadline) <span className="text-slate-400 font-bold">(ไม่บังคับ)</span>
@@ -1996,12 +2005,10 @@ export default function App() {
                         <input type="checkbox" name="isRecurring" className="w-5 h-5 text-blue-600 rounded-md border-slate-300" />
                         <span className="text-sm font-bold text-slate-700 flex items-center"><Repeat className="w-4 h-4 mr-1.5 text-slate-400" /> งานประจำ (ทำซ้ำอัตโนมัติ)</span>
                       </label>
-                      {isManager && (
-                        <label className="flex items-center space-x-3 cursor-pointer">
-                          <input type="checkbox" name="notifyLine" defaultChecked={!!currentUser.notifyLineDefault} className="w-5 h-5 text-green-600 rounded-md border-slate-300 accent-green-600" />
-                          <span className="text-sm font-bold text-slate-700 flex items-center"><Smartphone className="w-4 h-4 mr-1.5 text-green-500" /> แจ้งกลุ่ม LINE แผนก</span>
-                        </label>
-                      )}
+                      <label className="flex items-center space-x-3 cursor-pointer">
+                        <input type="checkbox" name="notifyLine" defaultChecked={!!currentUser.notifyLineDefault} className="w-5 h-5 text-green-600 rounded-md border-slate-300 accent-green-600" />
+                        <span className="text-sm font-bold text-slate-700 flex items-center"><Smartphone className="w-4 h-4 mr-1.5 text-green-500" /> แจ้งกลุ่ม LINE แผนก (เมื่อมอบให้คนอื่น)</span>
+                      </label>
                     </div>
                   </>
                 )}
@@ -2225,7 +2232,9 @@ export default function App() {
                           <div className="flex space-x-3">
                             <select id="forwardSelect" className="flex-1 border border-slate-100 rounded-xl p-2.5 text-sm font-bold outline-none bg-slate-50">
                               <option value="">-- เลือกผู้รับงาน --</option>
-                              {deptUsers.filter((u) => u.id !== selectedTask.assignedTo && (u.role === 'Staff' || u.role === 'Head')).map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
+                              {deptUsers.filter((u) => u.id !== selectedTask.assignedTo && u.role !== 'Admin').map((u) => (
+                                <option key={u.id} value={u.id}>{u.name}{u.role === 'Head' ? ' (หัวหน้า)' : ''}</option>
+                              ))}
                             </select>
                             <button disabled={busy} onClick={() => { const s = document.getElementById('forwardSelect').value; if (s) handleForward(selectedTask.id, s); }} className="bg-slate-800 text-white px-5 py-2.5 rounded-xl text-sm font-bold disabled:opacity-60">ส่งต่อ</button>
                           </div>
