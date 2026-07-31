@@ -10,7 +10,7 @@ import { api, isProductionGas, isProductionHost } from './api';
 import LoginScreen from './LoginScreen';
 import { formatThaiDate, formatThaiDateLong, formatThaiMonthYear } from './formatThaiDate';
 import ProjectTimeBar from './ProjectTimeBar';
-import { readSession, saveSession, clearSession } from './session';
+import { readSession, saveSession, clearSession, readBootstrapCache, writeBootstrapCache } from './session';
 import ThaiDateField from './ThaiDateField';
 import { buildProjectActivityForProject, summarizeRecentActivity } from './projectActivity';
 
@@ -199,6 +199,7 @@ export default function App() {
         return { ...prev, ...u };
       });
     }
+    writeBootstrapCache(data);
   };
 
   const softRefresh = async ({ silent = true } = {}) => {
@@ -254,8 +255,16 @@ export default function App() {
       setBootLoading(false);
       return undefined;
     }
+
+    const cached = readBootstrapCache();
+    if (cached?.users) {
+      applyBootstrap(cached, { restoreSession: true });
+      setBootLoading(false);
+      lastSyncAtRef.current = Date.now();
+    }
+
     (async () => {
-      setBootLoading(true);
+      if (!cached?.users) setBootLoading(true);
       setBootError(null);
       try {
         const data = await api('getBootstrap', {});
@@ -266,7 +275,7 @@ export default function App() {
         applyBootstrap(data, { restoreSession: true });
         lastSyncAtRef.current = Date.now();
       } catch (err) {
-        if (!cancelled) setBootError(err?.message || String(err));
+        if (!cancelled && !cached?.users) setBootError(err?.message || String(err));
       } finally {
         if (!cancelled) setBootLoading(false);
       }
@@ -442,14 +451,26 @@ export default function App() {
     )
   );
 
-  const finishLogin = async (user) => {
+  const finishLogin = async (loginResult) => {
+    const user = loginResult?.user ?? loginResult;
+    const bundledBootstrap = loginResult?.bootstrap ?? null;
     if (!user?.id) throw new Error('เข้าสู่ระบบไม่สำเร็จ');
     saveSession(user);
     setCreateType('task');
     setCurrentModule('dashboard');
     setLoginError(null);
-    setBootLoading(true);
     setBootError(null);
+
+    if (bundledBootstrap?.users) {
+      applyBootstrap(bundledBootstrap, { restoreSession: false });
+      const fresh = (bundledBootstrap.users || []).find((x) => String(x.id) === String(user.id) && x.active !== false);
+      setCurrentUser(fresh ? { ...user, ...fresh } : user);
+      lastSyncAtRef.current = Date.now();
+      setBootLoading(false);
+      return;
+    }
+
+    setBootLoading(true);
     try {
       const data = await api('getBootstrap', {});
       if (!data || !Array.isArray(data.users)) {
@@ -488,8 +509,8 @@ export default function App() {
     setLoginBusy(true);
     setLoginError(null);
     try {
-      const user = await api('loginDeptPick', { departmentCode, userId });
-      await finishLogin(user);
+      const result = await api('loginDeptPick', { departmentCode, userId });
+      await finishLogin(result);
     } catch (err) {
       setLoginError(err?.message || String(err));
     } finally {
@@ -502,8 +523,8 @@ export default function App() {
     setLoginBusy(true);
     setLoginError(null);
     try {
-      const user = await api('loginAdmin', { username, password });
-      await finishLogin(user);
+      const result = await api('loginAdmin', { username, password });
+      await finishLogin(result);
     } catch (err) {
       setLoginError(err?.message || String(err));
     } finally {

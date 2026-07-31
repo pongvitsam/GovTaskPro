@@ -1561,7 +1561,10 @@ function loginDeptPick(payload) {
     if (String(u.department || '').trim().toLowerCase() !== String(dept.name).trim().toLowerCase()) {
       throw new Error('ผู้ใช้นี้ไม่อยู่ในแผนกที่ระบุ');
     }
-    return normalizeUser_(u);
+    return {
+      user: normalizeUser_(u),
+      bootstrap: getBootstrap({})
+    };
   }
   throw new Error('ไม่พบผู้ใช้ในแผนกนี้');
 }
@@ -1608,7 +1611,10 @@ function loginAdmin(payload) {
       throw new Error('โหมดนี้สำหรับแอดมินเท่านั้น — พนักงาน/หัวหน้าใส่รหัสแผนกแล้วเลือกชื่อ');
     }
     if (String(u.password || '') !== password) throw new Error('ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง');
-    return normalizeUser_(u);
+    return {
+      user: normalizeUser_(u),
+      bootstrap: getBootstrap({})
+    };
   }
   throw new Error('ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง');
 }
