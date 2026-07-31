@@ -192,6 +192,7 @@ function dispatchApi_(fn, payload, hasPayload) {
   if (fn === 'forwardTask') return forwardTask(payload || {});
   if (fn === 'takeoverTask') return takeoverTask(payload || {});
   if (fn === 'deleteTask') return deleteTask(payload || {});
+  if (fn === 'updateTask') return updateTask(payload || {});
   if (fn === 'addComment') return addComment(payload || {});
   if (fn === 'listStickyNotes') return listStickyNotes(payload || {});
   if (fn === 'createStickyNote') return createStickyNote(payload || {});
@@ -736,6 +737,59 @@ function deleteTask(payload) {
   deleteRowsByField_(COMMENTS_SHEET, 'taskId', taskId);
   invalidateBootstrapCache_();
   return { ok: true, id: taskId };
+}
+
+function updateTask(payload) {
+  openDatabase_(false);
+  var taskId = String(payload.taskId || '');
+  var userId = String(payload.userId || '');
+  if (!taskId) throw new Error('ไม่พบงาน');
+  if (!userId) throw new Error('ต้องระบุผู้ใช้');
+  var task = findTaskById_(taskId);
+  if (!task) throw new Error('ไม่พบงาน');
+  assertCanEditTask_(userId, task);
+
+  var updates = {};
+  if (payload.projectId !== undefined) {
+    var pid = String(payload.projectId || '').trim();
+    if (pid) {
+      var project = findProjectById_(pid);
+      if (!project) throw new Error('ไม่พบโปรเจกต์');
+      assertProjectVisibleToUser_(userId, project);
+      updates.projectId = pid;
+    } else {
+      updates.projectId = '';
+    }
+  }
+  if (!Object.keys(updates).length) throw new Error('ไม่มีข้อมูลที่ต้องอัปเดต');
+
+  var row = updateRowById_(TASKS_SHEET, taskId, updates);
+  if (!row) throw new Error('ไม่พบงาน');
+  var log = addLog_(taskId, userId, 'Updated', payload.logDetail || 'อัปเดตงาน');
+  invalidateBootstrapCache_();
+  return { task: normalizeTask_(row), log: log };
+}
+
+function assertCanEditTask_(userId, task) {
+  var user = findUserById_(userId);
+  if (!user || String(user.active) === 'FALSE') throw new Error('ไม่พบผู้ใช้');
+  if (user.role === 'Admin') return;
+  if (String(task.createdBy) === String(userId)) return;
+  if (String(task.assignedTo) === String(userId)) return;
+  if (user.role === 'Head') {
+    var assignee = findUserById_(task.assignedTo);
+    if (assignee && String(assignee.department || '') === String(user.department || '')) return;
+  }
+  throw new Error('ไม่มีสิทธิ์แก้ไขงานนี้');
+}
+
+function assertProjectVisibleToUser_(userId, project) {
+  var user = findUserById_(userId);
+  if (!user) throw new Error('ไม่พบผู้ใช้');
+  if (user.role === 'Admin') return;
+  var projDept = String(project.department || '').trim();
+  var userDept = String(user.department || '').trim();
+  if (!projDept || projDept !== userDept) throw new Error('ไม่มีสิทธิ์ใช้โปรเจกต์นี้');
 }
 
 function findTaskById_(taskId) {

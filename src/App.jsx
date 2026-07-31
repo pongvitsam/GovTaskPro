@@ -434,6 +434,13 @@ export default function App() {
     }
     return false;
   };
+  const canEditTaskProject = !!(
+    selectedTask && currentUser && (
+      canControlSelectedTask
+      || String(selectedTask.createdBy) === String(currentUser.id)
+      || String(selectedTask.assignedTo) === String(currentUser.id)
+    )
+  );
 
   const finishLogin = async (user) => {
     if (!user?.id) throw new Error('เข้าสู่ระบบไม่สำเร็จ');
@@ -956,6 +963,33 @@ export default function App() {
       patchTask(result?.task || result, result?.log);
       setSelectedTask(null);
       showToast(`โอนงานให้ ${name} เรียบร้อยแล้ว`);
+    } catch (err) {
+      showToast('❌ ' + (err?.message || String(err)));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleUpdateTaskProject = async (taskId, projectId) => {
+    if (busy || !currentUser) return;
+    const task = tasks.find((t) => String(t.id) === String(taskId));
+    if (!task) return;
+    const prevId = task.projectId ? String(task.projectId) : '';
+    const nextId = projectId ? String(projectId) : '';
+    if (prevId === nextId) return;
+    setBusy(true);
+    try {
+      const projName = nextId
+        ? (visibleProjects.find((p) => String(p.id) === nextId)?.name || nextId)
+        : 'งานทั่วไป';
+      const result = await api('updateTask', {
+        taskId,
+        userId: currentUser.id,
+        projectId: nextId,
+        logDetail: `เปลี่ยนโปรเจกต์เป็น "${projName}"`,
+      });
+      patchTask(result?.task || result, result?.log);
+      showToast(`✅ จัดอยู่ในโปรเจกต์: ${projName}`);
     } catch (err) {
       showToast('❌ ' + (err?.message || String(err)));
     } finally {
@@ -2271,6 +2305,26 @@ export default function App() {
                         <span className="font-bold text-sm text-blue-800">{users.find((u) => u.id === selectedTask.assignedTo)?.name}</span>
                       </div>
                     </div>
+
+                    {canEditTaskProject && (
+                      <div className="rounded-2xl border border-teal-100 bg-teal-50/40 p-4">
+                        <label className="block text-xs font-extrabold text-teal-800 mb-2 flex items-center gap-1.5">
+                          <FolderKanban className="w-4 h-4" /> จัดอยู่ในโปรเจกต์
+                        </label>
+                        <select
+                          value={selectedTask.projectId || ''}
+                          disabled={busy}
+                          onChange={(e) => handleUpdateTaskProject(selectedTask.id, e.target.value)}
+                          className="w-full border border-teal-200 rounded-xl p-3 text-sm font-bold outline-none bg-white focus:border-teal-400"
+                        >
+                          <option value="">— ไม่ระบุ (งานทั่วไป) —</option>
+                          {visibleProjects.map((p) => (
+                            <option key={p.id} value={p.id}>{p.name}</option>
+                          ))}
+                        </select>
+                        <p className="text-[10px] text-teal-700/80 font-medium mt-2">เลือกโปรเจกต์ในแผนก — บันทึกทันทีเมื่อเปลี่ยน</p>
+                      </div>
+                    )}
 
                     <div className="pt-4 border-t border-slate-100 space-y-4">
                       {canControlSelectedTask && selectedTask.status !== 'Completed' && (

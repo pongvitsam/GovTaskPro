@@ -202,6 +202,19 @@ function assertCanDeleteTask(db, userId, task) {
   throw new Error('ไม่มีสิทธิ์ลบงานนี้');
 }
 
+function assertCanEditTask(db, userId, task) {
+  const user = db.users.find((u) => String(u.id) === String(userId));
+  if (!user || user.active === false) throw new Error('ไม่พบผู้ใช้');
+  if (user.role === 'Admin') return;
+  if (String(task.createdBy) === String(userId)) return;
+  if (String(task.assignedTo) === String(userId)) return;
+  if (user.role === 'Head') {
+    const assignee = db.users.find((u) => String(u.id) === String(task.assignedTo));
+    if (assignee && String(assignee.department || '') === String(user.department || '')) return;
+  }
+  throw new Error('ไม่มีสิทธิ์แก้ไขงานนี้');
+}
+
 function publicOrgUnit(o) {
   if (!o) return o;
   const token = String(o.lineChannelToken || '').trim();
@@ -913,6 +926,41 @@ const localHandlers = {
     db.taskLogs = (db.taskLogs || []).filter((l) => String(l.taskId) !== taskId);
     db.comments = (db.comments || []).filter((c) => String(c.taskId) !== taskId);
     return { ok: true, id: taskId };
+  },
+  updateTask(payload) {
+    const db = getLocalDb();
+    const taskId = String(payload.taskId || '');
+    const userId = String(payload.userId || '');
+    const task = db.tasks.find((t) => String(t.id) === taskId);
+    if (!task) throw new Error('ไม่พบงาน');
+    assertCanEditTask(db, userId, task);
+    const projectId = payload.projectId !== undefined
+      ? (String(payload.projectId || '').trim() || null)
+      : undefined;
+    if (projectId !== undefined && projectId) {
+      const project = db.projects.find((p) => String(p.id) === String(projectId));
+      if (!project) throw new Error('ไม่พบโปรเจกต์');
+      const user = db.users.find((u) => String(u.id) === String(userId));
+      if (user?.role !== 'Admin' && String(project.department || '') !== String(user?.department || '')) {
+        throw new Error('ไม่มีสิทธิ์ใช้โปรเจกต์นี้');
+      }
+    }
+    db.tasks = db.tasks.map((t) => {
+      if (String(t.id) !== taskId) return t;
+      const next = { ...t };
+      if (projectId !== undefined) next.projectId = projectId;
+      return next;
+    });
+    const updated = db.tasks.find((t) => String(t.id) === taskId);
+    db.taskLogs = [{
+      id: `l_${Date.now()}`,
+      taskId,
+      timestamp: new Date().toISOString(),
+      actionBy: userId,
+      actionType: 'Updated',
+      detail: payload.logDetail || 'อัปเดตงาน',
+    }, ...db.taskLogs];
+    return { task: updated, log: db.taskLogs[0] };
   },
   addComment(payload) {
     const db = getLocalDb();
