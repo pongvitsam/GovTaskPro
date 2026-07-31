@@ -613,12 +613,19 @@ const localHandlers = {
   createProject(payload) {
     const db = getLocalDb();
     const creator = db.users.find((u) => String(u.id) === String(payload.createdBy));
+    if (!creator || creator.active === false) throw new Error('ไม่พบผู้สร้าง');
+    let dept = String(payload.department || creator.department || '').trim();
+    if (creator.role === 'Staff' || creator.role === 'Head') {
+      dept = String(creator.department || '').trim();
+    } else if (creator.role === 'Admin') {
+      dept = String(payload.department || creator.department || '').trim();
+    }
     const row = {
       id: `p_${Date.now()}`,
       name: payload.name,
       description: payload.description || '',
       createdBy: payload.createdBy,
-      department: String(payload.department || creator?.department || '').trim(),
+      department: dept,
       createdAt: new Date().toISOString(),
       startDate: payload.startDate || null,
       endDate: payload.endDate || null,

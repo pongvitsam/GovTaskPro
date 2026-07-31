@@ -358,8 +358,15 @@ function getProjectActivity(payload) {
 
 function createProject(payload) {
   openDatabase_(false);
-  var id = 'p_' + Date.now();
+  var creator = findUserById_(String(payload.createdBy || ''));
+  if (!creator || String(creator.active) === 'FALSE') throw new Error('ไม่พบผู้สร้าง');
   var dept = resolveProjectDepartment_(payload);
+  if (creator.role === 'Staff' || creator.role === 'Head') {
+    dept = String(creator.department || '').trim();
+  } else if (creator.role === 'Admin') {
+    dept = String(payload.department || creator.department || '').trim();
+  }
+  var id = 'p_' + Date.now();
   var row = {
     id: id,
     name: String(payload.name || '').trim(),

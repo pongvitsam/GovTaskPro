@@ -1917,12 +1917,10 @@ export default function App() {
         {currentModule === 'create' && (
           <div className="p-6 md:p-8 overflow-y-auto h-full flex justify-center">
             <div className="max-w-3xl w-full gtp-card p-8 md:p-10 my-auto">
-              {isManager && (
-                <div className="flex space-x-2 mb-8 bg-slate-100 p-1.5 rounded-2xl">
-                  <button onClick={() => setCreateType('task')} className={`flex-1 py-2.5 text-sm font-extrabold rounded-xl ${createType === 'task' ? 'bg-white shadow-sm text-blue-700' : 'text-slate-500'}`}>📝 มอบหมายงาน (Task)</button>
-                  <button onClick={() => setCreateType('project')} className={`flex-1 py-2.5 text-sm font-extrabold rounded-xl ${createType === 'project' ? 'bg-white shadow-sm text-teal-700' : 'text-slate-500'}`}>📁 สร้างโปรเจกต์ (Project)</button>
-                </div>
-              )}
+              <div className="flex space-x-2 mb-8 bg-slate-100 p-1.5 rounded-2xl">
+                <button type="button" onClick={() => setCreateType('task')} className={`flex-1 py-2.5 text-sm font-extrabold rounded-xl ${createType === 'task' ? 'bg-white shadow-sm text-blue-700' : 'text-slate-500'}`}>📝 {isManager ? 'มอบหมายงาน (Task)' : 'บันทึกงาน (Task)'}</button>
+                <button type="button" onClick={() => setCreateType('project')} className={`flex-1 py-2.5 text-sm font-extrabold rounded-xl ${createType === 'project' ? 'bg-white shadow-sm text-teal-700' : 'text-slate-500'}`}>📁 สร้างโปรเจกต์ (Project)</button>
+              </div>
               <h2 className="text-3xl font-black text-slate-800 mb-8 tracking-tight">
                 {createType === 'project' ? 'สร้างโปรเจกต์ใหม่' : (isManager ? 'สร้าง / มอบหมายงาน' : 'บันทึกงานของตัวเอง')}
               </h2>
@@ -1937,6 +1935,11 @@ export default function App() {
                 </div>
                 {createType === 'project' && (
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                    {currentUser.role !== 'Admin' && (
+                      <div className="md:col-span-2 text-[12px] font-bold text-teal-800 bg-teal-50 border border-teal-100 rounded-2xl px-4 py-3">
+                        โปรเจกต์จะอยู่ในแผนก <span className="font-extrabold">{currentUser.department || 'ของคุณ'}</span> — คนในแผนกเดียวกันมองเห็นได้
+                      </div>
+                    )}
                     {currentUser.role === 'Admin' && (
                       <div className="md:col-span-2">
                         <label className="block text-sm font-extrabold text-slate-700 mb-2">แผนกเจ้าของโปรเจกต์ <span className="text-rose-500">*</span></label>
@@ -2005,7 +2008,7 @@ export default function App() {
                 <div className="pt-6">
                   <button type="submit" disabled={busy} className="gtp-btn-primary w-full py-4 text-lg flex justify-center items-center disabled:opacity-60">
                     {busy ? <Loader2 className="w-5 h-5 mr-2 animate-spin" /> : <Send className="w-5 h-5 mr-2" />}
-                    บันทึกและสร้างงาน
+                    {createType === 'project' ? 'บันทึกและสร้างโปรเจกต์' : 'บันทึกและสร้างงาน'}
                   </button>
                 </div>
               </form>
