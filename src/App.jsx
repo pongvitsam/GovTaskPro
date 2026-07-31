@@ -88,6 +88,9 @@ export default function App() {
   const [taskEditDraft, setTaskEditDraft] = useState(null);
   const [boardEditingTaskId, setBoardEditingTaskId] = useState(null);
   const [boardTitleDraft, setBoardTitleDraft] = useState('');
+  const [boardPersonFilter, setBoardPersonFilter] = useState('all');
+  const [boardPersonFilterOpen, setBoardPersonFilterOpen] = useState(false);
+  const boardPersonFilterRef = useRef(null);
   const [createType, setCreateType] = useState('task');
   const [toastMsg, setToastMsg] = useState(null);
 
@@ -366,6 +369,16 @@ export default function App() {
   }, [currentUser?.id, bootLoading]);
 
   useEffect(() => {
+    if (!boardPersonFilterOpen) return undefined;
+    const onDoc = (e) => {
+      if (boardPersonFilterRef.current?.contains(e.target)) return;
+      setBoardPersonFilterOpen(false);
+    };
+    document.addEventListener('mousedown', onDoc);
+    return () => document.removeEventListener('mousedown', onDoc);
+  }, [boardPersonFilterOpen]);
+
+  useEffect(() => {
     if (!selectedTask) return undefined;
     const taskId = selectedTask.id;
     const cacheKey = String(taskId);
@@ -522,6 +535,16 @@ export default function App() {
     if (currentUser.role === 'Admin') return activeUsers.filter((u) => u.role !== 'Admin');
     return deptUsers.filter((u) => u.role !== 'Admin');
   }, [deptUsers, activeUsers, currentUser]);
+
+  const boardFilterUsers = useMemo(
+    () => [...assignableUsers].sort((a, b) => String(a.name).localeCompare(String(b.name), 'th')),
+    [assignableUsers],
+  );
+
+  const boardTasks = useMemo(() => {
+    if (boardPersonFilter === 'all') return visibleTasks;
+    return visibleTasks.filter((t) => String(t.assignedTo) === String(boardPersonFilter));
+  }, [visibleTasks, boardPersonFilter]);
   const isManager = currentUser?.role === 'Head' || currentUser?.role === 'Admin';
   const isStaff = currentUser?.role === 'Staff';
   const selectedAssignee = selectedTask ? usersById.get(selectedTask.assignedTo) : null;
@@ -1856,7 +1879,57 @@ export default function App() {
                   </span>
                 )}
               </h2>
-              <div className="flex space-x-3">
+              <div className="flex flex-wrap items-center gap-2">
+                <div className="relative" ref={boardPersonFilterRef}>
+                  <button
+                    type="button"
+                    onClick={() => setBoardPersonFilterOpen((v) => !v)}
+                    className={`px-4 py-2.5 text-sm font-extrabold rounded-2xl border flex items-center gap-2 shadow-sm transition-colors ${
+                      boardPersonFilter !== 'all'
+                        ? 'bg-teal-50 border-teal-200 text-teal-800'
+                        : 'bg-white/90 border-slate-100 text-[#5b7a8a] hover:bg-white'
+                    }`}
+                  >
+                    <User className="w-4 h-4 shrink-0" />
+                    {boardPersonFilter === 'all'
+                      ? 'ฟิลเตอร์คน'
+                      : (usersById.get(boardPersonFilter)?.name || 'ฟิลเตอร์คน')}
+                    {boardPersonFilter !== 'all' && (
+                      <span className="text-[10px] font-black bg-teal-500 text-white px-1.5 py-0.5 rounded-full">
+                        {boardTasks.length}
+                      </span>
+                    )}
+                  </button>
+                  {boardPersonFilterOpen && (
+                    <div className="absolute right-0 top-full mt-2 z-30 w-64 max-h-72 overflow-y-auto bg-white rounded-2xl border border-slate-100 shadow-xl py-2 gtp-fade-in">
+                      <button
+                        type="button"
+                        onClick={() => { setBoardPersonFilter('all'); setBoardPersonFilterOpen(false); }}
+                        className={`w-full text-left px-4 py-2.5 text-sm font-bold hover:bg-[#f3f9fc] flex items-center justify-between ${boardPersonFilter === 'all' ? 'text-teal-700 bg-teal-50/60' : 'text-[#1e3a4c]'}`}
+                      >
+                        ทุกคน
+                        <span className="text-[10px] font-black text-slate-400">{visibleTasks.length}</span>
+                      </button>
+                      {boardFilterUsers.map((u) => {
+                        const count = visibleTasks.filter((t) => String(t.assignedTo) === String(u.id)).length;
+                        return (
+                          <button
+                            key={u.id}
+                            type="button"
+                            onClick={() => { setBoardPersonFilter(u.id); setBoardPersonFilterOpen(false); }}
+                            className={`w-full text-left px-4 py-2.5 text-sm font-bold hover:bg-[#f3f9fc] flex items-center gap-2 ${boardPersonFilter === u.id ? 'text-teal-700 bg-teal-50/60' : 'text-[#1e3a4c]'}`}
+                          >
+                            <span className="w-7 h-7 rounded-full bg-[#f3f9fc] text-[#5b7a8a] text-[10px] font-extrabold flex items-center justify-center shrink-0">
+                              {u.name?.charAt(0)}
+                            </span>
+                            <span className="flex-1 truncate">{u.name}</span>
+                            <span className="text-[10px] font-black text-slate-400">{count}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
                 {activeProjectId && (
                   <button onClick={() => setActiveProjectId(null)} className="px-4 py-2.5 text-sm font-bold text-[#5b7a8a] bg-white/90 border border-slate-100 rounded-2xl hover:bg-white shadow-sm">
                     ดูทั้งหมด
@@ -1868,10 +1941,24 @@ export default function App() {
               </div>
             </div>
 
+            {boardPersonFilter !== 'all' && (
+              <div className="mb-4 flex items-center gap-2 text-sm font-bold text-teal-800 bg-teal-50 border border-teal-100 rounded-2xl px-4 py-2.5 w-fit">
+                <User className="w-4 h-4" />
+                แสดงงานของ {usersById.get(boardPersonFilter)?.name}
+                <button
+                  type="button"
+                  onClick={() => setBoardPersonFilter('all')}
+                  className="ml-1 text-teal-600 hover:text-teal-800 underline text-xs font-extrabold"
+                >
+                  ล้างฟิลเตอร์
+                </button>
+              </div>
+            )}
+
             <div className="flex-1 overflow-x-auto pb-4">
               <div className="flex gap-5 h-full min-w-max items-start">
                 {['Pending', 'In Progress', 'Review', 'Completed'].map((status) => {
-                  let colTasks = visibleTasks.filter((t) => t.status === status);
+                  let colTasks = boardTasks.filter((t) => t.status === status);
                   if (status === 'Completed') {
                     colTasks = [...colTasks].sort((a, b) => {
                       const ta = new Date(a.completedAt || a.dueDate || a.createdAt || 0).getTime();
