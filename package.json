@@ -12,7 +12,8 @@
     "push": "npx @google/clasp push -f",
     "deploy": "npm run build:gas && npx @google/clasp push -f && node scripts/deploy.mjs",
     "deploy:gas": "npm run deploy",
-    "deploy:only": "node scripts/deploy.mjs"
+    "deploy:only": "node scripts/deploy.mjs",
+    "login:gas": "npx @google/clasp login"
   },
   "dependencies": {
     "lucide-react": "^0.525.0",
