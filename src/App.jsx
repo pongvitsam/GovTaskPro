@@ -4,7 +4,7 @@ import {
   ArrowRightLeft, History, FolderKanban, Briefcase, KanbanSquare, Bell, Calendar as CalendarIcon,
   BarChart2, MessageSquare, Paperclip, Repeat, Download, FileText, Smartphone, Search,
   Users, CalendarDays, Grab, ShieldCheck, Loader2, Settings2, StickyNote, KeyRound,
-  Menu, X, MoreHorizontal, RefreshCw, Trash2, Save, Pencil
+  Menu, X, MoreHorizontal, RefreshCw, Trash2, Save, Pencil, ChevronLeft
 } from 'lucide-react';
 import { api, isProductionGas, isProductionHost } from './api';
 import LoginScreen from './LoginScreen';
@@ -92,6 +92,7 @@ export default function App() {
   const [boardPersonFilterOpen, setBoardPersonFilterOpen] = useState(false);
   const boardPersonFilterRef = useRef(null);
   const [createType, setCreateType] = useState('task');
+  const [createReturnModule, setCreateReturnModule] = useState('dashboard');
   const [toastMsg, setToastMsg] = useState(null);
 
   const [currentMonth, setCurrentMonth] = useState(new Date());
@@ -132,6 +133,27 @@ export default function App() {
   const showToast = (msg, duration = 3000) => {
     setToastMsg(msg);
     setTimeout(() => setToastMsg(null), duration);
+  };
+
+  const createReturnLabels = {
+    board: 'กลับกระดานงาน',
+    dashboard: 'กลับภาพรวม',
+    projects: 'กลับโปรเจกต์',
+    calendar: 'กลับปฏิทิน',
+    sticky: 'กลับเตือนความจำ',
+    reports: 'กลับรายงาน',
+    settings: 'กลับตั้งค่า',
+    adminUsers: 'กลับสิทธิ์แผนก',
+  };
+
+  const openCreateModule = (returnTo) => {
+    setCreateReturnModule(returnTo || (currentModule === 'create' ? createReturnModule : currentModule));
+    setCreateType('task');
+    setCurrentModule('create');
+  };
+
+  const leaveCreateModule = () => {
+    setCurrentModule(createReturnModule || 'dashboard');
   };
 
   const getStatusColor = (status) => ({
@@ -1671,7 +1693,15 @@ export default function App() {
           ].map((menu) => (
             <button
               key={menu.id}
-              onClick={() => { setCurrentModule(menu.id); if (menu.id === 'projects') setDetailProjectId(null); if (menu.action) menu.action(); }}
+              onClick={() => {
+                if (menu.id === 'create') {
+                  openCreateModule();
+                  return;
+                }
+                setCurrentModule(menu.id);
+                if (menu.id === 'projects') setDetailProjectId(null);
+                if (menu.action) menu.action();
+              }}
               className={`gtp-nav-item flex items-center space-x-3 px-4 py-3 rounded-2xl w-full whitespace-nowrap ${
                 currentModule === menu.id ? 'gtp-nav-item-active' : 'text-teal-100/70 font-medium'
               }`}
@@ -1758,6 +1788,11 @@ export default function App() {
                 <button
                   key={menu.id}
                   onClick={() => {
+                    if (menu.id === 'create') {
+                      openCreateModule();
+                      setMobileMoreOpen(false);
+                      return;
+                    }
                     setCurrentModule(menu.id);
                     if (menu.id === 'projects') setDetailProjectId(null);
                     if (menu.action) menu.action();
@@ -2058,7 +2093,7 @@ export default function App() {
                     ดูทั้งหมด
                   </button>
                 )}
-                <button onClick={() => setCurrentModule('create')} className="gtp-btn-primary px-4 py-2.5 text-sm flex items-center">
+                <button onClick={() => openCreateModule('board')} className="gtp-btn-primary px-4 py-2.5 text-sm flex items-center">
                   <Plus className="w-4 h-4 mr-1.5" /> สร้างงาน
                 </button>
               </div>
@@ -2431,6 +2466,14 @@ export default function App() {
         {currentModule === 'create' && (
           <div className="p-6 md:p-8 overflow-y-auto h-full flex justify-center">
             <div className="max-w-3xl w-full gtp-card p-8 md:p-10 my-auto">
+              <button
+                type="button"
+                onClick={leaveCreateModule}
+                className="mb-6 flex items-center gap-1.5 text-sm font-bold text-slate-500 hover:text-teal-700 transition-colors"
+              >
+                <ChevronLeft className="w-5 h-5 shrink-0" />
+                {createReturnLabels[createReturnModule] || 'ย้อนกลับ'}
+              </button>
               <div className="flex space-x-2 mb-8 bg-slate-100 p-1.5 rounded-2xl">
                 <button type="button" onClick={() => setCreateType('task')} className={`flex-1 py-2.5 text-sm font-extrabold rounded-xl ${createType === 'task' ? 'bg-white shadow-sm text-blue-700' : 'text-slate-500'}`}>📝 มอบหมายงาน (Task)</button>
                 <button type="button" onClick={() => setCreateType('project')} className={`flex-1 py-2.5 text-sm font-extrabold rounded-xl ${createType === 'project' ? 'bg-white shadow-sm text-teal-700' : 'text-slate-500'}`}>📁 สร้างโปรเจกต์ (Project)</button>
@@ -2550,6 +2593,10 @@ export default function App() {
                 onClick={() => {
                   if (item.openMore) {
                     setMobileMoreOpen(true);
+                    return;
+                  }
+                  if (item.id === 'create') {
+                    openCreateModule();
                     return;
                   }
                   setCurrentModule(item.id);
