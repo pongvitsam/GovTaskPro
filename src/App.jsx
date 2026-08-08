@@ -1687,17 +1687,12 @@ export default function App() {
             { id: 'calendar', icon: CalendarDays, label: 'ปฏิทินงาน (Calendar)' },
             { id: 'sticky', icon: StickyNote, label: 'เตือนความจำ (ส่วนตัว)' },
             { id: 'reports', icon: BarChart2, label: 'สถิติ & รายงาน (Reports)' },
-            { id: 'create', icon: Plus, label: 'สร้างงาน (Create)' },
             ...(currentUser.role === 'Admin' ? [{ id: 'adminUsers', icon: ShieldCheck, label: 'สิทธิ์ตามแผนก (Admin)' }] : []),
             { id: 'settings', icon: Settings2, label: 'ตั้งค่า (Settings)' },
           ].map((menu) => (
             <button
               key={menu.id}
               onClick={() => {
-                if (menu.id === 'create') {
-                  openCreateModule();
-                  return;
-                }
                 setCurrentModule(menu.id);
                 if (menu.id === 'projects') setDetailProjectId(null);
                 if (menu.action) menu.action();
@@ -1935,7 +1930,7 @@ export default function App() {
                 <div className="md:col-span-2 xl:col-span-3 gtp-card p-10 text-center text-slate-500">
                   <FolderKanban className="w-12 h-12 mx-auto mb-3 text-slate-300" />
                   <p className="font-bold text-slate-600">ยังไม่มีโปรเจกต์ในแผนกนี้</p>
-                  <p className="text-sm mt-1">สร้างโปรเจกต์ใหม่ได้จากเมนู 「สร้างงาน」</p>
+                  <p className="text-sm mt-1">สร้างโปรเจกต์ใหม่ได้จากปุ่ม 「สร้างงาน」บนกระดานงาน</p>
                 </div>
               )}
               {visibleProjects.map((proj) => {
