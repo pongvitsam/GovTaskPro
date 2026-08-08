@@ -189,6 +189,7 @@ function dispatchApi_(fn, payload, hasPayload) {
   if (fn === 'deleteContractExtension') return deleteContractExtension(payload || {});
   if (fn === 'createTask') return createTask(payload || {});
   if (fn === 'updateTaskStatus') return updateTaskStatus(payload || {});
+  if (fn === 'dispatchTaskNotify') return dispatchTaskNotify(payload || {});
   if (fn === 'forwardTask') return forwardTask(payload || {});
   if (fn === 'takeoverTask') return takeoverTask(payload || {});
   if (fn === 'deleteTask') return deleteTask(payload || {});
@@ -578,9 +579,19 @@ function deleteContractExtension(payload) {
 }
 
 function findProjectById_(projectId) {
-  var rows = listProjects_();
-  for (var i = 0; i < rows.length; i++) {
-    if (String(rows[i].id) === String(projectId)) return rows[i];
+  var sheet = getSheet_(PROJECTS_SHEET);
+  var lastRow = sheet.getLastRow();
+  var lastCol = sheet.getLastColumn();
+  if (lastRow < 2 || lastCol < 1) return null;
+  var values = sheet.getRange(1, 1, lastRow, lastCol).getValues();
+  var headers = values[0];
+  var idIdx = headers.indexOf('id');
+  if (idIdx < 0) return null;
+  var needle = String(projectId);
+  for (var i = 1; i < values.length; i++) {
+    if (String(values[i][idIdx]) !== needle) continue;
+    if (!values[i][0] && values[i].every(function (c) { return c === ''; })) continue;
+    return normalizeProject_(rowToObject_(headers, values[i]));
   }
   return null;
 }
@@ -609,16 +620,6 @@ function createTask(payload) {
   if (!row.title) throw new Error('หัวข้องานจำเป็น');
   appendObject_(TASKS_SHEET, TASK_HEADERS, row);
   var log = addLog_(id, row.createdBy, 'Created', payload.logDetail || 'สร้างงาน');
-  var assignee = findUserById_(row.assignedTo);
-  var actor = findUserById_(row.createdBy);
-  var dept = assignee ? String(assignee.department || '').trim() : '';
-  var selfAssign = String(row.assignedTo) === String(row.createdBy);
-  if (dept && (payload.notifyLine || selfAssign)) {
-    notifyLineDept_(dept, 'assign', buildLineAssignMsg_(row, assignee, actor));
-  }
-  if (assignee && assignee.notifyAssign && !selfAssign) {
-    notifyUserEmail_(assignee, 'ได้รับมอบหมายงานใหม่', 'คุณได้รับมอบหมายงาน: "' + row.title + '"');
-  }
   invalidateBootstrapCache_();
   return { task: normalizeTask_(row), log: log };
 }
@@ -640,21 +641,6 @@ function updateTaskStatus(payload) {
     defaultDetail = 'เปลี่ยนสถานะเป็น เสร็จสิ้น · วันเสร็จ ' + formatThaiDateShort_(doneDate);
   }
   var statusLog = addLog_(taskId, userId, 'Status Changed', payload.logDetail || defaultDetail);
-  var assignee = findUserById_(found.assignedTo);
-  var actor = findUserById_(userId);
-  var dept = assignee ? String(assignee.department || '').trim() : '';
-  if (newStatus === 'Review' && dept) {
-    notifyLineDept_(dept, 'review', buildLineReviewMsg_(found, assignee, actor));
-  }
-  if (newStatus === 'Completed' && dept) {
-    notifyLineDept_(dept, 'complete', buildLineCompleteMsg_(found, assignee, actor));
-  }
-  if (assignee && assignee.notifyStatus && String(assignee.id) !== String(userId)) {
-    notifyUserEmail_(assignee, 'สถานะงานเปลี่ยน', 'งาน "' + found.title + '" เปลี่ยนเป็น: ' + newStatus);
-  }
-  if (newStatus === 'Review') {
-    notifyHeadsReview_(found.title);
-  }
   return { task: normalizeTask_(found), log: statusLog };
 }
 
@@ -671,15 +657,6 @@ function forwardTask(payload) {
   if (!found) throw new Error('ไม่พบงาน');
   var name = findUserName_(newAssigneeId);
   var fwdLog = addLog_(taskId, userId, 'Forwarded', 'โอนงานให้ ' + name);
-  var newAssignee = findUserById_(newAssigneeId);
-  if (newAssignee && newAssignee.notifyAssign) {
-    notifyUserEmail_(newAssignee, 'ได้รับโอนงาน', 'คุณได้รับโอนงาน: "' + (found.title || '') + '"');
-  }
-  if (newAssignee) {
-    var fwdDept = String(newAssignee.department || '').trim();
-    var fwdActor = findUserById_(userId);
-    if (fwdDept) notifyLineDept_(fwdDept, 'assign', buildLineForwardMsg_(found, newAssignee, fwdActor));
-  }
   return { task: normalizeTask_(found), log: fwdLog };
 }
 
@@ -753,10 +730,104 @@ function updateTask(payload) {
   }
   if (!Object.keys(updates).length) throw new Error('ไม่มีข้อมูลที่ต้องอัปเดต');
 
-  var row = updateRowById_(TASKS_SHEET, taskId, updates);
-  if (!row) throw new Error('ไม่พบงาน');
-  var log = addLog_(taskId, userId, 'Updated', payload.logDetail || 'อัปเดตงาน');
-  return { task: normalizeTask_(row), log: log };
+  var sheet = getSheet_(TASKS_SHEET);
+  var lastRow = sheet.getLastRow();
+  var lastCol = sheet.getLastColumn();
+  if (lastRow < 2 || lastCol < 1) throw new Error('ไม่พบงาน');
+  var values = sheet.getRange(1, 1, lastRow, lastCol).getValues();
+  var headers = values[0];
+  var idIdx = headers.indexOf('id');
+  if (idIdx < 0) throw new Error('ไม่พบงาน');
+  var colCount = headers.length;
+
+  for (var i = 1; i < values.length; i++) {
+    if (String(values[i][idIdx]) !== taskId) continue;
+    if (!values[i][0] && values[i].every(function (c) { return c === ''; })) continue;
+    var existing = normalizeTask_(rowToObject_(headers, values[i]));
+    assertCanEditTask_(userId, existing);
+    for (var key in updates) {
+      if (!Object.prototype.hasOwnProperty.call(updates, key)) continue;
+      var col = headers.indexOf(key);
+      if (col < 0) continue;
+      values[i][col] = updates[key] === null ? '' : updates[key];
+    }
+    var writeRow = [];
+    for (var c = 0; c < colCount; c++) writeRow.push(values[i][c]);
+    sheet.getRange(i + 1, 1, 1, colCount).setValues([writeRow]);
+    var row = rowToObject_(headers, values[i]);
+    var log = addLog_(taskId, userId, 'Updated', payload.logDetail || 'อัปเดตงาน');
+    return { task: normalizeTask_(row), log: log };
+  }
+  throw new Error('ไม่พบงาน');
+}
+
+/** Send LINE/email after task write — called separately so saves return faster */
+function dispatchTaskNotify(payload) {
+  payload = payload || {};
+  var event = String(payload.event || '');
+  var taskId = String(payload.taskId || '');
+  var userId = String(payload.userId || '');
+  if (!taskId || !event) return { ok: false, skipped: true };
+
+  openDatabase_(false);
+  var task = findTaskById_(taskId);
+  if (!task) return { ok: false, skipped: true };
+
+  try {
+    if (event === 'create') {
+      runCreateTaskNotifications_(task, payload);
+    } else if (event === 'status') {
+      runStatusTaskNotifications_(task, userId, String(payload.status || task.status), payload);
+    } else if (event === 'forward') {
+      runForwardTaskNotifications_(task, userId);
+    }
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: String(e && e.message ? e.message : e) };
+  }
+}
+
+function runCreateTaskNotifications_(task, payload) {
+  var assignee = findUserById_(task.assignedTo);
+  var actor = findUserById_(task.createdBy);
+  var dept = assignee ? String(assignee.department || '').trim() : '';
+  var selfAssign = String(task.assignedTo) === String(task.createdBy);
+  if (dept && (payload.notifyLine || selfAssign)) {
+    notifyLineDept_(dept, 'assign', buildLineAssignMsg_(task, assignee, actor));
+  }
+  if (assignee && assignee.notifyAssign && !selfAssign) {
+    notifyUserEmail_(assignee, 'ได้รับมอบหมายงานใหม่', 'คุณได้รับมอบหมายงาน: "' + task.title + '"');
+  }
+}
+
+function runStatusTaskNotifications_(task, userId, newStatus) {
+  var assignee = findUserById_(task.assignedTo);
+  var actor = findUserById_(userId);
+  var dept = assignee ? String(assignee.department || '').trim() : '';
+  if (newStatus === 'Review' && dept) {
+    notifyLineDept_(dept, 'review', buildLineReviewMsg_(task, assignee, actor));
+  }
+  if (newStatus === 'Completed' && dept) {
+    notifyLineDept_(dept, 'complete', buildLineCompleteMsg_(task, assignee, actor));
+  }
+  if (assignee && assignee.notifyStatus && String(assignee.id) !== String(userId)) {
+    notifyUserEmail_(assignee, 'สถานะงานเปลี่ยน', 'งาน "' + task.title + '" เปลี่ยนเป็น: ' + newStatus);
+  }
+  if (newStatus === 'Review') {
+    notifyHeadsReview_(task.title);
+  }
+}
+
+function runForwardTaskNotifications_(task, userId) {
+  var newAssignee = findUserById_(task.assignedTo);
+  if (newAssignee && newAssignee.notifyAssign) {
+    notifyUserEmail_(newAssignee, 'ได้รับโอนงาน', 'คุณได้รับโอนงาน: "' + (task.title || '') + '"');
+  }
+  if (newAssignee) {
+    var fwdDept = String(newAssignee.department || '').trim();
+    var fwdActor = findUserById_(userId);
+    if (fwdDept) notifyLineDept_(fwdDept, 'assign', buildLineForwardMsg_(task, newAssignee, fwdActor));
+  }
 }
 
 function assertCanEditTask_(userId, task) {
@@ -1438,8 +1509,12 @@ function listOrgUnitsFromSs_(ss) {
   });
 }
 
+var _orgUnitsRawCache = null;
+
 function listOrgUnitsRaw_() {
-  return listObjects_(ORG_UNITS_SHEET);
+  if (_orgUnitsRawCache) return _orgUnitsRawCache;
+  _orgUnitsRawCache = listObjects_(ORG_UNITS_SHEET);
+  return _orgUnitsRawCache;
 }
 
 function requireAdmin_(adminId) {

@@ -290,6 +290,10 @@ export default function App() {
     setSelectedTask((prev) => (prev && String(prev.id) === String(task.id) ? task : prev));
   };
 
+  const scheduleTaskNotify = (payload) => {
+    api('dispatchTaskNotify', payload).catch(() => {});
+  };
+
   const loadBootstrap = async ({ force = true } = {}) => {
     setBootLoading(true);
     setBootError(null);
@@ -1048,6 +1052,7 @@ export default function App() {
     if (busy || !currentUser) return;
     const formData = new FormData(e.target);
     setBusy(true);
+    let pendingTaskId = null;
     try {
       if (createType === 'project') {
         const row = await api('createProject', {
@@ -1068,32 +1073,70 @@ export default function App() {
         const selfAssign = !rawAssignee || rawAssignee === currentUser.id;
         const assignedTo = selfAssign ? currentUser.id : rawAssignee;
         const notifyLine = !selfAssign && formData.get('notifyLine') === 'on';
-        const result = await api('createTask', {
-          projectId: formData.get('projectId') || null,
-          title: formData.get('title'),
-          description: formData.get('description'),
+        const title = String(formData.get('title') || '').trim();
+        const projectId = formData.get('projectId') || null;
+        const description = String(formData.get('description') || '');
+        const dueDate = formData.get('dueDate') || null;
+        const isRecurring = formData.get('isRecurring') === 'on';
+        const status = selfAssign ? 'In Progress' : 'Pending';
+        const type = selfAssign ? 'Self' : 'Assigned';
+        const logDetail = selfAssign
+          ? (isManager ? 'หัวหน้าสร้างงานและรับทำเอง' : 'สร้างงานด้วยตัวเอง')
+          : `มอบหมายงานให้ ${usersById.get(assignedTo)?.name}`;
+        const pendingId = `pending_${Date.now()}`;
+        pendingTaskId = pendingId;
+        const optimisticTask = {
+          id: pendingId,
+          projectId,
+          title,
+          description,
           createdBy: currentUser.id,
           assignedTo,
-          status: selfAssign ? 'In Progress' : 'Pending',
-          type: selfAssign ? 'Self' : 'Assigned',
-          dueDate: formData.get('dueDate') || null,
-          isRecurring: formData.get('isRecurring') === 'on',
+          status,
+          type,
+          dueDate,
+          isRecurring,
+          createdAt: new Date().toISOString(),
+          completedAt: null,
+        };
+        patchTask(optimisticTask);
+        setActiveProjectId(null);
+        setCurrentModule('board');
+        e.target.reset();
+
+        const result = await api('createTask', {
+          projectId,
+          title,
+          description,
+          createdBy: currentUser.id,
+          assignedTo,
+          status,
+          type,
+          dueDate,
+          isRecurring,
           notifyLine,
-          logDetail: selfAssign
-            ? (isManager ? 'หัวหน้าสร้างงานและรับทำเอง' : 'สร้างงานด้วยตัวเอง')
-            : `มอบหมายงานให้ ${usersById.get(assignedTo)?.name}`,
+          logDetail,
         });
-        patchTask(result?.task || result, result?.log);
+        const savedTask = result?.task || result;
+        setTasks((prev) => upsertById(prev.filter((t) => String(t.id) !== pendingId), savedTask));
+        if (result?.log) setTaskLogs((prev) => upsertById(prev, result.log));
+        scheduleTaskNotify({
+          event: 'create',
+          taskId: savedTask.id,
+          userId: currentUser.id,
+          notifyLine,
+        });
         if (notifyLine) showToast('🔔 ระบบสร้างงานและส่งแจ้งกลุ่ม LINE แผนกแล้ว');
         else if (!selfAssign) showToast(`✅ มอบหมายงานให้ ${usersById.get(assignedTo)?.name} แล้ว`);
         else if (selfAssign && (orgUnits || []).some((o) => o.type === 'department' && o.name === currentUser.department && o.lineEnabled && o.lineConfigured)) {
           showToast('🔔 สร้างงานและแจ้งกลุ่ม LINE แผนกแล้ว');
         } else showToast('✅ สร้างงานสำเร็จ');
-        setActiveProjectId(null);
-        setCurrentModule('board');
       }
-      e.target.reset();
     } catch (err) {
+      if (pendingTaskId) {
+        setTasks((prev) => prev.filter((t) => String(t.id) !== pendingTaskId));
+        setCurrentModule('create');
+      }
       showToast('❌ ' + (err?.message || String(err)));
     } finally {
       setBusy(false);
@@ -1123,6 +1166,13 @@ export default function App() {
         logDetail,
       });
       patchTask(result?.task || result, result?.log);
+      scheduleTaskNotify({
+        event: 'status',
+        taskId,
+        userId: currentUser.id,
+        status: newStatus,
+        notifyLine,
+      });
       const assigneeDept = usersById.get(task?.assignedTo)?.department;
       const lineDeptOn = (orgUnits || []).some((o) => o.type === 'department' && o.name === assigneeDept && o.lineEnabled && o.lineConfigured);
       if (notifyLine || (lineDeptOn && (newStatus === 'Review' || newStatus === 'Completed'))) {
@@ -1143,6 +1193,7 @@ export default function App() {
       const name = usersById.get(newAssigneeId)?.name;
       const result = await api('forwardTask', { taskId, newAssigneeId, userId: currentUser.id });
       patchTask(result?.task || result, result?.log);
+      scheduleTaskNotify({ event: 'forward', taskId, userId: currentUser.id });
       setSelectedTask(null);
       showToast(`โอนงานให้ ${name} เรียบร้อยแล้ว`);
     } catch (err) {
@@ -1180,7 +1231,7 @@ export default function App() {
   };
 
   const handleSaveTaskDetails = async () => {
-    if (busy || !currentUser || !selectedTask || !taskEditDraft || !canEditTaskProject) return;
+    if (!currentUser || !selectedTask || !taskEditDraft || !canEditTaskProject) return;
     const dueDate = taskEditDraft.dueDate || null;
     const unchanged = (taskEditDraft.description || '') === (selectedTask.description || '')
       && (dueDate || null) === (selectedTask.dueDate ? toDateInputValue(selectedTask.dueDate) : null)
@@ -1189,7 +1240,17 @@ export default function App() {
       showToast('ไม่มีการเปลี่ยนแปลง');
       return;
     }
-    setBusy(true);
+    const prevDraft = {
+      description: selectedTask.description || '',
+      dueDate: selectedTask.dueDate ? toDateInputValue(selectedTask.dueDate) : null,
+      isRecurring: !!selectedTask.isRecurring,
+    };
+    patchTask({
+      ...selectedTask,
+      description: taskEditDraft.description || '',
+      dueDate: dueDate || null,
+      isRecurring: taskEditDraft.isRecurring,
+    });
     try {
       const result = await api('updateTask', {
         taskId: selectedTask.id,
@@ -1202,14 +1263,18 @@ export default function App() {
       patchTask(result?.task || result, result?.log);
       showToast('✅ บันทึกรายละเอียดงานแล้ว');
     } catch (err) {
+      patchTask({
+        ...selectedTask,
+        description: prevDraft.description,
+        dueDate: prevDraft.dueDate,
+        isRecurring: prevDraft.isRecurring,
+      });
       showToast('❌ ' + (err?.message || String(err)));
-    } finally {
-      setBusy(false);
     }
   };
 
   const handleSaveBoardTaskTitle = async (taskId) => {
-    if (busy || !currentUser) return;
+    if (!currentUser) return;
     const title = boardTitleDraft.trim();
     if (!title) {
       showToast('❌ กรอกชื่องาน');
@@ -1221,7 +1286,9 @@ export default function App() {
       setBoardEditingTaskId(null);
       return;
     }
-    setBusy(true);
+    const prevTitle = task.title || '';
+    patchTask({ ...task, title });
+    setBoardEditingTaskId(null);
     try {
       const result = await api('updateTask', {
         taskId,
@@ -1230,12 +1297,10 @@ export default function App() {
         logDetail: 'แก้ไขชื่องาน',
       });
       patchTask(result?.task || result, result?.log);
-      setBoardEditingTaskId(null);
       showToast('✅ บันทึกชื่องานแล้ว');
     } catch (err) {
+      patchTask({ ...task, title: prevTitle });
       showToast('❌ ' + (err?.message || String(err)));
-    } finally {
-      setBusy(false);
     }
   };
 
