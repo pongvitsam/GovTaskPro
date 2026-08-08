@@ -1196,6 +1196,10 @@ const localHandlers = {
     db.users = db.users.map((u, i) => (i === idx ? next : u));
     return publicUser(next);
   },
+
+  dispatchTaskNotify() {
+    return { ok: true };
+  },
 };
 
 export async function runLocal(fnName, payload) {

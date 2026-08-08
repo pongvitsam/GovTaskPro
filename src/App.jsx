@@ -4,7 +4,7 @@ import {
   ArrowRightLeft, History, FolderKanban, Briefcase, KanbanSquare, Bell, Calendar as CalendarIcon,
   BarChart2, MessageSquare, Paperclip, Repeat, Download, FileText, Smartphone, Search,
   Users, CalendarDays, Grab, ShieldCheck, Loader2, Settings2, StickyNote, KeyRound,
-  Menu, X, MoreHorizontal, RefreshCw, Trash2, Save, Pencil
+  Menu, X, MoreHorizontal, RefreshCw, Trash2, Save, Pencil, ChevronLeft
 } from 'lucide-react';
 import { api, isProductionGas, isProductionHost } from './api';
 import LoginScreen from './LoginScreen';
@@ -92,6 +92,7 @@ export default function App() {
   const [boardPersonFilterOpen, setBoardPersonFilterOpen] = useState(false);
   const boardPersonFilterRef = useRef(null);
   const [createType, setCreateType] = useState('task');
+  const [createReturnModule, setCreateReturnModule] = useState('dashboard');
   const [toastMsg, setToastMsg] = useState(null);
 
   const [currentMonth, setCurrentMonth] = useState(new Date());
@@ -132,6 +133,27 @@ export default function App() {
   const showToast = (msg, duration = 3000) => {
     setToastMsg(msg);
     setTimeout(() => setToastMsg(null), duration);
+  };
+
+  const createReturnLabels = {
+    board: 'กลับกระดานงาน',
+    dashboard: 'กลับภาพรวม',
+    projects: 'กลับโปรเจกต์',
+    calendar: 'กลับปฏิทิน',
+    sticky: 'กลับเตือนความจำ',
+    reports: 'กลับรายงาน',
+    settings: 'กลับตั้งค่า',
+    adminUsers: 'กลับสิทธิ์แผนก',
+  };
+
+  const openCreateModule = (returnTo) => {
+    setCreateReturnModule(returnTo || (currentModule === 'create' ? createReturnModule : currentModule));
+    setCreateType('task');
+    setCurrentModule('create');
+  };
+
+  const leaveCreateModule = () => {
+    setCurrentModule(createReturnModule || 'dashboard');
   };
 
   const getStatusColor = (status) => ({
@@ -288,6 +310,10 @@ export default function App() {
     setTasks((prev) => upsertById(prev, task));
     if (log) setTaskLogs((prev) => upsertById(prev, log));
     setSelectedTask((prev) => (prev && String(prev.id) === String(task.id) ? task : prev));
+  };
+
+  const scheduleTaskNotify = (payload) => {
+    api('dispatchTaskNotify', payload).catch(() => {});
   };
 
   const loadBootstrap = async ({ force = true } = {}) => {
@@ -1048,6 +1074,7 @@ export default function App() {
     if (busy || !currentUser) return;
     const formData = new FormData(e.target);
     setBusy(true);
+    let pendingTaskId = null;
     try {
       if (createType === 'project') {
         const row = await api('createProject', {
@@ -1068,32 +1095,70 @@ export default function App() {
         const selfAssign = !rawAssignee || rawAssignee === currentUser.id;
         const assignedTo = selfAssign ? currentUser.id : rawAssignee;
         const notifyLine = !selfAssign && formData.get('notifyLine') === 'on';
-        const result = await api('createTask', {
-          projectId: formData.get('projectId') || null,
-          title: formData.get('title'),
-          description: formData.get('description'),
+        const title = String(formData.get('title') || '').trim();
+        const projectId = formData.get('projectId') || null;
+        const description = String(formData.get('description') || '');
+        const dueDate = formData.get('dueDate') || null;
+        const isRecurring = formData.get('isRecurring') === 'on';
+        const status = selfAssign ? 'In Progress' : 'Pending';
+        const type = selfAssign ? 'Self' : 'Assigned';
+        const logDetail = selfAssign
+          ? (isManager ? 'หัวหน้าสร้างงานและรับทำเอง' : 'สร้างงานด้วยตัวเอง')
+          : `มอบหมายงานให้ ${usersById.get(assignedTo)?.name}`;
+        const pendingId = `pending_${Date.now()}`;
+        pendingTaskId = pendingId;
+        const optimisticTask = {
+          id: pendingId,
+          projectId,
+          title,
+          description,
           createdBy: currentUser.id,
           assignedTo,
-          status: selfAssign ? 'In Progress' : 'Pending',
-          type: selfAssign ? 'Self' : 'Assigned',
-          dueDate: formData.get('dueDate') || null,
-          isRecurring: formData.get('isRecurring') === 'on',
+          status,
+          type,
+          dueDate,
+          isRecurring,
+          createdAt: new Date().toISOString(),
+          completedAt: null,
+        };
+        patchTask(optimisticTask);
+        setActiveProjectId(null);
+        setCurrentModule('board');
+        e.target.reset();
+
+        const result = await api('createTask', {
+          projectId,
+          title,
+          description,
+          createdBy: currentUser.id,
+          assignedTo,
+          status,
+          type,
+          dueDate,
+          isRecurring,
           notifyLine,
-          logDetail: selfAssign
-            ? (isManager ? 'หัวหน้าสร้างงานและรับทำเอง' : 'สร้างงานด้วยตัวเอง')
-            : `มอบหมายงานให้ ${usersById.get(assignedTo)?.name}`,
+          logDetail,
         });
-        patchTask(result?.task || result, result?.log);
+        const savedTask = result?.task || result;
+        setTasks((prev) => upsertById(prev.filter((t) => String(t.id) !== pendingId), savedTask));
+        if (result?.log) setTaskLogs((prev) => upsertById(prev, result.log));
+        scheduleTaskNotify({
+          event: 'create',
+          taskId: savedTask.id,
+          userId: currentUser.id,
+          notifyLine,
+        });
         if (notifyLine) showToast('🔔 ระบบสร้างงานและส่งแจ้งกลุ่ม LINE แผนกแล้ว');
         else if (!selfAssign) showToast(`✅ มอบหมายงานให้ ${usersById.get(assignedTo)?.name} แล้ว`);
         else if (selfAssign && (orgUnits || []).some((o) => o.type === 'department' && o.name === currentUser.department && o.lineEnabled && o.lineConfigured)) {
           showToast('🔔 สร้างงานและแจ้งกลุ่ม LINE แผนกแล้ว');
         } else showToast('✅ สร้างงานสำเร็จ');
-        setActiveProjectId(null);
-        setCurrentModule('board');
       }
-      e.target.reset();
     } catch (err) {
+      if (pendingTaskId) {
+        setTasks((prev) => prev.filter((t) => String(t.id) !== pendingTaskId));
+        setCurrentModule('create');
+      }
       showToast('❌ ' + (err?.message || String(err)));
     } finally {
       setBusy(false);
@@ -1123,6 +1188,13 @@ export default function App() {
         logDetail,
       });
       patchTask(result?.task || result, result?.log);
+      scheduleTaskNotify({
+        event: 'status',
+        taskId,
+        userId: currentUser.id,
+        status: newStatus,
+        notifyLine,
+      });
       const assigneeDept = usersById.get(task?.assignedTo)?.department;
       const lineDeptOn = (orgUnits || []).some((o) => o.type === 'department' && o.name === assigneeDept && o.lineEnabled && o.lineConfigured);
       if (notifyLine || (lineDeptOn && (newStatus === 'Review' || newStatus === 'Completed'))) {
@@ -1143,6 +1215,7 @@ export default function App() {
       const name = usersById.get(newAssigneeId)?.name;
       const result = await api('forwardTask', { taskId, newAssigneeId, userId: currentUser.id });
       patchTask(result?.task || result, result?.log);
+      scheduleTaskNotify({ event: 'forward', taskId, userId: currentUser.id });
       setSelectedTask(null);
       showToast(`โอนงานให้ ${name} เรียบร้อยแล้ว`);
     } catch (err) {
@@ -1180,7 +1253,7 @@ export default function App() {
   };
 
   const handleSaveTaskDetails = async () => {
-    if (busy || !currentUser || !selectedTask || !taskEditDraft || !canEditTaskProject) return;
+    if (!currentUser || !selectedTask || !taskEditDraft || !canEditTaskProject) return;
     const dueDate = taskEditDraft.dueDate || null;
     const unchanged = (taskEditDraft.description || '') === (selectedTask.description || '')
       && (dueDate || null) === (selectedTask.dueDate ? toDateInputValue(selectedTask.dueDate) : null)
@@ -1189,7 +1262,17 @@ export default function App() {
       showToast('ไม่มีการเปลี่ยนแปลง');
       return;
     }
-    setBusy(true);
+    const prevDraft = {
+      description: selectedTask.description || '',
+      dueDate: selectedTask.dueDate ? toDateInputValue(selectedTask.dueDate) : null,
+      isRecurring: !!selectedTask.isRecurring,
+    };
+    patchTask({
+      ...selectedTask,
+      description: taskEditDraft.description || '',
+      dueDate: dueDate || null,
+      isRecurring: taskEditDraft.isRecurring,
+    });
     try {
       const result = await api('updateTask', {
         taskId: selectedTask.id,
@@ -1202,14 +1285,18 @@ export default function App() {
       patchTask(result?.task || result, result?.log);
       showToast('✅ บันทึกรายละเอียดงานแล้ว');
     } catch (err) {
+      patchTask({
+        ...selectedTask,
+        description: prevDraft.description,
+        dueDate: prevDraft.dueDate,
+        isRecurring: prevDraft.isRecurring,
+      });
       showToast('❌ ' + (err?.message || String(err)));
-    } finally {
-      setBusy(false);
     }
   };
 
   const handleSaveBoardTaskTitle = async (taskId) => {
-    if (busy || !currentUser) return;
+    if (!currentUser) return;
     const title = boardTitleDraft.trim();
     if (!title) {
       showToast('❌ กรอกชื่องาน');
@@ -1221,7 +1308,9 @@ export default function App() {
       setBoardEditingTaskId(null);
       return;
     }
-    setBusy(true);
+    const prevTitle = task.title || '';
+    patchTask({ ...task, title });
+    setBoardEditingTaskId(null);
     try {
       const result = await api('updateTask', {
         taskId,
@@ -1230,12 +1319,10 @@ export default function App() {
         logDetail: 'แก้ไขชื่องาน',
       });
       patchTask(result?.task || result, result?.log);
-      setBoardEditingTaskId(null);
       showToast('✅ บันทึกชื่องานแล้ว');
     } catch (err) {
+      patchTask({ ...task, title: prevTitle });
       showToast('❌ ' + (err?.message || String(err)));
-    } finally {
-      setBusy(false);
     }
   };
 
@@ -1600,13 +1687,16 @@ export default function App() {
             { id: 'calendar', icon: CalendarDays, label: 'ปฏิทินงาน (Calendar)' },
             { id: 'sticky', icon: StickyNote, label: 'เตือนความจำ (ส่วนตัว)' },
             { id: 'reports', icon: BarChart2, label: 'สถิติ & รายงาน (Reports)' },
-            { id: 'create', icon: Plus, label: 'สร้างงาน (Create)' },
             ...(currentUser.role === 'Admin' ? [{ id: 'adminUsers', icon: ShieldCheck, label: 'สิทธิ์ตามแผนก (Admin)' }] : []),
             { id: 'settings', icon: Settings2, label: 'ตั้งค่า (Settings)' },
           ].map((menu) => (
             <button
               key={menu.id}
-              onClick={() => { setCurrentModule(menu.id); if (menu.id === 'projects') setDetailProjectId(null); if (menu.action) menu.action(); }}
+              onClick={() => {
+                setCurrentModule(menu.id);
+                if (menu.id === 'projects') setDetailProjectId(null);
+                if (menu.action) menu.action();
+              }}
               className={`gtp-nav-item flex items-center space-x-3 px-4 py-3 rounded-2xl w-full whitespace-nowrap ${
                 currentModule === menu.id ? 'gtp-nav-item-active' : 'text-teal-100/70 font-medium'
               }`}
@@ -1693,6 +1783,11 @@ export default function App() {
                 <button
                   key={menu.id}
                   onClick={() => {
+                    if (menu.id === 'create') {
+                      openCreateModule();
+                      setMobileMoreOpen(false);
+                      return;
+                    }
                     setCurrentModule(menu.id);
                     if (menu.id === 'projects') setDetailProjectId(null);
                     if (menu.action) menu.action();
@@ -1835,7 +1930,7 @@ export default function App() {
                 <div className="md:col-span-2 xl:col-span-3 gtp-card p-10 text-center text-slate-500">
                   <FolderKanban className="w-12 h-12 mx-auto mb-3 text-slate-300" />
                   <p className="font-bold text-slate-600">ยังไม่มีโปรเจกต์ในแผนกนี้</p>
-                  <p className="text-sm mt-1">สร้างโปรเจกต์ใหม่ได้จากเมนู 「สร้างงาน」</p>
+                  <p className="text-sm mt-1">สร้างโปรเจกต์ใหม่ได้จากปุ่ม 「สร้างงาน」บนกระดานงาน</p>
                 </div>
               )}
               {visibleProjects.map((proj) => {
@@ -1993,7 +2088,7 @@ export default function App() {
                     ดูทั้งหมด
                   </button>
                 )}
-                <button onClick={() => setCurrentModule('create')} className="gtp-btn-primary px-4 py-2.5 text-sm flex items-center">
+                <button onClick={() => openCreateModule('board')} className="gtp-btn-primary px-4 py-2.5 text-sm flex items-center">
                   <Plus className="w-4 h-4 mr-1.5" /> สร้างงาน
                 </button>
               </div>
@@ -2366,6 +2461,14 @@ export default function App() {
         {currentModule === 'create' && (
           <div className="p-6 md:p-8 overflow-y-auto h-full flex justify-center">
             <div className="max-w-3xl w-full gtp-card p-8 md:p-10 my-auto">
+              <button
+                type="button"
+                onClick={leaveCreateModule}
+                className="mb-6 flex items-center gap-1.5 text-sm font-bold text-slate-500 hover:text-teal-700 transition-colors"
+              >
+                <ChevronLeft className="w-5 h-5 shrink-0" />
+                {createReturnLabels[createReturnModule] || 'ย้อนกลับ'}
+              </button>
               <div className="flex space-x-2 mb-8 bg-slate-100 p-1.5 rounded-2xl">
                 <button type="button" onClick={() => setCreateType('task')} className={`flex-1 py-2.5 text-sm font-extrabold rounded-xl ${createType === 'task' ? 'bg-white shadow-sm text-blue-700' : 'text-slate-500'}`}>📝 มอบหมายงาน (Task)</button>
                 <button type="button" onClick={() => setCreateType('project')} className={`flex-1 py-2.5 text-sm font-extrabold rounded-xl ${createType === 'project' ? 'bg-white shadow-sm text-teal-700' : 'text-slate-500'}`}>📁 สร้างโปรเจกต์ (Project)</button>
@@ -2485,6 +2588,10 @@ export default function App() {
                 onClick={() => {
                   if (item.openMore) {
                     setMobileMoreOpen(true);
+                    return;
+                  }
+                  if (item.id === 'create') {
+                    openCreateModule();
                     return;
                   }
                   setCurrentModule(item.id);
