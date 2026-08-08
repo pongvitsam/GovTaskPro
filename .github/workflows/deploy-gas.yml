@@ -1,0 +1,46 @@
+name: Deploy Google Apps Script
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'gas/**'
+      - 'src/**'
+      - 'scripts/build-gas.mjs'
+      - 'scripts/deploy.mjs'
+      - 'vite.config.js'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.github/workflows/deploy-gas.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: gas-deploy
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - run: npm ci
+      - run: npm run build:gas
+
+      - name: Push to Apps Script and update deployment
+        env:
+          CLASPRC_JSON: ${{ secrets.CLASPRC_JSON }}
+        run: |
+          if [ -z "$CLASPRC_JSON" ]; then
+            echo "::warning::CLASPRC_JSON secret is not configured — skipping GAS deploy."
+            echo "One-time setup: cat ~/.clasprc.json | gh secret set CLASPRC_JSON"
+            exit 0
+          fi
+          echo "$CLASPRC_JSON" > ~/.clasprc.json
+          npx @google/clasp push -f
+          node scripts/deploy.mjs

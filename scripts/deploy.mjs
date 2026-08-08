@@ -36,13 +36,13 @@ if (!state.deploymentId) {
 const stamp = new Date().toISOString();
 const description = `GovTaskPro production ${stamp}`;
 
-const out = run(`clasp deploy -i ${state.deploymentId} -d "${description}"`);
+const out = run(`npx @google/clasp deploy -i ${state.deploymentId} -d "${description}"`);
 console.log(out);
 
 state.webAppUrl = `https://script.google.com/macros/s/${state.deploymentId}/exec`;
 writeFileSync(stateFile, JSON.stringify(state, null, 2) + '\n', 'utf8');
 
-console.log(run('clasp deployments'));
+console.log(run('npx @google/clasp deployments'));
 console.log('\nWeb App URL: ' + state.webAppUrl);
 console.log('Editor: https://script.google.com/d/' + SCRIPT_ID + '/edit');
 console.log('\nIf URL shows "need access": Deploy → Manage deployments → Edit → Who has access: Anyone → Deploy');
