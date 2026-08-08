@@ -234,9 +234,11 @@ function include_(filename) {
 
 var SCHEMA_VERSION = '14';
 var BOOT_CACHE_KEY = 'gtp_boot_v10';
-var BOOT_CACHE_TTL = 90;
+var BOOT_CACHE_TTL = 180;
 var _ssCache = null;
 var _sheetHeaderCache = {};
+var _usersListCache = null;
+var _usersByIdMap = null;
 var STICKY_COLORS = ['yellow', 'orange', 'pink', 'mint', 'teal', 'blue', 'lavender', 'white'];
 
 function invalidateBootstrapCache_() {
@@ -333,25 +335,44 @@ function getProjectActivity(payload) {
   openDatabase_(false);
   var projectId = String((payload && payload.projectId) || '');
   if (!projectId) throw new Error('ไม่พบโปรเจกต์');
-  var tasks = listObjects_(TASKS_SHEET);
   var taskIds = {};
-  for (var ti = 0; ti < tasks.length; ti++) {
-    if (String(tasks[ti].projectId) !== projectId) continue;
-    taskIds[String(tasks[ti].id)] = true;
+  var sheet = getSheet_(TASKS_SHEET);
+  var lastRow = sheet.getLastRow();
+  var lastCol = sheet.getLastColumn();
+  if (lastRow >= 2 && lastCol >= 1) {
+    var taskValues = sheet.getRange(1, 1, lastRow, lastCol).getValues();
+    var taskHeaders = taskValues[0];
+    var idIdx = taskHeaders.indexOf('id');
+    var projIdx = taskHeaders.indexOf('projectId');
+    if (idIdx >= 0 && projIdx >= 0) {
+      for (var ti = 1; ti < taskValues.length; ti++) {
+        if (String(taskValues[ti][projIdx]) !== projectId) continue;
+        taskIds[String(taskValues[ti][idIdx])] = true;
+      }
+    }
   }
-  var rawLogs = listObjectsFromSheet_(getSheet_(LOGS_SHEET));
+  var logSheet = getSheet_(LOGS_SHEET);
+  var logLastRow = logSheet.getLastRow();
+  var logLastCol = logSheet.getLastColumn();
   var taskLogs = [];
-  for (var li = 0; li < rawLogs.length; li++) {
-    var l = rawLogs[li];
-    if (!taskIds[String(l.taskId)]) continue;
-    taskLogs.push({
-      id: String(l.id),
-      taskId: isFinite(Number(l.taskId)) ? Number(l.taskId) : String(l.taskId),
-      timestamp: toIso_(l.timestamp),
-      actionBy: String(l.actionBy || ''),
-      actionType: String(l.actionType || ''),
-      detail: String(l.detail || '')
-    });
+  if (logLastRow >= 2 && logLastCol >= 1) {
+    var rawLogs = logSheet.getRange(1, 1, logLastRow, logLastCol).getValues();
+    var logHeaders = rawLogs[0];
+    var taskIdIdx = logHeaders.indexOf('taskId');
+    if (taskIdIdx >= 0) {
+      for (var li = 1; li < rawLogs.length; li++) {
+        var l = rawLogs[li];
+        if (!taskIds[String(l[taskIdIdx])]) continue;
+        taskLogs.push({
+          id: String(l[logHeaders.indexOf('id')]),
+          taskId: isFinite(Number(l[taskIdIdx])) ? Number(l[taskIdIdx]) : String(l[taskIdIdx]),
+          timestamp: toIso_(l[logHeaders.indexOf('timestamp')]),
+          actionBy: String(l[logHeaders.indexOf('actionBy')] || ''),
+          actionType: String(l[logHeaders.indexOf('actionType')] || ''),
+          detail: String(l[logHeaders.indexOf('detail')] || '')
+        });
+      }
+    }
   }
   taskLogs.sort(function (a, b) {
     return new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime();
@@ -607,27 +628,11 @@ function updateTaskStatus(payload) {
   var taskId = String(payload.taskId);
   var newStatus = String(payload.status);
   var userId = String(payload.userId || '');
-  var sheet = getSheet_(TASKS_SHEET);
-  var data = sheet.getDataRange().getValues();
-  var headers = data[0];
-  var idIdx = headers.indexOf('id');
-  var statusIdx = headers.indexOf('status');
-  var completedIdx = headers.indexOf('completedAt');
-  var found = null;
-
-  for (var i = 1; i < data.length; i++) {
-    if (String(data[i][idIdx]) === taskId) {
-      sheet.getRange(i + 1, statusIdx + 1).setValue(newStatus);
-      found = rowToObject_(headers, data[i]);
-      found.status = newStatus;
-      if (newStatus === 'Completed') {
-        var completedAt = new Date().toISOString();
-        sheet.getRange(i + 1, completedIdx + 1).setValue(completedAt);
-        found.completedAt = completedAt;
-      }
-      break;
-    }
+  var updates = { status: newStatus };
+  if (newStatus === 'Completed') {
+    updates.completedAt = new Date().toISOString();
   }
+  var found = updateRowById_(TASKS_SHEET, taskId, updates);
   if (!found) throw new Error('ไม่พบงาน');
   var defaultDetail = 'เปลี่ยนสถานะเป็น ' + newStatus;
   if (newStatus === 'Completed') {
@@ -650,7 +655,6 @@ function updateTaskStatus(payload) {
   if (newStatus === 'Review') {
     notifyHeadsReview_(found.title);
   }
-  invalidateBootstrapCache_();
   return { task: normalizeTask_(found), log: statusLog };
 }
 
@@ -660,24 +664,10 @@ function forwardTask(payload) {
   var newAssigneeId = String(payload.newAssigneeId);
   var userId = String(payload.userId || '');
   assertDeptAssign_(userId, newAssigneeId);
-  var sheet = getSheet_(TASKS_SHEET);
-  var data = sheet.getDataRange().getValues();
-  var headers = data[0];
-  var idIdx = headers.indexOf('id');
-  var assignedIdx = headers.indexOf('assignedTo');
-  var statusIdx = headers.indexOf('status');
-  var found = null;
-
-  for (var i = 1; i < data.length; i++) {
-    if (String(data[i][idIdx]) === taskId) {
-      sheet.getRange(i + 1, assignedIdx + 1).setValue(newAssigneeId);
-      sheet.getRange(i + 1, statusIdx + 1).setValue('Pending');
-      found = rowToObject_(headers, data[i]);
-      found.assignedTo = newAssigneeId;
-      found.status = 'Pending';
-      break;
-    }
-  }
+  var found = updateRowById_(TASKS_SHEET, taskId, {
+    assignedTo: newAssigneeId,
+    status: 'Pending'
+  });
   if (!found) throw new Error('ไม่พบงาน');
   var name = findUserName_(newAssigneeId);
   var fwdLog = addLog_(taskId, userId, 'Forwarded', 'โอนงานให้ ' + name);
@@ -690,7 +680,6 @@ function forwardTask(payload) {
     var fwdActor = findUserById_(userId);
     if (fwdDept) notifyLineDept_(fwdDept, 'assign', buildLineForwardMsg_(found, newAssignee, fwdActor));
   }
-  invalidateBootstrapCache_();
   return { task: normalizeTask_(found), log: fwdLog };
 }
 
@@ -698,29 +687,15 @@ function takeoverTask(payload) {
   openDatabase_(false);
   var taskId = String(payload.taskId);
   var userId = String(payload.userId);
-  var sheet = getSheet_(TASKS_SHEET);
-  var data = sheet.getDataRange().getValues();
-  var headers = data[0];
-  var idIdx = headers.indexOf('id');
-  var assignedIdx = headers.indexOf('assignedTo');
-  var statusIdx = headers.indexOf('status');
-  var found = null;
-  var oldAssignee = '';
-
-  for (var i = 1; i < data.length; i++) {
-    if (String(data[i][idIdx]) === taskId) {
-      oldAssignee = String(data[i][assignedIdx]);
-      sheet.getRange(i + 1, assignedIdx + 1).setValue(userId);
-      sheet.getRange(i + 1, statusIdx + 1).setValue('In Progress');
-      found = rowToObject_(headers, data[i]);
-      found.assignedTo = userId;
-      found.status = 'In Progress';
-      break;
-    }
-  }
+  var existing = findTaskById_(taskId);
+  if (!existing) throw new Error('ไม่พบงาน');
+  var oldAssignee = String(existing.assignedTo || '');
+  var found = updateRowById_(TASKS_SHEET, taskId, {
+    assignedTo: userId,
+    status: 'In Progress'
+  });
   if (!found) throw new Error('ไม่พบงาน');
   var takeLog = addLog_(taskId, userId, 'Takeover', 'ดึงงานมาจาก ' + findUserName_(oldAssignee) + ' เพื่อดำเนินการต่อ');
-  invalidateBootstrapCache_();
   return { task: normalizeTask_(found), log: takeLog };
 }
 
@@ -781,7 +756,6 @@ function updateTask(payload) {
   var row = updateRowById_(TASKS_SHEET, taskId, updates);
   if (!row) throw new Error('ไม่พบงาน');
   var log = addLog_(taskId, userId, 'Updated', payload.logDetail || 'อัปเดตงาน');
-  invalidateBootstrapCache_();
   return { task: normalizeTask_(row), log: log };
 }
 
@@ -808,10 +782,19 @@ function assertProjectVisibleToUser_(userId, project) {
 }
 
 function findTaskById_(taskId) {
-  var rows = listObjects_(TASKS_SHEET);
+  var sheet = getSheet_(TASKS_SHEET);
+  var lastRow = sheet.getLastRow();
+  var lastCol = sheet.getLastColumn();
+  if (lastRow < 2 || lastCol < 1) return null;
+  var values = sheet.getRange(1, 1, lastRow, lastCol).getValues();
+  var headers = values[0];
+  var idIdx = headers.indexOf('id');
+  if (idIdx < 0) return null;
   var needle = String(taskId);
-  for (var i = 0; i < rows.length; i++) {
-    if (String(rows[i].id) === needle) return normalizeTask_(rows[i]);
+  for (var i = 1; i < values.length; i++) {
+    if (String(values[i][idIdx]) !== needle) continue;
+    if (!values[i][0] && values[i].every(function (c) { return c === ''; })) continue;
+    return normalizeTask_(rowToObject_(headers, values[i]));
   }
   return null;
 }
@@ -2336,11 +2319,14 @@ function updateUserProfile(payload) {
 }
 
 function findUserById_(userId) {
-  var users = listUsers_();
-  for (var i = 0; i < users.length; i++) {
-    if (users[i].id === String(userId)) return users[i];
+  if (!_usersByIdMap) {
+    var users = listUsers_();
+    _usersByIdMap = {};
+    for (var i = 0; i < users.length; i++) {
+      _usersByIdMap[users[i].id] = users[i];
+    }
   }
-  return null;
+  return _usersByIdMap[String(userId)] || null;
 }
 
 function notifyUserEmail_(user, subject, body) {
@@ -2416,7 +2402,9 @@ function listContractExtensionsFromSs_(ss) {
 }
 
 function listUsers_() {
-  return listUsersFromSs_(openDatabase_(false));
+  if (_usersListCache) return _usersListCache;
+  _usersListCache = listUsersFromSs_(openDatabase_(false));
+  return _usersListCache;
 }
 
 function listProjects_() {
@@ -2509,21 +2497,44 @@ function normalizeMilestone_(m) {
 }
 
 function listStickyNotesForUser_(userId) {
-  return listObjects_(STICKY_NOTES_SHEET)
-    .filter(function (n) { return String(n.userId) === String(userId); })
-    .map(normalizeStickyNote_)
-    .sort(function (a, b) {
-      if (!!a.pinned !== !!b.pinned) return a.pinned ? -1 : 1;
-      return (a.zIndex || 0) - (b.zIndex || 0);
-    });
+  var sheet = getSheet_(STICKY_NOTES_SHEET);
+  var lastRow = sheet.getLastRow();
+  var lastCol = sheet.getLastColumn();
+  if (lastRow < 2 || lastCol < 1) return [];
+  var values = sheet.getRange(1, 1, lastRow, lastCol).getValues();
+  var headers = values[0];
+  var userIdx = headers.indexOf('userId');
+  if (userIdx < 0) return [];
+  var needle = String(userId);
+  var out = [];
+  for (var i = 1; i < values.length; i++) {
+    if (String(values[i][userIdx]) !== needle) continue;
+    if (!values[i][0] && values[i].every(function (c) { return c === ''; })) continue;
+    out.push(normalizeStickyNote_(rowToObject_(headers, values[i])));
+  }
+  out.sort(function (a, b) {
+    if (!!a.pinned !== !!b.pinned) return a.pinned ? -1 : 1;
+    return (a.zIndex || 0) - (b.zIndex || 0);
+  });
+  return out;
 }
 
 function findStickyNoteOwned_(id, userId) {
-  var notes = listObjects_(STICKY_NOTES_SHEET);
-  for (var i = 0; i < notes.length; i++) {
-    if (String(notes[i].id) === String(id) && String(notes[i].userId) === String(userId)) {
-      return normalizeStickyNote_(notes[i]);
-    }
+  var sheet = getSheet_(STICKY_NOTES_SHEET);
+  var lastRow = sheet.getLastRow();
+  var lastCol = sheet.getLastColumn();
+  if (lastRow < 2 || lastCol < 1) return null;
+  var values = sheet.getRange(1, 1, lastRow, lastCol).getValues();
+  var headers = values[0];
+  var idIdx = headers.indexOf('id');
+  var userIdx = headers.indexOf('userId');
+  if (idIdx < 0 || userIdx < 0) return null;
+  var idNeedle = String(id);
+  var userNeedle = String(userId);
+  for (var i = 1; i < values.length; i++) {
+    if (String(values[i][idIdx]) !== idNeedle) continue;
+    if (String(values[i][userIdx]) !== userNeedle) continue;
+    return normalizeStickyNote_(rowToObject_(headers, values[i]));
   }
   return null;
 }

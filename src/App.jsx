@@ -21,7 +21,7 @@ const SettingsPage = lazy(() => import('./Settings'));
 const AdminUsers = lazy(() => import('./AdminUsers'));
 
 const DAY = 86400000;
-const SYNC_INTERVAL_MS = 90000;
+const SYNC_INTERVAL_MS = 180000;
 const SYNC_DEBOUNCE_MS = 20000;
 const BOOT_SKIP_NETWORK_MS = 45000;
 const STICKY_STALE_MS = 45000;
@@ -122,6 +122,8 @@ export default function App() {
   const softRefreshingRef = useRef(false);
   const lastSyncAtRef = useRef(0);
   const lastStickySyncAtRef = useRef(0);
+  const currentModuleRef = useRef(currentModule);
+  const bellOpenRef = useRef(bellOpen);
   const taskActivityCacheRef = useRef(new Map());
   const desktopBellRef = useRef(null);
   const mobileBellRef = useRef(null);
@@ -253,8 +255,11 @@ export default function App() {
     if (!silent) setSyncing(true);
     try {
       const stickyStale = force || now - lastStickySyncAtRef.current >= STICKY_STALE_MS;
-      const bootPromise = api('getBootstrap', silent && !force ? {} : { force: true });
-      const stickyPromise = stickyStale
+      const needSticky = stickyStale && (
+        currentModuleRef.current === 'sticky' || bellOpenRef.current
+      );
+      const bootPromise = api('getBootstrap', force ? { force: true } : {});
+      const stickyPromise = needSticky
         ? api('listStickyNotes', { userId: currentUser.id })
         : Promise.resolve(null);
       const [data, stickyRows] = await Promise.all([bootPromise, stickyPromise]);
@@ -345,9 +350,26 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    currentModuleRef.current = currentModule;
+    if (currentModule === 'sticky' && currentUser && !bootLoading) {
+      runBackgroundSync({ silent: true });
+    }
+  }, [currentModule, currentUser?.id, bootLoading]);
+
+  useEffect(() => {
+    bellOpenRef.current = bellOpen;
+    if (bellOpen && currentUser && !bootLoading) {
+      runBackgroundSync({ silent: true });
+    }
+  }, [bellOpen, currentUser?.id, bootLoading]);
+
+  useEffect(() => {
     if (!currentUser || bootLoading) return undefined;
 
-    runBackgroundSync({ silent: true, force: true });
+    const cacheAge = bootstrapCacheAgeMs();
+    if (cacheAge === null || cacheAge >= BOOT_SKIP_NETWORK_MS) {
+      runBackgroundSync({ silent: true });
+    }
 
     const onVisible = () => {
       if (document.visibilityState === 'visible') runBackgroundSync({ silent: true });
@@ -452,6 +474,12 @@ export default function App() {
     return m;
   }, [users]);
 
+  const projectsById = useMemo(() => {
+    const m = new Map();
+    projects.forEach((p) => m.set(p.id, p));
+    return m;
+  }, [projects]);
+
   const tasksByProjectId = useMemo(() => {
     const m = new Map();
     tasks.forEach((t) => {
@@ -545,6 +573,33 @@ export default function App() {
     if (boardPersonFilter === 'all') return visibleTasks;
     return visibleTasks.filter((t) => String(t.assignedTo) === String(boardPersonFilter));
   }, [visibleTasks, boardPersonFilter]);
+
+  const boardTasksByStatus = useMemo(() => {
+    const groups = {
+      Pending: [],
+      'In Progress': [],
+      Review: [],
+      Completed: [],
+    };
+    boardTasks.forEach((t) => {
+      if (groups[t.status]) groups[t.status].push(t);
+    });
+    groups.Completed.sort((a, b) => {
+      const ta = new Date(a.completedAt || a.dueDate || a.createdAt || 0).getTime();
+      const tb = new Date(b.completedAt || b.dueDate || b.createdAt || 0).getTime();
+      return tb - ta;
+    });
+    return groups;
+  }, [boardTasks]);
+
+  const taskCountByAssignee = useMemo(() => {
+    const m = new Map();
+    visibleTasks.forEach((t) => {
+      const id = String(t.assignedTo || '');
+      m.set(id, (m.get(id) || 0) + 1);
+    });
+    return m;
+  }, [visibleTasks]);
   const isManager = currentUser?.role === 'Head' || currentUser?.role === 'Admin';
   const isStaff = currentUser?.role === 'Staff';
   const selectedAssignee = selectedTask ? usersById.get(selectedTask.assignedTo) : null;
@@ -955,12 +1010,15 @@ export default function App() {
     return () => clearTimeout(timer);
   }, [currentUser?.id, bootLoading]);
 
-  const statusCounts = useMemo(() => ({
-    all: visibleTasks.length,
-    Pending: visibleTasks.filter((t) => t.status === 'Pending').length,
-    'In Progress': visibleTasks.filter((t) => t.status === 'In Progress').length,
-    Completed: visibleTasks.filter((t) => t.status === 'Completed').length,
-  }), [visibleTasks]);
+  const statusCounts = useMemo(() => {
+    const counts = { all: visibleTasks.length, Pending: 0, 'In Progress': 0, Completed: 0 };
+    visibleTasks.forEach((t) => {
+      if (t.status === 'Pending') counts.Pending += 1;
+      else if (t.status === 'In Progress') counts['In Progress'] += 1;
+      else if (t.status === 'Completed') counts.Completed += 1;
+    });
+    return counts;
+  }, [visibleTasks]);
 
   const tasksByDueDay = useMemo(() => {
     const m = new Map();
@@ -1499,7 +1557,7 @@ export default function App() {
             </div>
           </div>
           <div className="flex items-center gap-1">
-            <button type="button" title="ซิงก์ข้อมูล" className="p-2 rounded-xl hover:bg-white/10 transition-colors" onClick={() => softRefresh({ silent: false })}>
+            <button type="button" title="ซิงก์ข้อมูล" className="p-2 rounded-xl hover:bg-white/10 transition-colors" onClick={() => softRefresh({ silent: false, force: true })}>
               <RefreshCw className={`w-5 h-5 text-teal-100/80 ${syncing ? 'animate-spin' : ''}`} />
             </button>
             <div className="relative" ref={desktopBellRef}>
@@ -1590,7 +1648,7 @@ export default function App() {
           </div>
         </div>
         <div className="flex items-center gap-1 shrink-0">
-          <button type="button" className="p-2.5 rounded-xl hover:bg-white/10" onClick={() => softRefresh({ silent: false })} aria-label="ซิงก์">
+          <button type="button" className="p-2.5 rounded-xl hover:bg-white/10" onClick={() => softRefresh({ silent: false, force: true })} aria-label="ซิงก์">
             <RefreshCw className={`w-5 h-5 text-teal-100 ${syncing ? 'animate-spin' : ''}`} />
           </button>
           <div className="relative" ref={mobileBellRef}>
@@ -1662,7 +1720,7 @@ export default function App() {
             <div className="p-3 border-t border-white/10">
               <button
                 type="button"
-                onClick={() => { setMobileMoreOpen(false); softRefresh({ silent: false }); }}
+                onClick={() => { setMobileMoreOpen(false); softRefresh({ silent: false, force: true }); }}
                 className="gtp-nav-item flex items-center gap-3 px-4 py-3 rounded-2xl w-full text-teal-100/80 mb-1"
               >
                 <RefreshCw className="w-5 h-5" />
@@ -1911,7 +1969,7 @@ export default function App() {
                         <span className="text-[10px] font-black text-slate-400">{visibleTasks.length}</span>
                       </button>
                       {boardFilterUsers.map((u) => {
-                        const count = visibleTasks.filter((t) => String(t.assignedTo) === String(u.id)).length;
+                        const count = taskCountByAssignee.get(String(u.id)) || 0;
                         return (
                           <button
                             key={u.id}
@@ -1958,14 +2016,7 @@ export default function App() {
             <div className="flex-1 overflow-x-auto pb-4">
               <div className="flex gap-5 h-full min-w-max items-start">
                 {['Pending', 'In Progress', 'Review', 'Completed'].map((status) => {
-                  let colTasks = boardTasks.filter((t) => t.status === status);
-                  if (status === 'Completed') {
-                    colTasks = [...colTasks].sort((a, b) => {
-                      const ta = new Date(a.completedAt || a.dueDate || a.createdAt || 0).getTime();
-                      const tb = new Date(b.completedAt || b.dueDate || b.createdAt || 0).getTime();
-                      return tb - ta;
-                    });
-                  }
+                  const colTasks = boardTasksByStatus[status] || [];
                   const totalInCol = colTasks.length;
                   const hiddenCompleted = status === 'Completed' && !showAllCompleted && totalInCol > COMPLETED_PREVIEW
                     ? totalInCol - COMPLETED_PREVIEW
@@ -1983,7 +2034,7 @@ export default function App() {
                       </div>
                       <div className="p-3 flex-1 overflow-y-auto space-y-3 custom-scrollbar">
                         {shownTasks.map((task) => {
-                          const assignee = users.find((u) => u.id === task.assignedTo);
+                          const assignee = usersById.get(task.assignedTo);
                           const overdue = isOverdue(task.dueDate, task.status);
                           const isMyTask = task.assignedTo === currentUser.id;
                           const commentCount = commentCounts[String(task.id)] || 0;
@@ -2035,7 +2086,7 @@ export default function App() {
                               {!isMyTask && overdue && <div className="absolute -top-2 -right-2 bg-rose-500 text-white text-[9px] font-bold px-2 py-0.5 rounded-full shadow-md">เลยกำหนด</div>}
                               {task.projectId && !activeProjectId && (
                                 <span className="text-[10px] font-bold text-teal-700 bg-teal-50 px-1.5 py-0.5 rounded-lg mb-2 inline-block truncate max-w-[80%] ml-2">
-                                  {projects.find((p) => p.id === task.projectId)?.name}
+                                  {projectsById.get(task.projectId)?.name}
                                 </span>
                               )}
                               {boardEditingTaskId === task.id ? (

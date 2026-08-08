@@ -78,6 +78,7 @@ export default function StickyNotes({ currentUser, showToast, onRemindersChange,
   const [labelFilter, setLabelFilter] = useState('');
   const boardRef = useRef(null);
   const dragRef = useRef(null);
+  const noteElRefs = useRef({});
   const saveTimerRef = useRef({});
   const topZRef = useRef(1);
   const remindedRef = useRef(new Set());
@@ -146,8 +147,26 @@ export default function StickyNotes({ currentUser, showToast, onRemindersChange,
       } catch (err) {
         showToast(err?.message || 'บันทึกโน้ตไม่สำเร็จ');
       }
-    }, 450);
+    }, 1000);
   }, [currentUser.id, showToast]);
+
+  const applyNoteVisual = useCallback((id, patch) => {
+    const el = noteElRefs.current[id];
+    if (!el) return;
+    if (patch.x !== undefined) el.style.left = `${patch.x}px`;
+    if (patch.y !== undefined) el.style.top = `${patch.y}px`;
+    if (patch.width !== undefined) el.style.width = `${patch.width}px`;
+    if (patch.height !== undefined) el.style.height = `${patch.height}px`;
+  }, []);
+
+  const resetNoteVisual = useCallback((id) => {
+    const el = noteElRefs.current[id];
+    if (!el) return;
+    el.style.left = '';
+    el.style.top = '';
+    el.style.width = '';
+    el.style.height = '';
+  }, []);
 
   const allLabels = useMemo(() => {
     const set = new Set();
@@ -182,6 +201,11 @@ export default function StickyNotes({ currentUser, showToast, onRemindersChange,
         return (a.zIndex || 0) - (b.zIndex || 0);
       });
   }, [notes, view, query, labelFilter]);
+
+  const boardHeight = useMemo(
+    () => Math.max(720, ...visibleNotes.map((n) => n.y + n.height + 80)),
+    [visibleNotes],
+  );
 
   // Browser / in-app reminders (like Keep time reminders)
   useEffect(() => {
@@ -394,7 +418,7 @@ export default function StickyNotes({ currentUser, showToast, onRemindersChange,
       const height = Math.max(140, Math.min(d.origH + (e.clientY - d.startY), maxH));
       d.lastW = Math.round(width);
       d.lastH = Math.round(height);
-      patchNote(d.id, { width: d.lastW, height: d.lastH }, { persist: false });
+      applyNoteVisual(d.id, { width: d.lastW, height: d.lastH });
       return;
     }
     const dx = e.clientX - d.startX;
@@ -403,23 +427,31 @@ export default function StickyNotes({ currentUser, showToast, onRemindersChange,
     const y = Math.max(8, Math.min(d.origY + dy, Math.max(8, d.boardH - d.noteH - 8)));
     d.lastX = x;
     d.lastY = y;
-    patchNote(d.id, { x, y }, { persist: false });
+    applyNoteVisual(d.id, { x, y });
   };
 
   const finishDrag = useCallback(() => {
     const d = dragRef.current;
     if (!d) return;
+    const noteId = d.id;
     dragRef.current = null;
+    resetNoteVisual(noteId);
     if (d.mode === 'resize') {
       if (d.lastW !== undefined && d.lastH !== undefined) {
-        queueSave(d.id, { width: d.lastW, height: d.lastH });
+        setNotes((prev) => prev.map((n) => (
+          n.id === noteId ? normalizeNote({ ...n, width: d.lastW, height: d.lastH }) : n
+        )));
+        queueSave(noteId, { width: d.lastW, height: d.lastH });
       }
       return;
     }
     if (d.lastX !== undefined && d.lastY !== undefined) {
-      queueSave(d.id, { x: d.lastX, y: d.lastY });
+      setNotes((prev) => prev.map((n) => (
+        n.id === noteId ? normalizeNote({ ...n, x: d.lastX, y: d.lastY }) : n
+      )));
+      queueSave(noteId, { x: d.lastX, y: d.lastY });
     }
-  }, [queueSave]);
+  }, [queueSave, resetNoteVisual]);
 
   const onBoardBackgroundDown = (e) => {
     if (e.target.closest('.sticky-note')) return;
@@ -587,7 +619,7 @@ export default function StickyNotes({ currentUser, showToast, onRemindersChange,
       >
         <div
           className="relative min-h-full min-w-full"
-          style={{ height: Math.max(720, ...visibleNotes.map((n) => n.y + n.height + 80)), width: '100%' }}
+          style={{ height: boardHeight, width: '100%' }}
         >
           {visibleNotes.length === 0 && (
             <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none px-6 text-center">
@@ -613,6 +645,10 @@ export default function StickyNotes({ currentUser, showToast, onRemindersChange,
             return (
               <div
                 key={note.id}
+                ref={(el) => {
+                  if (el) noteElRefs.current[note.id] = el;
+                  else delete noteElRefs.current[note.id];
+                }}
                 role="article"
                 onPointerDown={(e) => onPointerDown(e, note)}
                 onClick={() => setSelectedId(note.id)}
