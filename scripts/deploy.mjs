@@ -7,7 +7,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const root = join(__dirname, '..');
 const stateFile = join(root, '.deploy-state.json');
 
-/** Locked production Web App — updated in place on every npm run deploy */
+/** Locked production Web App — updated in place on every npm run deploy / GitHub Actions */
 const DEFAULT_DEPLOYMENT_ID = 'AKfycbx7hW5XO0qGwApnthIHOLxevSrGwyxm7K1P1NCbmmZyyDbv1InzKibX2WY-JgE4FSgYWQ';
 const SCRIPT_ID = '1zONm-pkadJXG9_JoV7tb9maJeEfX6WlUW8stHSB18FaWrXQgFCWZdw32';
 
