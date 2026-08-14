@@ -1,11 +1,11 @@
-import React, { useRef } from 'react';
+import React, { useEffect, useRef } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import BoardTaskCard from './BoardTaskCard';
 import { boardColumnTheme, getColumnPreviewLimit, getStatusText } from './boardUtils';
 
-const CARD_GAP = 12;
-const CARD_HEIGHT_COMPACT = 88;
-const CARD_HEIGHT_NORMAL = 148;
+const CARD_GAP = 8;
+const CARD_HEIGHT_COMPACT = 72;
+const CARD_HEIGHT_NORMAL = 136;
 
 export default function VirtualBoardColumn({
   status,
@@ -41,12 +41,42 @@ export default function VirtualBoardColumn({
   const shownTasks = hiddenCount > 0 ? tasks.slice(0, limit) : tasks;
 
   const estimateSize = compact ? CARD_HEIGHT_COMPACT : CARD_HEIGHT_NORMAL;
+  const useVirtual = shownTasks.length > 20;
   const virtualizer = useVirtualizer({
     count: shownTasks.length,
     getScrollElement: () => parentRef.current,
     estimateSize: () => estimateSize + CARD_GAP,
     overscan: 4,
   });
+
+  useEffect(() => {
+    if (useVirtual) virtualizer.measure();
+  }, [compact, shownTasks.length, useVirtual, virtualizer]);
+
+  const renderCard = (task) => (
+    <BoardTaskCard
+      key={task.id}
+      task={task}
+      status={status}
+      assignee={usersById.get(task.assignedTo)}
+      currentUser={currentUser}
+      commentCount={commentCounts[String(task.id)] || 0}
+      projectName={projectsById.get(task.projectId)?.name}
+      showProjectChip={!!task.projectId && !activeProjectId}
+      compact={compact}
+      editing={editingTaskId === task.id}
+      titleDraft={titleDraft}
+      busy={busy}
+      canEdit={canEditTask(task)}
+      canDelete={canDeleteTask(task)}
+      onSelect={onSelectTask}
+      onStartEdit={onStartEdit}
+      onTitleDraftChange={onTitleDraftChange}
+      onSaveTitle={onSaveTitle}
+      onCancelEdit={onCancelEdit}
+      onDelete={onDeleteTask}
+    />
+  );
 
   if (collapsed && status === 'Completed') {
     return (
@@ -94,8 +124,9 @@ export default function VirtualBoardColumn({
           <p className="text-center text-xs text-slate-400 font-medium py-8">
             {status === 'Completed' ? 'ยังไม่มีงานเสร็จสิ้น' : 'ยังไม่มีงานในคอลัมน์นี้'}
           </p>
-        ) : (
+        ) : useVirtual ? (
           <div
+            key={compact ? 'compact' : 'normal'}
             style={{
               height: `${virtualizer.getTotalSize()}px`,
               width: '100%',
@@ -104,11 +135,11 @@ export default function VirtualBoardColumn({
           >
             {virtualizer.getVirtualItems().map((virtualRow) => {
               const task = shownTasks[virtualRow.index];
-              const assignee = usersById.get(task.assignedTo);
-              const commentCount = commentCounts[String(task.id)] || 0;
               return (
                 <div
                   key={task.id}
+                  ref={virtualizer.measureElement}
+                  data-index={virtualRow.index}
                   style={{
                     position: 'absolute',
                     top: 0,
@@ -117,30 +148,14 @@ export default function VirtualBoardColumn({
                     transform: `translateY(${virtualRow.start}px)`,
                   }}
                 >
-                  <BoardTaskCard
-                    task={task}
-                    status={status}
-                    assignee={assignee}
-                    currentUser={currentUser}
-                    commentCount={commentCount}
-                    projectName={projectsById.get(task.projectId)?.name}
-                    showProjectChip={!!task.projectId && !activeProjectId}
-                    compact={compact}
-                    editing={editingTaskId === task.id}
-                    titleDraft={titleDraft}
-                    busy={busy}
-                    canEdit={canEditTask(task)}
-                    canDelete={canDeleteTask(task)}
-                    onSelect={onSelectTask}
-                    onStartEdit={onStartEdit}
-                    onTitleDraftChange={onTitleDraftChange}
-                    onSaveTitle={onSaveTitle}
-                    onCancelEdit={onCancelEdit}
-                    onDelete={onDeleteTask}
-                  />
+                  {renderCard(task)}
                 </div>
               );
             })}
+          </div>
+        ) : (
+          <div className={compact ? 'space-y-1.5' : 'space-y-3'}>
+            {shownTasks.map((task) => renderCard(task))}
           </div>
         )}
 
