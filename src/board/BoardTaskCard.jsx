@@ -35,8 +35,8 @@ function BoardTaskCardInner({
   const theme = boardColumnTheme[status];
   const overdue = isOverdue(task.dueDate, task.status);
   const isMyTask = String(task.assignedTo) === String(currentUser?.id);
-  const cardPadding = compact ? 'p-2.5' : 'p-4';
-  const titleClass = compact ? 'text-xs mb-1' : 'text-sm mb-2';
+  const cardPadding = compact ? 'p-2' : 'p-4';
+  const titleClass = compact ? 'text-xs mb-0 line-clamp-2 leading-snug' : 'text-sm mb-2 leading-relaxed';
 
   return (
     <div
@@ -44,13 +44,15 @@ function BoardTaskCardInner({
         if (editing) return;
         onSelect(task);
       }}
-      className={`bg-white ${cardPadding} rounded-2xl shadow-sm border-2 relative group cursor-pointer hover:shadow-md hover:-translate-y-0.5 transition-all ${
+      className={`bg-white ${cardPadding} ${compact ? 'rounded-xl' : 'rounded-2xl'} shadow-sm border-2 relative group cursor-pointer hover:shadow-md ${
+        compact ? '' : 'hover:-translate-y-0.5'
+      } transition-all ${
         overdue ? 'border-rose-400 ring-2 ring-rose-100' : theme.cardBorder
       } ${isMyTask && status === 'Pending' ? 'ring-2 ring-amber-200' : ''} ${status === 'Completed' ? 'opacity-90' : ''} ${
         editing ? 'ring-2 ring-teal-300 cursor-default' : ''
       }`}
     >
-      <div className={`absolute left-0 top-3 bottom-3 w-1 rounded-r-full ${theme.accent}`} />
+      <div className={`absolute left-0 ${compact ? 'top-2 bottom-2' : 'top-3 bottom-3'} w-1 rounded-r-full ${theme.accent}`} />
       {task.isRecurring && !editing && (
         <Repeat className={`${compact ? 'w-3 h-3 top-2 right-2' : 'w-4 h-4 top-3.5 right-3.5'} absolute text-slate-300`} />
       )}
@@ -94,7 +96,7 @@ function BoardTaskCardInner({
           เลยกำหนด
         </div>
       )}
-      {showProjectChip && projectName && (
+      {showProjectChip && projectName && !compact && (
         <span className="text-[10px] font-bold text-teal-700 bg-teal-50 px-1.5 py-0.5 rounded-lg mb-2 inline-block truncate max-w-[80%] ml-2">
           {projectName}
         </span>
@@ -135,7 +137,7 @@ function BoardTaskCardInner({
       {!compact && isMyTask && status !== 'Completed' && (
         <p className="text-[10px] font-extrabold text-teal-600 mb-3 pl-2">แตะการ์ด → อัปเดตสถานะ</p>
       )}
-      <div className={`flex justify-between items-end ${compact ? 'pt-1.5' : 'pt-3'} border-t border-slate-100/80 pl-2`}>
+      <div className={`flex justify-between items-center ${compact ? 'pt-1 mt-1' : 'pt-3 items-end'} border-t border-slate-100/80 pl-2`}>
         <div className="flex items-center space-x-2">
           <div className={`${compact ? 'w-6 h-6 text-[9px]' : 'w-7 h-7 text-[10px]'} rounded-full flex items-center justify-center font-extrabold ${
             isMyTask ? 'bg-teal-500 text-white' : 'bg-[#f3f9fc] text-[#5b7a8a]'
@@ -156,7 +158,7 @@ function BoardTaskCardInner({
               {commentCount}
             </span>
           )}
-          <span className={`flex items-center px-1.5 py-0.5 rounded ${
+          <span className={`flex items-center ${compact ? 'text-[10px] px-1 py-0' : 'text-[11px] px-1.5 py-0.5'} rounded ${
             !task.dueDate
               ? 'text-slate-400 bg-slate-50 border border-slate-100'
               : overdue
