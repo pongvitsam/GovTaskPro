@@ -13,6 +13,8 @@ import ProjectTimeBar from './ProjectTimeBar';
 import { readSession, saveSession, clearSession, readBootstrapCache, writeBootstrapCache, bootstrapCacheAgeMs } from './session';
 import ThaiDateField from './ThaiDateField';
 import { buildProjectActivityForProject, summarizeRecentActivity } from './projectActivity';
+import BoardView from './board/BoardView';
+import { getStatusColor, getStatusText, isOverdue } from './board/boardUtils';
 
 const ProjectDetail = lazy(() => import('./ProjectDetail'));
 const loadStickyNotesModule = () => import('./StickyNotes');
@@ -86,11 +88,6 @@ export default function App() {
   const [selectedTask, setSelectedTask] = useState(null);
   const [taskModalTab, setTaskModalTab] = useState('details');
   const [taskEditDraft, setTaskEditDraft] = useState(null);
-  const [boardEditingTaskId, setBoardEditingTaskId] = useState(null);
-  const [boardTitleDraft, setBoardTitleDraft] = useState('');
-  const [boardPersonFilter, setBoardPersonFilter] = useState('all');
-  const [boardPersonFilterOpen, setBoardPersonFilterOpen] = useState(false);
-  const boardPersonFilterRef = useRef(null);
   const [createType, setCreateType] = useState('task');
   const [createReturnModule, setCreateReturnModule] = useState('dashboard');
   const [toastMsg, setToastMsg] = useState(null);
@@ -98,9 +95,6 @@ export default function App() {
   const [currentMonth, setCurrentMonth] = useState(new Date());
   const [reportUser, setReportUser] = useState('all');
   const [reportPeriod, setReportPeriod] = useState('month');
-  /** Completed column grows forever — preview recent only unless expanded */
-  const [showAllCompleted, setShowAllCompleted] = useState(false);
-  const COMPLETED_PREVIEW = 8;
   const [loginError, setLoginError] = useState(null);
   const [loginBusy, setLoginBusy] = useState(false);
   const [mobileMoreOpen, setMobileMoreOpen] = useState(false);
@@ -156,57 +150,7 @@ export default function App() {
     setCurrentModule(createReturnModule || 'dashboard');
   };
 
-  const getStatusColor = (status) => ({
-    Pending: 'bg-amber-100 text-amber-900 border-amber-300',
-    'In Progress': 'bg-sky-100 text-sky-900 border-sky-300',
-    Review: 'bg-violet-100 text-violet-900 border-violet-300',
-    Completed: 'bg-emerald-100 text-emerald-900 border-emerald-300',
-  }[status] || 'bg-slate-50 text-slate-700 border-slate-100');
-
-  const boardColumnTheme = {
-    Pending: {
-      border: 'border-amber-300',
-      bg: 'bg-gradient-to-b from-amber-100/90 via-amber-50/70 to-white',
-      header: 'bg-amber-500 text-white',
-      badge: 'bg-white/95 text-amber-800',
-      cardBorder: 'border-amber-200',
-      accent: 'bg-amber-500',
-    },
-    'In Progress': {
-      border: 'border-sky-300',
-      bg: 'bg-gradient-to-b from-sky-100/90 via-sky-50/70 to-white',
-      header: 'bg-sky-500 text-white',
-      badge: 'bg-white/95 text-sky-800',
-      cardBorder: 'border-sky-200',
-      accent: 'bg-sky-500',
-    },
-    Review: {
-      border: 'border-violet-300',
-      bg: 'bg-gradient-to-b from-violet-100/90 via-violet-50/70 to-white',
-      header: 'bg-violet-500 text-white',
-      badge: 'bg-white/95 text-violet-800',
-      cardBorder: 'border-violet-200',
-      accent: 'bg-violet-500',
-    },
-    Completed: {
-      border: 'border-emerald-300',
-      bg: 'bg-gradient-to-b from-emerald-100/90 via-emerald-50/70 to-white',
-      header: 'bg-emerald-600 text-white',
-      badge: 'bg-white/95 text-emerald-800',
-      cardBorder: 'border-emerald-200',
-      accent: 'bg-emerald-600',
-    },
-  };
-
-  const getStatusText = (status) => ({
-    Pending: 'รอรับงาน',
-    'In Progress': 'กำลังทำ',
-    Review: 'รอตรวจ',
-    Completed: 'เสร็จสิ้น',
-  }[status] || status);
-
   const formatDate = (iso) => formatThaiDate(iso);
-  const isOverdue = (dueDate, status) => dueDate && status !== 'Completed' && new Date(dueDate).setHours(0, 0, 0, 0) < new Date().setHours(0, 0, 0, 0);
 
   const applyBootstrap = (data, { restoreSession = true, mergeLazy = false } = {}) => {
     setUsers(data.users || []);
@@ -417,16 +361,6 @@ export default function App() {
   }, [currentUser?.id, bootLoading]);
 
   useEffect(() => {
-    if (!boardPersonFilterOpen) return undefined;
-    const onDoc = (e) => {
-      if (boardPersonFilterRef.current?.contains(e.target)) return;
-      setBoardPersonFilterOpen(false);
-    };
-    document.addEventListener('mousedown', onDoc);
-    return () => document.removeEventListener('mousedown', onDoc);
-  }, [boardPersonFilterOpen]);
-
-  useEffect(() => {
     if (!selectedTask) return undefined;
     const taskId = selectedTask.id;
     const cacheKey = String(taskId);
@@ -590,42 +524,6 @@ export default function App() {
     return deptUsers.filter((u) => u.role !== 'Admin');
   }, [deptUsers, activeUsers, currentUser]);
 
-  const boardFilterUsers = useMemo(
-    () => [...assignableUsers].sort((a, b) => String(a.name).localeCompare(String(b.name), 'th')),
-    [assignableUsers],
-  );
-
-  const boardTasks = useMemo(() => {
-    if (boardPersonFilter === 'all') return visibleTasks;
-    return visibleTasks.filter((t) => String(t.assignedTo) === String(boardPersonFilter));
-  }, [visibleTasks, boardPersonFilter]);
-
-  const boardTasksByStatus = useMemo(() => {
-    const groups = {
-      Pending: [],
-      'In Progress': [],
-      Review: [],
-      Completed: [],
-    };
-    boardTasks.forEach((t) => {
-      if (groups[t.status]) groups[t.status].push(t);
-    });
-    groups.Completed.sort((a, b) => {
-      const ta = new Date(a.completedAt || a.dueDate || a.createdAt || 0).getTime();
-      const tb = new Date(b.completedAt || b.dueDate || b.createdAt || 0).getTime();
-      return tb - ta;
-    });
-    return groups;
-  }, [boardTasks]);
-
-  const taskCountByAssignee = useMemo(() => {
-    const m = new Map();
-    visibleTasks.forEach((t) => {
-      const id = String(t.assignedTo || '');
-      m.set(id, (m.get(id) || 0) + 1);
-    });
-    return m;
-  }, [visibleTasks]);
   const isManager = currentUser?.role === 'Head' || currentUser?.role === 'Admin';
   const isStaff = currentUser?.role === 'Staff';
   const selectedAssignee = selectedTask ? usersById.get(selectedTask.assignedTo) : null;
@@ -1295,22 +1193,18 @@ export default function App() {
     }
   };
 
-  const handleSaveBoardTaskTitle = async (taskId) => {
-    if (!currentUser) return;
-    const title = boardTitleDraft.trim();
+  const handleSaveBoardTaskTitle = async (taskId, titleInput) => {
+    if (!currentUser) return false;
+    const title = (titleInput || '').trim();
     if (!title) {
       showToast('❌ กรอกชื่องาน');
-      return;
+      return false;
     }
     const task = tasks.find((t) => String(t.id) === String(taskId));
-    if (!task || !canEditTask(task)) return;
-    if (title === (task.title || '')) {
-      setBoardEditingTaskId(null);
-      return;
-    }
+    if (!task || !canEditTask(task)) return false;
+    if (title === (task.title || '')) return true;
     const prevTitle = task.title || '';
     patchTask({ ...task, title });
-    setBoardEditingTaskId(null);
     try {
       const result = await api('updateTask', {
         taskId,
@@ -1320,9 +1214,11 @@ export default function App() {
       });
       patchTask(result?.task || result, result?.log);
       showToast('✅ บันทึกชื่องานแล้ว');
+      return true;
     } catch (err) {
       patchTask({ ...task, title: prevTitle });
       showToast('❌ ' + (err?.message || String(err)));
+      return false;
     }
   };
 
@@ -2022,256 +1918,24 @@ export default function App() {
         )}
 
         {currentModule === 'board' && (
-          <div className="flex flex-col h-full p-6 md:p-8 gtp-fade-in">
-            <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 space-y-4 md:space-y-0">
-              <h2 className="gtp-display text-2xl font-extrabold text-[#1e3a4c] flex items-center">
-                กระดานงาน
-                {activeProjectId && (
-                  <span className="ml-3 text-sm font-bold text-teal-700 bg-teal-50 border border-teal-100 px-3 py-1 rounded-full">
-                    {visibleProjects.find((p) => p.id === activeProjectId)?.name}
-                  </span>
-                )}
-              </h2>
-              <div className="flex flex-wrap items-center gap-2">
-                <div className="relative" ref={boardPersonFilterRef}>
-                  <button
-                    type="button"
-                    onClick={() => setBoardPersonFilterOpen((v) => !v)}
-                    className={`px-4 py-2.5 text-sm font-extrabold rounded-2xl border flex items-center gap-2 shadow-sm transition-colors ${
-                      boardPersonFilter !== 'all'
-                        ? 'bg-teal-50 border-teal-200 text-teal-800'
-                        : 'bg-white/90 border-slate-100 text-[#5b7a8a] hover:bg-white'
-                    }`}
-                  >
-                    <User className="w-4 h-4 shrink-0" />
-                    {boardPersonFilter === 'all'
-                      ? 'ฟิลเตอร์คน'
-                      : (usersById.get(boardPersonFilter)?.name || 'ฟิลเตอร์คน')}
-                    {boardPersonFilter !== 'all' && (
-                      <span className="text-[10px] font-black bg-teal-500 text-white px-1.5 py-0.5 rounded-full">
-                        {boardTasks.length}
-                      </span>
-                    )}
-                  </button>
-                  {boardPersonFilterOpen && (
-                    <div className="absolute right-0 top-full mt-2 z-30 w-64 max-h-72 overflow-y-auto bg-white rounded-2xl border border-slate-100 shadow-xl py-2 gtp-fade-in">
-                      <button
-                        type="button"
-                        onClick={() => { setBoardPersonFilter('all'); setBoardPersonFilterOpen(false); }}
-                        className={`w-full text-left px-4 py-2.5 text-sm font-bold hover:bg-[#f3f9fc] flex items-center justify-between ${boardPersonFilter === 'all' ? 'text-teal-700 bg-teal-50/60' : 'text-[#1e3a4c]'}`}
-                      >
-                        ทุกคน
-                        <span className="text-[10px] font-black text-slate-400">{visibleTasks.length}</span>
-                      </button>
-                      {boardFilterUsers.map((u) => {
-                        const count = taskCountByAssignee.get(String(u.id)) || 0;
-                        return (
-                          <button
-                            key={u.id}
-                            type="button"
-                            onClick={() => { setBoardPersonFilter(u.id); setBoardPersonFilterOpen(false); }}
-                            className={`w-full text-left px-4 py-2.5 text-sm font-bold hover:bg-[#f3f9fc] flex items-center gap-2 ${boardPersonFilter === u.id ? 'text-teal-700 bg-teal-50/60' : 'text-[#1e3a4c]'}`}
-                          >
-                            <span className="w-7 h-7 rounded-full bg-[#f3f9fc] text-[#5b7a8a] text-[10px] font-extrabold flex items-center justify-center shrink-0">
-                              {u.name?.charAt(0)}
-                            </span>
-                            <span className="flex-1 truncate">{u.name}</span>
-                            <span className="text-[10px] font-black text-slate-400">{count}</span>
-                          </button>
-                        );
-                      })}
-                    </div>
-                  )}
-                </div>
-                {activeProjectId && (
-                  <button onClick={() => setActiveProjectId(null)} className="px-4 py-2.5 text-sm font-bold text-[#5b7a8a] bg-white/90 border border-slate-100 rounded-2xl hover:bg-white shadow-sm">
-                    ดูทั้งหมด
-                  </button>
-                )}
-                <button onClick={() => openCreateModule('board')} className="gtp-btn-primary px-4 py-2.5 text-sm flex items-center">
-                  <Plus className="w-4 h-4 mr-1.5" /> สร้างงาน
-                </button>
-              </div>
-            </div>
-
-            {boardPersonFilter !== 'all' && (
-              <div className="mb-4 flex items-center gap-2 text-sm font-bold text-teal-800 bg-teal-50 border border-teal-100 rounded-2xl px-4 py-2.5 w-fit">
-                <User className="w-4 h-4" />
-                แสดงงานของ {usersById.get(boardPersonFilter)?.name}
-                <button
-                  type="button"
-                  onClick={() => setBoardPersonFilter('all')}
-                  className="ml-1 text-teal-600 hover:text-teal-800 underline text-xs font-extrabold"
-                >
-                  ล้างฟิลเตอร์
-                </button>
-              </div>
-            )}
-
-            <div className="flex-1 overflow-x-auto pb-4">
-              <div className="flex gap-5 h-full min-w-max items-start">
-                {['Pending', 'In Progress', 'Review', 'Completed'].map((status) => {
-                  const colTasks = boardTasksByStatus[status] || [];
-                  const totalInCol = colTasks.length;
-                  const hiddenCompleted = status === 'Completed' && !showAllCompleted && totalInCol > COMPLETED_PREVIEW
-                    ? totalInCol - COMPLETED_PREVIEW
-                    : 0;
-                  const shownTasks = hiddenCompleted > 0 ? colTasks.slice(0, COMPLETED_PREVIEW) : colTasks;
-                  const theme = boardColumnTheme[status];
-                  return (
-                    <div key={status} className={`w-80 flex flex-col rounded-[1.5rem] border-2 ${theme.border} ${theme.bg} max-h-full shrink-0 shadow-md overflow-hidden`}>
-                      <div className={`p-4 flex justify-between items-center ${theme.header}`}>
-                        <div className="flex items-center gap-2">
-                          <span className={`w-2.5 h-2.5 rounded-full bg-white/90 shadow-sm`} />
-                          <h3 className="gtp-display font-extrabold text-sm tracking-wide">{getStatusText(status)}</h3>
-                        </div>
-                        <span className={`text-xs font-black px-2.5 py-1 rounded-full shadow-sm ${theme.badge}`}>{totalInCol}</span>
-                      </div>
-                      <div className="p-3 flex-1 overflow-y-auto space-y-3 custom-scrollbar">
-                        {shownTasks.map((task) => {
-                          const assignee = usersById.get(task.assignedTo);
-                          const overdue = isOverdue(task.dueDate, task.status);
-                          const isMyTask = task.assignedTo === currentUser.id;
-                          const commentCount = commentCounts[String(task.id)] || 0;
-                          return (
-                            <div
-                              key={task.id}
-                              onClick={() => {
-                                if (boardEditingTaskId === task.id) return;
-                                setSelectedTask(task);
-                                setTaskModalTab('details');
-                              }}
-                              className={`bg-white p-4 rounded-2xl shadow-sm border-2 relative group cursor-pointer hover:shadow-md hover:-translate-y-0.5 transition-all ${
-                                overdue ? 'border-rose-400 ring-2 ring-rose-100' : `${theme.cardBorder}`
-                              } ${isMyTask && status === 'Pending' ? 'ring-2 ring-amber-200' : ''} ${status === 'Completed' ? 'opacity-90' : ''} ${boardEditingTaskId === task.id ? 'ring-2 ring-teal-300 cursor-default' : ''}`}
-                            >
-                              <div className={`absolute left-0 top-3 bottom-3 w-1 rounded-r-full ${theme.accent}`} />
-                              {task.isRecurring && boardEditingTaskId !== task.id && (
-                                <Repeat className="w-4 h-4 absolute top-3.5 right-3.5 text-slate-300" />
-                              )}
-                              {(canEditTask(task) || canDeleteTask(task)) && boardEditingTaskId !== task.id && (
-                                <div className="absolute top-3 right-3 flex items-center gap-0.5 md:opacity-0 md:group-hover:opacity-100 transition-all z-10">
-                                  {canEditTask(task) && (
-                                    <button
-                                      type="button"
-                                      title="แก้ไขชื่องาน"
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        setBoardEditingTaskId(task.id);
-                                        setBoardTitleDraft(task.title || '');
-                                      }}
-                                      className="p-1.5 rounded-lg text-slate-400 hover:text-teal-600 hover:bg-teal-50"
-                                    >
-                                      <Pencil className="w-4 h-4" />
-                                    </button>
-                                  )}
-                                  {canDeleteTask(task) && (
-                                    <button
-                                      type="button"
-                                      title="ลบงาน"
-                                      onClick={(e) => { e.stopPropagation(); handleDeleteTask(task.id); }}
-                                      className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50"
-                                    >
-                                      <Trash2 className="w-4 h-4" />
-                                    </button>
-                                  )}
-                                </div>
-                              )}
-                              {isMyTask && status === 'Pending' && <div className="absolute -top-2 -right-2 bg-amber-500 text-white text-[9px] font-bold px-2 py-0.5 rounded-full shadow-md">งานใหม่!</div>}
-                              {!isMyTask && overdue && <div className="absolute -top-2 -right-2 bg-rose-500 text-white text-[9px] font-bold px-2 py-0.5 rounded-full shadow-md">เลยกำหนด</div>}
-                              {task.projectId && !activeProjectId && (
-                                <span className="text-[10px] font-bold text-teal-700 bg-teal-50 px-1.5 py-0.5 rounded-lg mb-2 inline-block truncate max-w-[80%] ml-2">
-                                  {projectsById.get(task.projectId)?.name}
-                                </span>
-                              )}
-                              {boardEditingTaskId === task.id ? (
-                                <div className="pl-2 pr-1 mb-2 space-y-2" onClick={(e) => e.stopPropagation()}>
-                                  <input
-                                    type="text"
-                                    value={boardTitleDraft}
-                                    disabled={busy}
-                                    autoFocus
-                                    onChange={(e) => setBoardTitleDraft(e.target.value)}
-                                    onKeyDown={(e) => {
-                                      if (e.key === 'Enter') handleSaveBoardTaskTitle(task.id);
-                                      if (e.key === 'Escape') setBoardEditingTaskId(null);
-                                    }}
-                                    className="w-full text-sm font-bold text-[#1e3a4c] border-2 border-teal-300 rounded-xl px-3 py-2 outline-none focus:border-teal-500 bg-white"
-                                    placeholder="ชื่องาน"
-                                  />
-                                  <button
-                                    type="button"
-                                    disabled={busy}
-                                    onClick={() => handleSaveBoardTaskTitle(task.id)}
-                                    className="w-full flex items-center justify-center gap-1.5 py-2 rounded-xl bg-teal-600 hover:bg-teal-700 text-white text-xs font-extrabold disabled:opacity-60"
-                                  >
-                                    {busy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
-                                    บันทึก
-                                  </button>
-                                </div>
-                              ) : (
-                                <h4 className={`font-bold text-[#1e3a4c] text-sm mb-2 leading-relaxed pr-6 pl-2 ${status === 'Completed' ? 'line-through decoration-slate-300' : ''}`}>{task.title}</h4>
-                              )}
-                              {isMyTask && status !== 'Completed' && (
-                                <p className="text-[10px] font-extrabold text-teal-600 mb-3 pl-2">แตะการ์ด → อัปเดตสถานะ</p>
-                              )}
-                              <div className="flex justify-between items-end pt-3 border-t border-slate-100/80 pl-2">
-                                <div className="flex items-center space-x-2">
-                                  <div className={`w-7 h-7 rounded-full flex items-center justify-center text-[10px] font-extrabold ${isMyTask ? 'bg-teal-500 text-white' : 'bg-[#f3f9fc] text-[#5b7a8a]'}`}>
-                                    {assignee?.name?.charAt(0)}
-                                  </div>
-                                  <span className={`text-[11px] font-bold ${isMyTask ? 'text-teal-700' : 'text-[#5b7a8a]'}`}>{assignee?.name?.split(' ')[0]}</span>
-                                </div>
-                                <div className="flex items-center space-x-2.5 text-[11px] font-bold">
-                                  {commentCount > 0 && <span className="flex items-center text-slate-400"><MessageSquare className="w-3.5 h-3.5 mr-1" />{commentCount}</span>}
-                                  <span className={`flex items-center px-1.5 py-0.5 rounded ${
-                                    !task.dueDate
-                                      ? 'text-slate-400 bg-slate-50 border border-slate-100'
-                                      : overdue
-                                        ? 'text-rose-700 bg-rose-100 border border-rose-200'
-                                        : 'text-slate-500 bg-slate-50 border border-slate-100'
-                                  }`}>
-                                    <CalendarIcon className="w-3 h-3 mr-1" />
-                                    {status === 'Completed' && task.completedAt
-                                      ? formatThaiDate(task.completedAt)
-                                      : formatThaiDate(task.dueDate)}
-                                  </span>
-                                </div>
-                              </div>
-                            </div>
-                          );
-                        })}
-                        {status === 'Completed' && hiddenCompleted > 0 && (
-                          <button
-                            type="button"
-                            onClick={() => setShowAllCompleted(true)}
-                            className="w-full py-2.5 text-xs font-bold text-emerald-700 bg-white/90 border border-emerald-200 rounded-xl hover:bg-emerald-50 shadow-sm"
-                          >
-                            แสดงงานเสร็จเก่าอีก {hiddenCompleted} รายการ
-                          </button>
-                        )}
-                        {status === 'Completed' && showAllCompleted && totalInCol > COMPLETED_PREVIEW && (
-                          <button
-                            type="button"
-                            onClick={() => setShowAllCompleted(false)}
-                            className="w-full py-2.5 text-xs font-bold text-slate-600 bg-white/90 border border-slate-200 rounded-xl hover:bg-slate-50 shadow-sm"
-                          >
-                            ย่อเหลือ {COMPLETED_PREVIEW} รายการล่าสุด
-                          </button>
-                        )}
-                        {status === 'Completed' && totalInCol === 0 && (
-                          <p className="text-center text-xs text-slate-400 font-medium py-8">ยังไม่มีงานเสร็จสิ้น</p>
-                        )}
-                        {status !== 'Completed' && totalInCol === 0 && (
-                          <p className="text-center text-xs text-slate-400 font-medium py-8">ยังไม่มีงานในคอลัมน์นี้</p>
-                        )}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          </div>
+          <BoardView
+            visibleTasks={visibleTasks}
+            visibleProjects={visibleProjects}
+            activeProjectId={activeProjectId}
+            currentUser={currentUser}
+            assignableUsers={assignableUsers}
+            usersById={usersById}
+            projectsById={projectsById}
+            commentCounts={commentCounts}
+            busy={busy}
+            canEditTask={canEditTask}
+            canDeleteTask={canDeleteTask}
+            onSelectTask={(task) => { setSelectedTask(task); setTaskModalTab('details'); }}
+            onSaveTaskTitle={handleSaveBoardTaskTitle}
+            onDeleteTask={handleDeleteTask}
+            onClearProjectFilter={() => setActiveProjectId(null)}
+            onOpenCreate={() => openCreateModule('board')}
+          />
         )}
 
         {currentModule === 'calendar' && (
