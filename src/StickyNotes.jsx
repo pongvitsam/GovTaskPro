@@ -678,8 +678,8 @@ export default function StickyNotes({ currentUser, showToast, onRemindersChange,
                 {note.pinned && (
                   <div className="absolute top-2 right-2 text-[10px] font-black opacity-70">📌</div>
                 )}
-                <div className="h-full flex flex-col p-3 pt-4">
-                  <div className="flex items-start gap-1.5 mb-1" data-no-drag>
+                <div className="h-full flex flex-col min-h-0 overflow-hidden p-3 pt-4">
+                  <div className="flex items-start gap-1.5 mb-1 shrink-0" data-no-drag>
                     <button
                       type="button"
                       className="text-lg leading-none shrink-0 hover:scale-110 transition"
@@ -704,6 +704,7 @@ export default function StickyNotes({ currentUser, showToast, onRemindersChange,
                     />
                   </div>
 
+                  <div className="flex-1 min-h-0 overflow-y-auto flex flex-col custom-scrollbar">
                   {note.imageUrl ? (
                     <div className="mb-1.5 rounded-lg overflow-hidden border border-black/10" data-no-drag>
                       <img src={note.imageUrl} alt="" className="w-full max-h-24 object-cover" />
@@ -711,7 +712,7 @@ export default function StickyNotes({ currentUser, showToast, onRemindersChange,
                   ) : null}
 
                   {note.noteType === 'list' ? (
-                    <div className="flex-1 overflow-y-auto space-y-1 custom-scrollbar pr-0.5" data-no-drag>
+                    <div className="space-y-1 pr-0.5" data-no-drag>
                       {(note.items || []).map((item, idx) => (
                         <div key={item.id || idx} className="flex items-start gap-1.5">
                           <input
@@ -762,7 +763,7 @@ export default function StickyNotes({ currentUser, showToast, onRemindersChange,
                       value={note.body}
                       disabled={note.trashed}
                       onChange={(e) => patchNote(note.id, { body: e.target.value })}
-                      className="flex-1 w-full resize-none bg-transparent border-0 outline-none text-[13px] leading-relaxed font-medium placeholder:opacity-35 custom-scrollbar"
+                      className="w-full min-h-[4.5rem] resize-none bg-transparent border-0 outline-none text-[13px] leading-relaxed font-medium placeholder:opacity-35"
                       placeholder="เขียนเตือนความจำ..."
                       style={{ color: meta.ink }}
                     />
@@ -947,6 +948,7 @@ export default function StickyNotes({ currentUser, showToast, onRemindersChange,
                       </div>
                     </div>
                   )}
+                  </div>
                 </div>
                 {!note.trashed && (
                   <button
