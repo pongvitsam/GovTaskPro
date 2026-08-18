@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ArrowLeft, Calendar as CalendarIcon, CheckCircle2, Plus, Trash2,
   Settings2, LineChart, ListChecks, KanbanSquare, Loader2, Save, Download, ImageDown,
@@ -57,7 +57,7 @@ function reorderMilestones(list, fromId, toId) {
 
 function MilestoneEditor({
   m, idx, busy, onUpdate, onDelete,
-  isDragging, isDropTarget, onDragStart, onDragOver, onDrop, onDragEnd,
+  isDragging, isDropTarget, rowRef, onGripPointerDown,
 }) {
   const [draft, setDraft] = useState({
     title: m.title || '',
@@ -114,14 +114,7 @@ function MilestoneEditor({
 
   return (
     <div
-      onDragOver={(e) => {
-        e.preventDefault();
-        onDragOver?.(m.id);
-      }}
-      onDrop={(e) => {
-        e.preventDefault();
-        onDrop?.(m.id);
-      }}
+      ref={rowRef}
       className={`px-4 py-4 space-y-3 last:rounded-b-3xl transition-colors ${
         draft.completed ? 'bg-emerald-50/40' : 'hover:bg-slate-50/80'
       } ${isDragging ? 'opacity-45' : ''} ${
@@ -131,20 +124,13 @@ function MilestoneEditor({
       <div className="flex flex-wrap items-start gap-3">
         <button
           type="button"
-          draggable={!busy}
           disabled={busy}
           title="ลากเพื่อสลับลำดับ"
           aria-label="ลากเพื่อสลับลำดับ"
-          onDragStart={(e) => {
-            e.stopPropagation();
-            e.dataTransfer.effectAllowed = 'move';
-            e.dataTransfer.setData('text/plain', String(m.id));
-            onDragStart?.(m.id);
-          }}
-          onDragEnd={() => onDragEnd?.()}
-          className="mt-2 p-1 rounded-lg text-slate-400 hover:text-teal-600 hover:bg-teal-50 cursor-grab active:cursor-grabbing disabled:opacity-40 disabled:cursor-not-allowed shrink-0 touch-none"
+          onPointerDown={(e) => onGripPointerDown?.(m.id, e)}
+          className="mt-1.5 p-2 rounded-xl text-slate-400 hover:text-teal-600 hover:bg-teal-50 cursor-grab active:cursor-grabbing disabled:opacity-40 disabled:cursor-not-allowed shrink-0 touch-none select-none min-w-[2.75rem] min-h-[2.75rem] flex items-center justify-center"
         >
-          <GripVertical className="w-4 h-4" />
+          <GripVertical className="w-5 h-5" />
         </button>
         <span className="text-xs font-black text-slate-400 w-6 pt-3">{idx + 1}.</span>
         <label className="flex items-center gap-2 pt-2.5 shrink-0">
@@ -270,6 +256,8 @@ export default function ProjectDetail({
   const [exportBusy, setExportBusy] = useState(false);
   const [dragMilestoneId, setDragMilestoneId] = useState(null);
   const [dropMilestoneId, setDropMilestoneId] = useState(null);
+  const milestoneRowRefs = useRef({});
+  const milestonePointerDragRef = useRef(null);
   const [projectTaskLogs, setProjectTaskLogs] = useState([]);
   const [activityLoading, setActivityLoading] = useState(false);
   const [activityLoadError, setActivityLoadError] = useState(null);
@@ -499,18 +487,62 @@ export default function ProjectDetail({
     });
   };
 
-  const handleMilestoneDrop = async (targetId) => {
-    if (!dragMilestoneId || !targetId || dragMilestoneId === targetId || busy || !onReorderMilestones) {
-      setDragMilestoneId(null);
-      setDropMilestoneId(null);
-      return;
-    }
-    const reordered = reorderMilestones(projectMilestones, dragMilestoneId, targetId);
+  const applyMilestoneReorder = useCallback(async (fromId, targetId) => {
+    if (!fromId || !targetId || fromId === targetId || busy || !onReorderMilestones) return;
+    const reordered = reorderMilestones(projectMilestones, fromId, targetId);
     const updates = reordered.map((m, i) => ({ id: m.id, sortOrder: i + 1 }));
     setDragMilestoneId(null);
     setDropMilestoneId(null);
     await onReorderMilestones(updates);
-  };
+  }, [busy, onReorderMilestones, projectMilestones]);
+
+  const findMilestoneAtY = useCallback((clientY) => {
+    for (const m of projectMilestones) {
+      const el = milestoneRowRefs.current[m.id];
+      if (!el) continue;
+      const rect = el.getBoundingClientRect();
+      if (clientY >= rect.top && clientY <= rect.bottom) return m.id;
+    }
+    return null;
+  }, [projectMilestones]);
+
+  const handleGripPointerDown = useCallback((milestoneId, e) => {
+    if (busy || e.button !== 0) return;
+    e.preventDefault();
+    e.stopPropagation();
+    milestonePointerDragRef.current = { id: milestoneId, pointerId: e.pointerId };
+    setDragMilestoneId(milestoneId);
+    e.currentTarget.setPointerCapture(e.pointerId);
+  }, [busy]);
+
+  useEffect(() => {
+    const finishDrag = (e) => {
+      const drag = milestonePointerDragRef.current;
+      if (!drag || e.pointerId !== drag.pointerId) return;
+      milestonePointerDragRef.current = null;
+      const targetId = findMilestoneAtY(e.clientY);
+      if (targetId && targetId !== drag.id) {
+        applyMilestoneReorder(drag.id, targetId);
+      } else {
+        setDragMilestoneId(null);
+        setDropMilestoneId(null);
+      }
+    };
+    const onMove = (e) => {
+      const drag = milestonePointerDragRef.current;
+      if (!drag || e.pointerId !== drag.pointerId) return;
+      const targetId = findMilestoneAtY(e.clientY);
+      setDropMilestoneId(targetId && targetId !== drag.id ? targetId : null);
+    };
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', finishDrag);
+    window.addEventListener('pointercancel', finishDrag);
+    return () => {
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', finishDrag);
+      window.removeEventListener('pointercancel', finishDrag);
+    };
+  }, [applyMilestoneReorder, findMilestoneAtY]);
 
   const handleAddContractExtension = async (e) => {
     e.preventDefault();
@@ -739,13 +771,11 @@ export default function ProjectDetail({
                   onDelete={onDeleteMilestone}
                   isDragging={dragMilestoneId === m.id}
                   isDropTarget={dropMilestoneId === m.id && dragMilestoneId !== m.id}
-                  onDragStart={setDragMilestoneId}
-                  onDragOver={setDropMilestoneId}
-                  onDrop={handleMilestoneDrop}
-                  onDragEnd={() => {
-                    setDragMilestoneId(null);
-                    setDropMilestoneId(null);
+                  rowRef={(el) => {
+                    if (el) milestoneRowRefs.current[m.id] = el;
+                    else delete milestoneRowRefs.current[m.id];
                   }}
+                  onGripPointerDown={handleGripPointerDown}
                 />
               ))}
               {projectMilestones.length === 0 && (
