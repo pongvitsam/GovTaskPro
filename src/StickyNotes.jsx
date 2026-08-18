@@ -152,6 +152,19 @@ export default function StickyNotes({ currentUser, showToast, onRemindersChange,
     }, 1000);
   }, [currentUser.id, showToast]);
 
+  const saveNoteNow = useCallback(async (id, patch) => {
+    if (saveTimerRef.current[id]) {
+      clearTimeout(saveTimerRef.current[id]);
+      delete saveTimerRef.current[id];
+    }
+    try {
+      const row = await api('updateStickyNote', { id, userId: currentUser.id, ...patch });
+      if (row) setNotes((prev) => prev.map((n) => (n.id === id ? normalizeNote(row) : n)));
+    } catch (err) {
+      showToast(err?.message || 'บันทึกโน้ตไม่สำเร็จ');
+    }
+  }, [currentUser.id, showToast]);
+
   const applyNoteVisual = useCallback((id, patch) => {
     const el = noteElRefs.current[id];
     if (!el) return;
@@ -346,6 +359,17 @@ export default function StickyNotes({ currentUser, showToast, onRemindersChange,
     setNotes((prev) => prev.map((n) => (n.id === id ? normalizeNote({ ...n, ...patch }) : n)));
     if (persist) queueSave(id, patch);
   };
+
+  const setNoteFont = useCallback((id, fontId) => {
+    const normalized = normalizeStickyFontId(fontId);
+    setNotes((prev) => prev.map((n) => (n.id === id ? normalizeNote({ ...n, fontFamily: normalized }) : n)));
+    saveNoteNow(id, { fontFamily: normalized });
+  }, [saveNoteNow]);
+
+  const selectedNote = useMemo(
+    () => notes.find((n) => n.id === selectedId) || null,
+    [notes, selectedId],
+  );
 
   const convertToList = (note) => {
     if (note.noteType === 'list') return;
@@ -589,6 +613,37 @@ export default function StickyNotes({ currentUser, showToast, onRemindersChange,
           )}
         </div>
 
+        {selectedNote && !selectedNote.trashed && view === 'notes' && (
+          <div className="flex flex-wrap items-center gap-2 rounded-xl bg-black/25 border border-amber-200/20 px-3 py-2.5">
+            <Type className="w-4 h-4 text-amber-200/80 shrink-0" />
+            <span className="text-[11px] font-bold text-amber-100/90 shrink-0">
+              ฟอนต์โน้ตที่เลือก:
+            </span>
+            {STICKY_FONT_PRESETS.map((font) => {
+              const active = selectedNote.fontFamily === font.id;
+              return (
+                <button
+                  key={font.id}
+                  type="button"
+                  title={`ฟอนต์ ${font.label}`}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setNoteFont(selectedNote.id, font.id);
+                  }}
+                  className={`px-2.5 py-1.5 rounded-lg text-[11px] font-bold border transition ${
+                    active
+                      ? 'bg-amber-400 text-amber-950 border-amber-300 shadow-sm'
+                      : 'bg-white/10 text-amber-50 border-transparent hover:bg-white/15'
+                  }`}
+                  style={{ fontFamily: font.stack }}
+                >
+                  {font.label}
+                </button>
+              );
+            })}
+          </div>
+        )}
+
         {allLabels.length > 0 && (
           <div className="flex flex-wrap items-center gap-1.5">
             <Tag className="w-3.5 h-3.5 text-amber-200/50" />
@@ -644,6 +699,7 @@ export default function StickyNotes({ currentUser, showToast, onRemindersChange,
             const selected = selectedId === note.id;
             const rot = note.pinned ? 0 : hashRotate(note.id);
             const overdue = note.reminderAt && new Date(note.reminderAt).getTime() < Date.now();
+            const noteFontStyle = { fontFamily: stickyFontStack(note.fontFamily), color: meta.ink };
             return (
               <div
                 key={note.id}
@@ -699,7 +755,7 @@ export default function StickyNotes({ currentUser, showToast, onRemindersChange,
                       onChange={(e) => patchNote(note.id, { title: e.target.value })}
                       className="flex-1 min-w-0 bg-transparent border-0 outline-none font-extrabold text-sm placeholder:opacity-40"
                       placeholder="หัวข้อ..."
-                      style={{ color: meta.ink }}
+                      style={noteFontStyle}
                       disabled={note.trashed}
                     />
                   </div>
@@ -734,7 +790,7 @@ export default function StickyNotes({ currentUser, showToast, onRemindersChange,
                             }}
                             className={`flex-1 min-w-0 bg-transparent border-0 outline-none text-[12px] font-medium ${item.done ? 'line-through opacity-50' : ''}`}
                             placeholder="รายการ..."
-                            style={{ color: meta.ink }}
+                            style={noteFontStyle}
                           />
                           {!note.trashed && (
                             <button
@@ -765,7 +821,7 @@ export default function StickyNotes({ currentUser, showToast, onRemindersChange,
                       onChange={(e) => patchNote(note.id, { body: e.target.value })}
                       className="w-full min-h-[4.5rem] resize-none bg-transparent border-0 outline-none text-[13px] leading-relaxed font-medium placeholder:opacity-35"
                       placeholder="เขียนเตือนความจำ..."
-                      style={{ color: meta.ink }}
+                      style={noteFontStyle}
                     />
                   )}
 
@@ -871,28 +927,6 @@ export default function StickyNotes({ currentUser, showToast, onRemindersChange,
                             >
                               <Icon className="w-3 h-3" />
                               {s.label}
-                            </button>
-                          );
-                        })}
-                      </div>
-
-                      <div className="flex flex-wrap items-center gap-1.5">
-                        <Type className="w-3.5 h-3.5 opacity-50 shrink-0" />
-                        {STICKY_FONT_PRESETS.map((font) => {
-                          const active = note.fontFamily === font.id;
-                          return (
-                            <button
-                              key={font.id}
-                              type="button"
-                              title={`ฟอนต์ ${font.label}`}
-                              disabled={note.trashed}
-                              onClick={() => patchNote(note.id, { fontFamily: font.id })}
-                              className={`px-1.5 py-0.5 rounded text-[9px] font-bold border disabled:opacity-40 ${
-                                active ? 'bg-black/15 border-black/25' : 'border-transparent hover:bg-black/10'
-                              }`}
-                              style={{ fontFamily: font.stack, color: meta.ink }}
-                            >
-                              {font.label}
                             </button>
                           );
                         })}

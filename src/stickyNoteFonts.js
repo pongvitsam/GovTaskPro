@@ -2,7 +2,7 @@ export const STICKY_FONT_PRESETS = [
   {
     id: 'handwriting',
     label: 'ลายมือ',
-    stack: '"Segoe Print", "Comic Sans MS", "Chalkboard SE", "Marker Felt", cursive',
+    stack: '"Patrick Hand", "Segoe Print", "Comic Sans MS", cursive',
   },
   {
     id: 'sarabun',

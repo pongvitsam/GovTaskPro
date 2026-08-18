@@ -922,6 +922,7 @@ function addComment(payload) {
 /** Personal sticky notes — Google Keep–style fields, scoped to payload.userId */
 function listStickyNotes(payload) {
   openDatabase_(false);
+  ensureStickyHeaders_();
   var userId = String((payload && payload.userId) || '');
   if (!userId) throw new Error('ต้องระบุผู้ใช้');
   var cache = CacheService.getScriptCache();
