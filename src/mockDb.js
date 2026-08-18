@@ -1062,6 +1062,9 @@ const localHandlers = {
       trashed: false,
       reminderAt: payload.reminderAt || null,
       imageUrl: String(payload.imageUrl || '').trim(),
+      fontFamily: ['handwriting', 'sarabun', 'manrope', 'sans', 'mono'].includes(payload.fontFamily)
+        ? payload.fontFamily
+        : 'handwriting',
     };
     db.stickyNotes = [...db.stickyNotes, row];
     return row;
@@ -1097,6 +1100,9 @@ const localHandlers = {
       trashed: payload.trashed !== undefined ? !!payload.trashed : !!prev.trashed,
       reminderAt: payload.reminderAt !== undefined ? (payload.reminderAt || null) : (prev.reminderAt || null),
       imageUrl: payload.imageUrl !== undefined ? String(payload.imageUrl || '').trim() : (prev.imageUrl || ''),
+      fontFamily: payload.fontFamily !== undefined && ['handwriting', 'sarabun', 'manrope', 'sans', 'mono'].includes(payload.fontFamily)
+        ? payload.fontFamily
+        : (prev.fontFamily || 'handwriting'),
       updatedAt: new Date().toISOString(),
     };
     db.stickyNotes = db.stickyNotes.map((n, i) => (i === idx ? next : n));
