@@ -1339,6 +1339,27 @@ export default function App() {
     }
   };
 
+  const handleReorderMilestones = async (updates) => {
+    if (busy || !updates?.length) return;
+    setBusy(true);
+    const sortMap = new Map(updates.map((u) => [String(u.id), u.sortOrder]));
+    setMilestones((prev) => prev.map((m) => {
+      const sortOrder = sortMap.get(String(m.id));
+      return sortOrder !== undefined ? { ...m, sortOrder } : m;
+    }));
+    try {
+      await Promise.all(
+        updates.map(({ id, sortOrder }) => api('updateMilestone', { id, sortOrder })),
+      );
+      showToast('✅ จัดลำดับขั้นตอนแล้ว');
+    } catch (err) {
+      showToast('❌ ' + (err?.message || String(err)));
+      softRefresh({ silent: true });
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const handleDeleteMilestone = async (id) => {
     if (busy || !window.confirm('ลบขั้นตอนนี้?')) return;
     setBusy(true);
@@ -1915,6 +1936,7 @@ export default function App() {
               onCreateMilestone={handleCreateMilestone}
               onUpdateMilestone={handleUpdateMilestone}
               onDeleteMilestone={handleDeleteMilestone}
+              onReorderMilestones={handleReorderMilestones}
               onCreateContractExtension={handleCreateContractExtension}
               onUpdateContractExtension={handleUpdateContractExtension}
               onDeleteContractExtension={handleDeleteContractExtension}
