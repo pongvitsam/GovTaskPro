@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ArrowLeft, Calendar as CalendarIcon, CheckCircle2, Plus, Trash2,
   Settings2, LineChart, ListChecks, KanbanSquare, Loader2, Save, Download, ImageDown,
-  FileClock, CalendarRange, Milestone, FileText, FileCode2, History,
+  FileClock, CalendarRange, Milestone, FileText, FileCode2, History, GripVertical,
 } from 'lucide-react';
 import {
   buildSCurve, buildSCurveSheet, toTimelinePolyline, toTimelinePoints, timeToRatio,
@@ -44,7 +44,21 @@ function daysBetween(fromDate, toDate) {
   return Math.max(0, Math.round((to - from) / 86400000));
 }
 
-function MilestoneEditor({ m, idx, busy, onUpdate, onDelete }) {
+function reorderMilestones(list, fromId, toId) {
+  if (!fromId || !toId || fromId === toId) return list;
+  const fromIdx = list.findIndex((m) => String(m.id) === String(fromId));
+  const toIdx = list.findIndex((m) => String(m.id) === String(toId));
+  if (fromIdx < 0 || toIdx < 0) return list;
+  const next = [...list];
+  const [moved] = next.splice(fromIdx, 1);
+  next.splice(toIdx, 0, moved);
+  return next;
+}
+
+function MilestoneEditor({
+  m, idx, busy, onUpdate, onDelete,
+  isDragging, isDropTarget, onDragStart, onDragOver, onDrop, onDragEnd,
+}) {
   const [draft, setDraft] = useState({
     title: m.title || '',
     description: m.description || '',
@@ -99,8 +113,39 @@ function MilestoneEditor({ m, idx, busy, onUpdate, onDelete }) {
   };
 
   return (
-    <div className={`px-4 py-4 space-y-3 ${draft.completed ? 'bg-emerald-50/40' : 'hover:bg-slate-50/80'}`}>
+    <div
+      onDragOver={(e) => {
+        e.preventDefault();
+        onDragOver?.(m.id);
+      }}
+      onDrop={(e) => {
+        e.preventDefault();
+        onDrop?.(m.id);
+      }}
+      className={`px-4 py-4 space-y-3 transition-colors ${
+        draft.completed ? 'bg-emerald-50/40' : 'hover:bg-slate-50/80'
+      } ${isDragging ? 'opacity-45' : ''} ${
+        isDropTarget ? 'bg-teal-50/80 ring-2 ring-inset ring-teal-400' : ''
+      }`}
+    >
       <div className="flex flex-wrap items-start gap-3">
+        <button
+          type="button"
+          draggable={!busy}
+          disabled={busy}
+          title="ลากเพื่อสลับลำดับ"
+          aria-label="ลากเพื่อสลับลำดับ"
+          onDragStart={(e) => {
+            e.stopPropagation();
+            e.dataTransfer.effectAllowed = 'move';
+            e.dataTransfer.setData('text/plain', String(m.id));
+            onDragStart?.(m.id);
+          }}
+          onDragEnd={() => onDragEnd?.()}
+          className="mt-2 p-1 rounded-lg text-slate-400 hover:text-teal-600 hover:bg-teal-50 cursor-grab active:cursor-grabbing disabled:opacity-40 disabled:cursor-not-allowed shrink-0 touch-none"
+        >
+          <GripVertical className="w-4 h-4" />
+        </button>
         <span className="text-xs font-black text-slate-400 w-6 pt-3">{idx + 1}.</span>
         <label className="flex items-center gap-2 pt-2.5 shrink-0">
           <input
@@ -215,6 +260,7 @@ export default function ProjectDetail({
   onCreateMilestone,
   onUpdateMilestone,
   onDeleteMilestone,
+  onReorderMilestones,
   onCreateContractExtension,
   onUpdateContractExtension,
   onDeleteContractExtension,
@@ -222,6 +268,8 @@ export default function ProjectDetail({
 }) {
   const [tab, setTab] = useState('activity');
   const [exportBusy, setExportBusy] = useState(false);
+  const [dragMilestoneId, setDragMilestoneId] = useState(null);
+  const [dropMilestoneId, setDropMilestoneId] = useState(null);
   const [projectTaskLogs, setProjectTaskLogs] = useState([]);
   const [activityLoading, setActivityLoading] = useState(false);
   const [activityLoadError, setActivityLoadError] = useState(null);
@@ -451,6 +499,19 @@ export default function ProjectDetail({
     });
   };
 
+  const handleMilestoneDrop = async (targetId) => {
+    if (!dragMilestoneId || !targetId || dragMilestoneId === targetId || busy || !onReorderMilestones) {
+      setDragMilestoneId(null);
+      setDropMilestoneId(null);
+      return;
+    }
+    const reordered = reorderMilestones(projectMilestones, dragMilestoneId, targetId);
+    const updates = reordered.map((m, i) => ({ id: m.id, sortOrder: i + 1 }));
+    setDragMilestoneId(null);
+    setDropMilestoneId(null);
+    await onReorderMilestones(updates);
+  };
+
   const handleAddContractExtension = async (e) => {
     e.preventDefault();
     if (!canEdit || busy) return;
@@ -662,7 +723,9 @@ export default function ProjectDetail({
           <div className="bg-white border border-slate-200 rounded-3xl shadow-sm overflow-hidden">
             <div className="px-5 py-4 bg-slate-50 border-b border-slate-200">
               <h3 className="font-extrabold text-slate-800 text-sm">รายการขั้นตอน — แก้ไขได้ทั้งหมด</h3>
-              <p className="text-[11px] text-slate-500 font-medium mt-0.5">แก้ชื่อ รายละเอียด วันที่ น้ำหนัก และวันเสร็จจริง แล้วกดบันทึก</p>
+              <p className="text-[11px] text-slate-500 font-medium mt-0.5">
+                ลากไอคอน ⋮⋮ เพื่อสลับลำดับ · แก้ชื่อ วันที่ น้ำหนัก แล้วกดบันทึก
+              </p>
             </div>
             <div className="divide-y divide-slate-100">
               {projectMilestones.map((m, idx) => (
@@ -673,6 +736,15 @@ export default function ProjectDetail({
                   busy={busy}
                   onUpdate={onUpdateMilestone}
                   onDelete={onDeleteMilestone}
+                  isDragging={dragMilestoneId === m.id}
+                  isDropTarget={dropMilestoneId === m.id && dragMilestoneId !== m.id}
+                  onDragStart={setDragMilestoneId}
+                  onDragOver={setDropMilestoneId}
+                  onDrop={handleMilestoneDrop}
+                  onDragEnd={() => {
+                    setDragMilestoneId(null);
+                    setDropMilestoneId(null);
+                  }}
                 />
               ))}
               {projectMilestones.length === 0 && (
