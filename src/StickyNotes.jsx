@@ -22,9 +22,10 @@ const COLORS = [
 
 const EMOJI_PRESETS = ['📌', '✨', '💡', '⚠️', '✅', '🔥', '📝', '🎯', '🛒', '📅'];
 const SIZE_PRESETS = [
-  { id: 'sm', label: 'เล็ก', width: 200, height: 180 },
-  { id: 'md', label: 'กลาง', width: 240, height: 220 },
-  { id: 'lg', label: 'ใหญ่', width: 300, height: 280 },
+  { id: 'sm', label: 'เล็ก', width: 220, height: 200 },
+  { id: 'md', label: 'กลาง', width: 280, height: 260 },
+  { id: 'lg', label: 'ใหญ่', width: 380, height: 440 },
+  { id: 'full', label: 'เต็มจอ', dynamic: true },
 ];
 
 const VIEWS = [
@@ -366,6 +367,32 @@ export default function StickyNotes({ currentUser, showToast, onRemindersChange,
     saveNoteNow(id, { fontFamily: normalized });
   }, [saveNoteNow]);
 
+  const getBoardSizeLimits = useCallback(() => {
+    const board = boardRef.current;
+    if (!board) return { width: 480, height: 560 };
+    const rect = board.getBoundingClientRect();
+    return {
+      width: Math.max(280, Math.floor(rect.width - 24)),
+      height: Math.max(320, Math.floor(rect.height - 24)),
+    };
+  }, []);
+
+  const setNoteSize = useCallback((id, preset) => {
+    const size = preset.dynamic ? getBoardSizeLimits() : { width: preset.width, height: preset.height };
+    setNotes((prev) => prev.map((n) => (
+      n.id === id ? normalizeNote({ ...n, width: size.width, height: size.height }) : n
+    )));
+    saveNoteNow(id, { width: size.width, height: size.height });
+  }, [getBoardSizeLimits, saveNoteNow]);
+
+  const isPresetSize = useCallback((note, preset) => {
+    if (preset.dynamic) {
+      const limits = getBoardSizeLimits();
+      return Math.abs(note.width - limits.width) <= 12 && Math.abs(note.height - limits.height) <= 12;
+    }
+    return Math.abs(note.width - preset.width) <= 4 && Math.abs(note.height - preset.height) <= 4;
+  }, [getBoardSizeLimits]);
+
   const selectedNote = useMemo(
     () => notes.find((n) => n.id === selectedId) || null,
     [notes, selectedId],
@@ -439,7 +466,7 @@ export default function StickyNotes({ currentUser, showToast, onRemindersChange,
     if (!d) return;
     if (d.mode === 'resize') {
       const maxW = Math.max(160, d.boardW - d.origX - 8);
-      const maxH = Math.max(140, 720);
+      const maxH = Math.max(140, d.boardH - d.origY - 8);
       const width = Math.max(160, Math.min(d.origW + (e.clientX - d.startX), maxW));
       const height = Math.max(140, Math.min(d.origH + (e.clientY - d.startY), maxH));
       d.lastW = Math.round(width);
@@ -760,15 +787,15 @@ export default function StickyNotes({ currentUser, showToast, onRemindersChange,
                     />
                   </div>
 
-                  <div className="flex-1 min-h-0 overflow-y-auto flex flex-col custom-scrollbar">
+                  <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
                   {note.imageUrl ? (
-                    <div className="mb-1.5 rounded-lg overflow-hidden border border-black/10" data-no-drag>
+                    <div className="mb-1.5 rounded-lg overflow-hidden border border-black/10 shrink-0" data-no-drag>
                       <img src={note.imageUrl} alt="" className="w-full max-h-24 object-cover" />
                     </div>
                   ) : null}
 
                   {note.noteType === 'list' ? (
-                    <div className="space-y-1 pr-0.5" data-no-drag>
+                    <div className="flex-1 min-h-0 overflow-y-auto space-y-1 pr-0.5 custom-scrollbar" data-no-drag>
                       {(note.items || []).map((item, idx) => (
                         <div key={item.id || idx} className="flex items-start gap-1.5">
                           <input
@@ -819,14 +846,14 @@ export default function StickyNotes({ currentUser, showToast, onRemindersChange,
                       value={note.body}
                       disabled={note.trashed}
                       onChange={(e) => patchNote(note.id, { body: e.target.value })}
-                      className="w-full min-h-[4.5rem] resize-none bg-transparent border-0 outline-none text-[13px] leading-relaxed font-medium placeholder:opacity-35"
+                      className="flex-1 min-h-[4rem] w-full resize-none bg-transparent border-0 outline-none text-[13px] leading-relaxed font-medium placeholder:opacity-35 overflow-y-auto"
                       placeholder="เขียนเตือนความจำ..."
                       style={noteFontStyle}
                     />
                   )}
 
                   {(note.labels?.length > 0 || note.reminderAt) && (
-                    <div className="flex flex-wrap gap-1 mt-1" data-no-drag>
+                    <div className="flex flex-wrap gap-1 mt-1 shrink-0" data-no-drag>
                       {note.reminderAt && (
                         <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full ${overdue ? 'bg-rose-500/20 text-rose-800' : 'bg-black/10'}`}>
                           ⏰ {formatThaiDateLong(note.reminderAt)}
@@ -839,9 +866,10 @@ export default function StickyNotes({ currentUser, showToast, onRemindersChange,
                       ))}
                     </div>
                   )}
+                  </div>
 
                   {selected && (
-                    <div className="mt-2 pt-2 border-t border-black/10 space-y-1.5" data-no-drag>
+                    <div className="mt-2 pt-2 border-t border-black/10 space-y-1.5 shrink-0 max-h-[min(12rem,42%)] overflow-y-auto custom-scrollbar" data-no-drag>
                       <div className="flex flex-wrap items-center gap-1">
                         <button
                           type="button"
@@ -914,7 +942,7 @@ export default function StickyNotes({ currentUser, showToast, onRemindersChange,
                         ))}
                         <span className="mx-0.5 w-px h-4 bg-black/15" />
                         {SIZE_PRESETS.map((s) => {
-                          const active = note.width === s.width && note.height === s.height;
+                          const active = isPresetSize(note, s);
                           const Icon = s.id === 'sm' ? Minimize2 : Maximize2;
                           return (
                             <button
@@ -922,7 +950,10 @@ export default function StickyNotes({ currentUser, showToast, onRemindersChange,
                               type="button"
                               title={s.label}
                               disabled={note.trashed}
-                              onClick={() => patchNote(note.id, { width: s.width, height: s.height })}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setNoteSize(note.id, s);
+                              }}
                               className={`px-1 py-0.5 rounded text-[9px] font-bold flex items-center gap-0.5 disabled:opacity-40 ${active ? 'bg-black/15' : 'hover:bg-black/10'}`}
                             >
                               <Icon className="w-3 h-3" />
@@ -982,7 +1013,6 @@ export default function StickyNotes({ currentUser, showToast, onRemindersChange,
                       </div>
                     </div>
                   )}
-                  </div>
                 </div>
                 {!note.trashed && (
                   <button
