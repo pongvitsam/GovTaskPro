@@ -1,12 +1,13 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  StickyNote, Plus, Trash2, Loader2, Lock, Maximize2, Minimize2, Palette,
+  StickyNote, Plus, Trash2, Loader2, Lock, Maximize2, Minimize2, Palette, Type,
   Pin, PinOff, Archive, ArchiveRestore, Search, ListChecks, Bell, BellOff,
   Copy, Tag, Image as ImageIcon, RotateCcw, AlarmClock
 } from 'lucide-react';
 import { api } from './api';
 import ThaiDateField from './ThaiDateField';
 import { formatThaiDateLong, toDateInputValue, fromDateInputValue } from './formatThaiDate';
+import { STICKY_FONT_PRESETS, normalizeStickyFontId, stickyFontStack } from './stickyNoteFonts';
 
 const COLORS = [
   { id: 'yellow', label: 'เหลือง', bg: '#fef08a', ink: '#713f12', tape: 'rgba(253,224,71,0.85)' },
@@ -55,6 +56,7 @@ function normalizeNote(n) {
     trashed: !!n.trashed,
     reminderAt: n.reminderAt || null,
     imageUrl: n.imageUrl || '',
+    fontFamily: normalizeStickyFontId(n.fontFamily),
   };
 }
 
@@ -663,6 +665,7 @@ export default function StickyNotes({ currentUser, showToast, onRemindersChange,
                   color: meta.ink,
                   transform: `rotate(${rot}deg)`,
                   opacity: note.trashed ? 0.72 : 1,
+                  fontFamily: stickyFontStack(note.fontFamily),
                   boxShadow: selected
                     ? '0 18px 40px rgba(0,0,0,0.28), 0 0 0 2px rgba(255,255,255,0.55)'
                     : '0 10px 24px rgba(0,0,0,0.22)',
@@ -867,6 +870,28 @@ export default function StickyNotes({ currentUser, showToast, onRemindersChange,
                             >
                               <Icon className="w-3 h-3" />
                               {s.label}
+                            </button>
+                          );
+                        })}
+                      </div>
+
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        <Type className="w-3.5 h-3.5 opacity-50 shrink-0" />
+                        {STICKY_FONT_PRESETS.map((font) => {
+                          const active = note.fontFamily === font.id;
+                          return (
+                            <button
+                              key={font.id}
+                              type="button"
+                              title={`ฟอนต์ ${font.label}`}
+                              disabled={note.trashed}
+                              onClick={() => patchNote(note.id, { fontFamily: font.id })}
+                              className={`px-1.5 py-0.5 rounded text-[9px] font-bold border disabled:opacity-40 ${
+                                active ? 'bg-black/15 border-black/25' : 'border-transparent hover:bg-black/10'
+                              }`}
+                              style={{ fontFamily: font.stack, color: meta.ink }}
+                            >
+                              {font.label}
                             </button>
                           );
                         })}

@@ -37,7 +37,7 @@ var STICKY_NOTE_HEADERS = [
   'id', 'userId', 'title', 'body', 'color', 'emoji',
   'x', 'y', 'width', 'height', 'zIndex', 'createdAt', 'updatedAt',
   'noteType', 'items', 'labels', 'pinned', 'archived', 'trashed',
-  'reminderAt', 'imageUrl'
+  'reminderAt', 'imageUrl', 'fontFamily'
 ];
 var ORG_HEADERS = [
   'id', 'type', 'name', 'parent', 'active', 'code',
@@ -241,6 +241,7 @@ var _sheetHeaderCache = {};
 var _usersListCache = null;
 var _usersByIdMap = null;
 var STICKY_COLORS = ['yellow', 'orange', 'pink', 'mint', 'teal', 'blue', 'lavender', 'white'];
+var STICKY_FONTS = ['handwriting', 'sarabun', 'manrope', 'sans', 'mono'];
 
 function invalidateBootstrapCache_() {
   try {
@@ -1051,7 +1052,8 @@ function createStickyNote(payload) {
     archived: boolFlag_(payload.archived, false) ? 'TRUE' : 'FALSE',
     trashed: 'FALSE',
     reminderAt: payload.reminderAt ? String(payload.reminderAt) : '',
-    imageUrl: String(payload.imageUrl || '').trim()
+    imageUrl: String(payload.imageUrl || '').trim(),
+    fontFamily: normalizeStickyFontId_(payload.fontFamily)
   };
   appendObject_(STICKY_NOTES_SHEET, STICKY_NOTE_HEADERS, row);
   invalidateStickyCache_(userId);
@@ -1096,6 +1098,7 @@ function updateStickyNote(payload) {
   if (payload.trashed !== undefined) updates.trashed = boolFlag_(payload.trashed, false) ? 'TRUE' : 'FALSE';
   if (payload.reminderAt !== undefined) updates.reminderAt = payload.reminderAt ? String(payload.reminderAt) : '';
   if (payload.imageUrl !== undefined) updates.imageUrl = String(payload.imageUrl || '').trim();
+  if (payload.fontFamily !== undefined) updates.fontFamily = normalizeStickyFontId_(payload.fontFamily);
 
   var found = updateRowById_(STICKY_NOTES_SHEET, id, updates);
   if (!found) throw new Error('ไม่พบโน้ต');
@@ -1199,6 +1202,7 @@ function duplicateStickyNote(payload) {
     archived: false,
     reminderAt: existing.reminderAt || '',
     imageUrl: existing.imageUrl || '',
+    fontFamily: existing.fontFamily || 'handwriting',
     x: (existing.x || 40) + 24,
     y: (existing.y || 40) + 24,
     width: existing.width,
@@ -2641,8 +2645,14 @@ function normalizeStickyNote_(n) {
     archived: boolFlag_(n.archived, false),
     trashed: boolFlag_(n.trashed, false),
     reminderAt: n.reminderAt ? toIso_(n.reminderAt) : null,
-    imageUrl: String(n.imageUrl || '').trim()
+    imageUrl: String(n.imageUrl || '').trim(),
+    fontFamily: normalizeStickyFontId_(n.fontFamily)
   };
+}
+
+function normalizeStickyFontId_(id) {
+  var value = String(id || '').trim();
+  return STICKY_FONTS.indexOf(value) >= 0 ? value : 'handwriting';
 }
 
 function toDateOnly_(v) {
