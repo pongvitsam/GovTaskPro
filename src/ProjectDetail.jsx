@@ -99,7 +99,7 @@ function MilestoneEditor({ m, idx, busy, onUpdate, onDelete }) {
   };
 
   return (
-    <div className={`px-4 py-4 space-y-3 ${draft.completed ? 'bg-emerald-50/40' : 'hover:bg-slate-50/80'}`}>
+    <div className={`px-4 py-4 space-y-3 last:rounded-b-3xl ${draft.completed ? 'bg-emerald-50/40' : 'hover:bg-slate-50/80'}`}>
       <div className="flex flex-wrap items-start gap-3">
         <span className="text-xs font-black text-slate-400 w-6 pt-3">{idx + 1}.</span>
         <label className="flex items-center gap-2 pt-2.5 shrink-0">
@@ -481,7 +481,7 @@ export default function ProjectDetail({
   };
 
   return (
-    <div className="p-6 md:p-8 overflow-y-auto h-full">
+    <div className="p-6 md:p-8 gtp-module-scroll">
       <div className="flex flex-col lg:flex-row lg:items-start justify-between gap-4 mb-6">
         <div>
           <button onClick={onBack} className="text-sm font-bold text-slate-500 hover:text-blue-600 flex items-center mb-3">
@@ -531,16 +531,17 @@ export default function ProjectDetail({
         </button>
       </div>
 
-      <div className="flex gap-2 mb-6 overflow-x-auto no-scrollbar bg-slate-100 p-1.5 rounded-2xl w-fit max-w-full">
+      <div className="flex flex-wrap gap-1.5 sm:gap-2 mb-6 bg-slate-100 p-1.5 rounded-2xl w-full">
         {TABS.map((t) => (
           <button
             key={t.id}
+            type="button"
             onClick={() => setTab(t.id)}
-            className={`flex items-center px-4 py-2.5 rounded-2xl text-sm font-extrabold whitespace-nowrap transition-all ${
+            className={`flex items-center px-3 sm:px-4 py-2.5 rounded-2xl text-xs sm:text-sm font-extrabold whitespace-nowrap transition-all shrink-0 ${
               tab === t.id ? 'bg-white text-blue-700 shadow-sm' : 'text-slate-500 hover:text-slate-800'
             }`}
           >
-            <t.icon className="w-4 h-4 mr-2" /> {t.label}
+            <t.icon className="w-4 h-4 mr-2 shrink-0" /> {t.label}
           </button>
         ))}
       </div>
@@ -659,12 +660,12 @@ export default function ProjectDetail({
             </button>
           </form>
 
-          <div className="bg-white border border-slate-200 rounded-3xl shadow-sm overflow-hidden">
-            <div className="px-5 py-4 bg-slate-50 border-b border-slate-200">
+          <div className="bg-white border border-slate-200 rounded-3xl shadow-sm">
+            <div className="px-5 py-4 bg-slate-50 border-b border-slate-200 rounded-t-3xl">
               <h3 className="font-extrabold text-slate-800 text-sm">รายการขั้นตอน — แก้ไขได้ทั้งหมด</h3>
               <p className="text-[11px] text-slate-500 font-medium mt-0.5">แก้ชื่อ รายละเอียด วันที่ น้ำหนัก และวันเสร็จจริง แล้วกดบันทึก</p>
             </div>
-            <div className="divide-y divide-slate-100">
+            <div className="divide-y divide-slate-100 pb-8 md:pb-2">
               {projectMilestones.map((m, idx) => (
                 <MilestoneEditor
                   key={m.id}

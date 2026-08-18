@@ -107,7 +107,7 @@ export default function BoardView({
   );
 
   return (
-    <div className="flex flex-col h-full p-6 md:p-8 gtp-fade-in">
+    <div className="flex flex-col flex-1 min-h-0 p-6 md:p-8 gtp-fade-in">
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-4 space-y-4 md:space-y-0">
         <h2 className="gtp-display text-2xl font-extrabold text-[#1e3a4c] flex items-center flex-wrap gap-2">
           กระดานงาน

@@ -1,4 +1,5 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { CalendarDays, ChevronLeft, ChevronRight } from 'lucide-react';
 import { formatThaiDateLong, toDateInputValue } from './formatThaiDate';
 
@@ -51,7 +52,9 @@ export default function ThaiDateField({
   const controlled = value !== undefined;
   const [inner, setInner] = useState(() => toDateInputValue(controlled ? value : defaultValue));
   const [open, setOpen] = useState(false);
+  const [popPos, setPopPos] = useState(null);
   const rootRef = useRef(null);
+  const popRef = useRef(null);
 
   useEffect(() => {
     if (controlled) setInner(toDateInputValue(value));
@@ -75,18 +78,55 @@ export default function ThaiDateField({
     setViewMonth(base.getMonth());
   }, [open, selected, today]);
 
+  useLayoutEffect(() => {
+    if (!open) {
+      setPopPos(null);
+      return undefined;
+    }
+    const place = () => {
+      const anchor = rootRef.current;
+      const pop = popRef.current;
+      if (!anchor) return;
+      const rect = anchor.getBoundingClientRect();
+      const popH = pop?.offsetHeight || 320;
+      const popW = Math.min(312, window.innerWidth - 16);
+      const spaceBelow = window.innerHeight - rect.bottom - 12;
+      const spaceAbove = rect.top - 12;
+      const openUp = spaceBelow < popH && spaceAbove > spaceBelow;
+      let left = rect.left;
+      if (left + popW > window.innerWidth - 8) left = Math.max(8, window.innerWidth - popW - 8);
+      if (left < 8) left = 8;
+      const next = openUp
+        ? { left, width: popW, bottom: window.innerHeight - rect.top + 8, top: 'auto' }
+        : { left, width: popW, top: rect.bottom + 8, bottom: 'auto' };
+      setPopPos(next);
+    };
+    place();
+    const onWin = () => place();
+    window.addEventListener('resize', onWin);
+    window.addEventListener('scroll', onWin, true);
+    return () => {
+      window.removeEventListener('resize', onWin);
+      window.removeEventListener('scroll', onWin, true);
+    };
+  }, [open, viewYear, viewMonth]);
+
   useEffect(() => {
     if (!open) return undefined;
     const onDoc = (e) => {
-      if (!rootRef.current?.contains(e.target)) setOpen(false);
+      const t = e.target;
+      if (rootRef.current?.contains(t) || popRef.current?.contains(t)) return;
+      setOpen(false);
     };
     const onKey = (e) => {
       if (e.key === 'Escape') setOpen(false);
     };
     document.addEventListener('mousedown', onDoc);
+    document.addEventListener('touchstart', onDoc, { passive: true });
     document.addEventListener('keydown', onKey);
     return () => {
       document.removeEventListener('mousedown', onDoc);
+      document.removeEventListener('touchstart', onDoc);
       document.removeEventListener('keydown', onKey);
     };
   }, [open]);
@@ -191,8 +231,18 @@ export default function ThaiDateField({
         onFocus={(e) => e.target.blur()}
       />
 
-      {open && !disabled && (
-        <div className="thai-date-pop" role="dialog" aria-label="เลือกวันที่ พ.ศ.">
+      {open && !disabled && typeof document !== 'undefined' && createPortal(
+        <div
+          ref={popRef}
+          className="thai-date-pop thai-date-pop--portal"
+          role="dialog"
+          aria-label="เลือกวันที่ พ.ศ."
+          onMouseDown={(e) => e.stopPropagation()}
+          onTouchStart={(e) => e.stopPropagation()}
+          style={popPos
+            ? { ...popPos, visibility: 'visible' }
+            : { visibility: 'hidden', top: 0, left: 0 }}
+        >
           <div className="thai-date-pop__head">
             <button type="button" className="thai-date-pop__nav" onClick={() => shiftMonth(-1)} aria-label="เดือนก่อน">
               <ChevronLeft className="w-4 h-4" />
@@ -257,7 +307,8 @@ export default function ThaiDateField({
               </button>
             )}
           </div>
-        </div>
+        </div>,
+        document.body,
       )}
     </div>
   );

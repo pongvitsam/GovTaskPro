@@ -501,7 +501,7 @@ export default function StickyNotes({ currentUser, showToast, onRemindersChange,
   }
 
   return (
-    <div className="h-full flex flex-col sticky-board-root">
+    <div className="flex-1 min-h-0 flex flex-col sticky-board-root">
       <div className="shrink-0 px-4 py-3 space-y-3 border-b border-amber-900/30 bg-gradient-to-r from-[#4a3423] via-[#5c4030] to-[#3d2b1f]">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-3 min-w-0">

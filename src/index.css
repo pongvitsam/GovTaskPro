@@ -52,10 +52,20 @@ body {
 }
 
 .gtp-main-mobile {
-  /* room for mobile bottom nav + home indicator */
+  /* room for mobile bottom nav + home indicator (content box, not children) */
   padding-bottom: calc(4.75rem + env(safe-area-inset-bottom));
   min-height: 0;
   flex: 1;
+}
+
+/* Flex children of main must shrink; height:100% + min-height:auto grows with
+   content, so overflow-hidden on main clips the last plan step / date picker. */
+.gtp-module-scroll {
+  flex: 1 1 0%;
+  min-height: 0;
+  overflow-y: auto;
+  scroll-padding-bottom: 1.5rem;
+  -webkit-overflow-scrolling: touch;
 }
 
 @media (min-width: 768px) {
@@ -473,6 +483,13 @@ h1, h2, h3, h4, .gtp-display {
     0 18px 40px rgba(15, 58, 74, 0.16),
     0 2px 6px rgba(15, 58, 74, 0.06);
   animation: thai-date-pop-in 0.16s ease-out;
+}
+
+.thai-date-pop--portal {
+  position: fixed;
+  top: auto;
+  left: auto;
+  z-index: 90;
 }
 
 @keyframes thai-date-pop-in {

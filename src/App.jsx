@@ -1729,7 +1729,7 @@ export default function App() {
       <main className="flex-1 flex flex-col min-h-0 overflow-hidden relative gtp-main md:rounded-[1.75rem] gtp-main-mobile md:h-[calc(100dvh-1.5rem)] md:pb-0">
 
         {currentModule === 'dashboard' && (
-          <div className="p-6 md:p-8 overflow-y-auto h-full gtp-fade-in">
+          <div className="p-6 md:p-8 gtp-module-scroll gtp-fade-in">
             <h2 className="gtp-display text-2xl md:text-[1.7rem] font-extrabold text-[#1e3a4c] mb-6">ภาพรวมการทำงานของแผนก</h2>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
               {[
@@ -1810,7 +1810,7 @@ export default function App() {
         )}
 
         {currentModule === 'projects' && !detailProject && (
-          <div className="p-6 md:p-8 overflow-y-auto h-full gtp-fade-in">
+          <div className="p-6 md:p-8 gtp-module-scroll gtp-fade-in">
             <div className="flex justify-between items-end mb-8">
               <div>
                 <h2 className="gtp-display text-2xl font-extrabold text-[#1e3a4c]">โปรเจกต์ทั้งหมด</h2>
@@ -1939,7 +1939,7 @@ export default function App() {
         )}
 
         {currentModule === 'calendar' && (
-          <div className="p-6 md:p-8 h-full flex flex-col gtp-fade-in">
+          <div className="p-6 md:p-8 flex-1 min-h-0 flex flex-col gtp-fade-in">
             <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 shrink-0 space-y-4 md:space-y-0">
               <h2 className="gtp-display text-2xl font-extrabold text-[#1e3a4c] flex items-center">
                 <CalendarDays className="w-7 h-7 mr-3 text-teal-500" /> ปฏิทินงาน
@@ -2036,7 +2036,7 @@ export default function App() {
         )}
 
         {currentModule === 'reports' && (
-          <div className="p-6 md:p-8 overflow-y-auto h-full gtp-fade-in">
+          <div className="p-6 md:p-8 gtp-module-scroll gtp-fade-in">
             <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 space-y-4 md:space-y-0">
               <div>
                 <h2 className="gtp-display text-2xl font-extrabold text-[#1e3a4c] flex items-center">
@@ -2123,7 +2123,7 @@ export default function App() {
         )}
 
         {currentModule === 'create' && (
-          <div className="p-6 md:p-8 overflow-y-auto h-full flex justify-center">
+          <div className="p-6 md:p-8 gtp-module-scroll flex justify-center">
             <div className="max-w-3xl w-full gtp-card p-8 md:p-10 my-auto">
               <button
                 type="button"

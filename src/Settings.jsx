@@ -113,7 +113,7 @@ export default function Settings({
   };
 
   return (
-    <div className="p-6 md:p-8 overflow-y-auto h-full">
+    <div className="p-6 md:p-8 gtp-module-scroll">
       <div className="max-w-3xl mx-auto space-y-6">
         <div>
           <h2 className="gtp-display text-2xl font-extrabold text-[#1e3a4c] flex items-center">
