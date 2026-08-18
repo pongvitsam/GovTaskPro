@@ -1073,7 +1073,11 @@ export default function App() {
       let logDetail = actingAsHead
         ? `หัวหน้าอัปเดตสถานะเป็น "${getStatusText(newStatus)}" (แทนผู้รับผิดชอบ)`
         : `เปลี่ยนสถานะเป็น "${getStatusText(newStatus)}"`;
-      if (newStatus === 'Completed') {
+      if (task?.status === 'Completed' && newStatus !== 'Completed') {
+        logDetail = actingAsHead
+          ? `หัวหน้ายกเลิกปิดงาน · กลับไป "${getStatusText(newStatus)}"`
+          : `ยกเลิกปิดงาน · กลับไป "${getStatusText(newStatus)}"`;
+      } else if (newStatus === 'Completed') {
         logDetail = actingAsHead
           ? `หัวหน้าปิดงานเป็น "เสร็จสิ้น" · วันเสร็จ ${completedLabel} (แทนผู้รับผิดชอบ)`
           : `เปลี่ยนสถานะเป็น "เสร็จสิ้น" · วันเสร็จ ${completedLabel}`;
@@ -1097,6 +1101,8 @@ export default function App() {
       const lineDeptOn = (orgUnits || []).some((o) => o.type === 'department' && o.name === assigneeDept && o.lineEnabled && o.lineConfigured);
       if (notifyLine || (lineDeptOn && (newStatus === 'Review' || newStatus === 'Completed'))) {
         showToast(`📱 อัปเดตเป็น ${getStatusText(newStatus)} และแจ้งกลุ่ม LINE แผนกแล้ว`);
+      } else if (task?.status === 'Completed' && newStatus !== 'Completed') {
+        showToast(`↩️ ยกเลิกปิดงาน · กลับไป${getStatusText(newStatus)}`);
       } else if (newStatus === 'Completed') showToast(`✅ เสร็จสิ้นเมื่อ ${completedLabel}`);
       else showToast(`อัปเดตสถานะเป็น ${getStatusText(newStatus)}`);
     } catch (err) {
@@ -2397,12 +2403,33 @@ export default function App() {
                             <div className="space-y-3">
                               <p className="text-sm font-bold text-emerald-700 bg-emerald-50 border border-emerald-100 rounded-2xl px-4 py-3">
                                 งานนี้เสร็จสิ้นแล้ว
+                                {selectedTask.completedAt && (
+                                  <span className="block text-xs font-semibold text-emerald-600/90 mt-1">
+                                    วันเสร็จ {formatThaiDateLong(selectedTask.completedAt)}
+                                  </span>
+                                )}
                               </p>
-                              {isManager && (
-                                <button disabled={busy} onClick={() => handleUpdateStatus(selectedTask.id, 'In Progress')} className="w-full bg-white text-sky-700 border-2 border-sky-200 py-3 rounded-2xl font-extrabold text-sm disabled:opacity-60">
-                                  เปิดงานใหม่ (กลับไปกำลังทำ)
+                              <p className="text-[11px] font-bold text-slate-500 px-1">
+                                กดผิดสถานะ? ยกเลิกปิดงานแล้วกลับไปทำต่อได้
+                              </p>
+                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                <button
+                                  type="button"
+                                  disabled={busy}
+                                  onClick={() => handleUpdateStatus(selectedTask.id, 'In Progress')}
+                                  className="bg-white text-sky-700 border-2 border-sky-200 py-3 rounded-2xl font-extrabold text-sm disabled:opacity-60"
+                                >
+                                  ยกเลิกปิดงาน (กลับไปกำลังทำ)
                                 </button>
-                              )}
+                                <button
+                                  type="button"
+                                  disabled={busy}
+                                  onClick={() => handleUpdateStatus(selectedTask.id, 'Review')}
+                                  className="bg-white text-amber-800 border-2 border-amber-200 py-3 rounded-2xl font-extrabold text-sm disabled:opacity-60"
+                                >
+                                  กลับไปรอตรวจ
+                                </button>
+                              </div>
                             </div>
                           )}
                         </div>

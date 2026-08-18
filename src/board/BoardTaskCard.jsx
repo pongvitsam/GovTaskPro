@@ -134,8 +134,13 @@ function BoardTaskCardInner({
           {task.title}
         </h4>
       )}
-      {!compact && isMyTask && status !== 'Completed' && (
-        <p className="text-[10px] font-extrabold text-teal-600 mb-3 pl-2">แตะการ์ด → อัปเดตสถานะ</p>
+      {!compact && isMyTask && (
+        <p className={`text-[10px] font-extrabold mb-3 pl-2 ${
+          status === 'Completed' ? 'text-emerald-600' : 'text-teal-600'
+        }`}
+        >
+          {status === 'Completed' ? 'แตะการ์ด → ยกเลิกปิดงานได้' : 'แตะการ์ด → อัปเดตสถานะ'}
+        </p>
       )}
       <div className={`flex justify-between items-center ${compact ? 'pt-1 mt-1' : 'pt-3 items-end'} border-t border-slate-100/80 pl-2`}>
         <div className="flex items-center space-x-2">

@@ -632,6 +632,8 @@ function updateTaskStatus(payload) {
   var updates = { status: newStatus };
   if (newStatus === 'Completed') {
     updates.completedAt = new Date().toISOString();
+  } else {
+    updates.completedAt = '';
   }
   var found = updateRowById_(TASKS_SHEET, taskId, updates);
   if (!found) throw new Error('ไม่พบงาน');
