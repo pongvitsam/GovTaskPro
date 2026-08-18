@@ -853,7 +853,7 @@ const localHandlers = {
       return {
         ...t,
         status: payload.status,
-        completedAt: payload.status === 'Completed' ? completedAt : t.completedAt,
+        completedAt: payload.status === 'Completed' ? completedAt : null,
       };
     });
     const doneLabel = completedAt
