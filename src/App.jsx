@@ -10,7 +10,7 @@ import { api, isProductionGas, isProductionHost } from './api';
 import LoginScreen from './LoginScreen';
 import { formatThaiDate, formatThaiDateLong, formatThaiMonthYear, toDateInputValue } from './formatThaiDate';
 import ProjectTimeBar from './ProjectTimeBar';
-import { readSession, saveSession, clearSession, readBootstrapCache, writeBootstrapCache, bootstrapCacheAgeMs } from './session';
+import { readSession, saveSession, clearSession, readBootstrapCache, writeBootstrapCache, bootstrapCacheAgeMs, BOOT_CACHE_MAX_AGE_MS } from './session';
 import ThaiDateField from './ThaiDateField';
 import { buildProjectActivityForProject, summarizeRecentActivity } from './projectActivity';
 import BoardView from './board/BoardView';
@@ -23,10 +23,10 @@ const SettingsPage = lazy(() => import('./Settings'));
 const AdminUsers = lazy(() => import('./AdminUsers'));
 
 const DAY = 86400000;
-const SYNC_INTERVAL_MS = 180000;
-const SYNC_DEBOUNCE_MS = 20000;
-const BOOT_SKIP_NETWORK_MS = 45000;
-const STICKY_STALE_MS = 45000;
+const SYNC_INTERVAL_MS = 300000;
+const SYNC_DEBOUNCE_MS = 30000;
+const BOOT_SKIP_NETWORK_MS = BOOT_CACHE_MAX_AGE_MS;
+const STICKY_STALE_MS = 90000;
 const TASK_ACTIVITY_CACHE_MS = 120000;
 
 function ModuleLoading({ label }) {
@@ -217,14 +217,19 @@ export default function App() {
     const now = Date.now();
     if (silent && !force && now - lastSyncAtRef.current < SYNC_DEBOUNCE_MS) return;
 
+    const bootStale = force || now - lastSyncAtRef.current >= BOOT_SKIP_NETWORK_MS;
+    const stickyStale = force || now - lastStickySyncAtRef.current >= STICKY_STALE_MS;
+    const needSticky = stickyStale && (
+      currentModuleRef.current === 'sticky' || bellOpenRef.current
+    );
+    if (!bootStale && !needSticky) return;
+
     softRefreshingRef.current = true;
     if (!silent) setSyncing(true);
     try {
-      const stickyStale = force || now - lastStickySyncAtRef.current >= STICKY_STALE_MS;
-      const needSticky = stickyStale && (
-        currentModuleRef.current === 'sticky' || bellOpenRef.current
-      );
-      const bootPromise = api('getBootstrap', force ? { force: true } : {});
+      const bootPromise = bootStale
+        ? api('getBootstrap', force ? { force: true } : {})
+        : Promise.resolve(null);
       const stickyPromise = needSticky
         ? api('listStickyNotes', { userId: currentUser.id })
         : Promise.resolve(null);
@@ -288,7 +293,7 @@ export default function App() {
 
     const cached = readBootstrapCache();
     const cacheAge = bootstrapCacheAgeMs();
-    const cacheFresh = cacheAge !== null && cacheAge < BOOT_SKIP_NETWORK_MS;
+    const cacheFresh = cacheAge !== null && cacheAge < BOOT_CACHE_MAX_AGE_MS;
     if (cached?.users) {
       applyBootstrap(cached, { restoreSession: true });
       setBootLoading(false);
@@ -337,7 +342,7 @@ export default function App() {
     if (!currentUser || bootLoading) return undefined;
 
     const cacheAge = bootstrapCacheAgeMs();
-    if (cacheAge === null || cacheAge >= BOOT_SKIP_NETWORK_MS) {
+    if (cacheAge === null || cacheAge >= BOOT_CACHE_MAX_AGE_MS) {
       runBackgroundSync({ silent: true });
     }
 
