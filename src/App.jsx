@@ -1967,11 +1967,11 @@ export default function App() {
             busy={busy}
             canEditTask={canEditTask}
             canDeleteTask={canDeleteTask}
-            onSelectTask={useCallback((task) => { setSelectedTask(task); setTaskModalTab('details'); }, [])}
+            onSelectTask={handleBoardSelectTask}
             onSaveTaskTitle={handleSaveBoardTaskTitle}
             onDeleteTask={handleDeleteTask}
-            onClearProjectFilter={useCallback(() => setActiveProjectId(null), [])}
-            onOpenCreate={useCallback(() => openCreateModule('board'), [openCreateModule])}
+            onClearProjectFilter={handleClearProjectFilter}
+            onOpenCreate={handleOpenCreateFromBoard}
           />
         )}
 
