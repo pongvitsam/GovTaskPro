@@ -1211,6 +1211,10 @@ export default function App() {
     }
   };
 
+  const handleBoardSelectTask = useCallback((task) => { setSelectedTask(task); setTaskModalTab('details'); }, []);
+  const handleClearProjectFilter = useCallback(() => setActiveProjectId(null), []);
+  const handleOpenCreateFromBoard = useCallback(() => openCreateModule('board'), [openCreateModule]);
+
   const handleSaveBoardTaskTitle = async (taskId, titleInput) => {
     if (!currentUser) return false;
     const title = (titleInput || '').trim();
