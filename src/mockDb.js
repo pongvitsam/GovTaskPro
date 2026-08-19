@@ -195,11 +195,39 @@ function assertCanDeleteTask(db, userId, task) {
   if (!user || user.active === false) throw new Error('ไม่พบผู้ใช้');
   if (user.role === 'Admin') return;
   if (String(task.createdBy) === String(userId)) return;
+  if (String(task.assignedTo) === String(userId) && String(task.status) === 'Pending') return;
   if (user.role === 'Head') {
     const assignee = db.users.find((u) => String(u.id) === String(task.assignedTo));
     if (assignee && String(assignee.department || '') === String(user.department || '')) return;
   }
   throw new Error('ไม่มีสิทธิ์ลบงานนี้');
+}
+
+function assertCanControlTask(db, userId, task) {
+  const user = db.users.find((u) => String(u.id) === String(userId));
+  if (!user || user.active === false) throw new Error('ไม่พบผู้ใช้');
+  if (user.role === 'Admin') return;
+  if (String(task.assignedTo) === String(userId)) return;
+  if (user.role === 'Head') {
+    const assignee = db.users.find((u) => String(u.id) === String(task.assignedTo));
+    if (assignee && String(assignee.department || '') === String(user.department || '')) return;
+  }
+  throw new Error('ไม่มีสิทธิ์ดำเนินการงานนี้');
+}
+
+function assertCanTakeoverTask(db, userId, task) {
+  const user = db.users.find((u) => String(u.id) === String(userId));
+  if (!user || user.active === false) throw new Error('ไม่พบผู้ใช้');
+  if (String(task.assignedTo) === String(userId)) throw new Error('คุณรับผิดชอบงานนี้อยู่แล้ว');
+  if (String(task.status) === 'Completed') throw new Error('งานเสร็จแล้ว ไม่สามารถดึงงานได้');
+  if (user.role === 'Admin') return;
+  if (user.role === 'Head') {
+    const assignee = db.users.find((u) => String(u.id) === String(task.assignedTo));
+    if (assignee && String(assignee.department || '') === String(user.department || '')) return;
+    throw new Error('ไม่มีสิทธิ์ดึงงานนี้');
+  }
+  if (user.role === 'Staff') return;
+  throw new Error('ไม่มีสิทธิ์ดึงงานนี้');
 }
 
 function assertCanEditTask(db, userId, task) {
@@ -847,6 +875,9 @@ const localHandlers = {
   },
   updateTaskStatus(payload) {
     const db = getLocalDb();
+    const task = db.tasks.find((t) => String(t.id) === String(payload.taskId));
+    if (!task) throw new Error('ไม่พบงาน');
+    assertCanControlTask(db, payload.userId, task);
     const completedAt = payload.status === 'Completed' ? new Date().toISOString() : null;
     db.tasks = db.tasks.map((t) => {
       if (String(t.id) !== String(payload.taskId)) return t;
@@ -870,23 +901,26 @@ const localHandlers = {
       actionType: 'Status Changed',
       detail: payload.logDetail || defaultDetail,
     }, ...db.taskLogs];
-    const task = db.tasks.find((t) => String(t.id) === String(payload.taskId));
-    const assignee = db.users.find((u) => String(u.id) === String(task?.assignedTo));
+    const updatedTask = db.tasks.find((t) => String(t.id) === String(payload.taskId));
+    const assignee = db.users.find((u) => String(u.id) === String(updatedTask?.assignedTo));
     const actor = db.users.find((u) => String(u.id) === String(payload.userId));
     const dept = assignee?.department || '';
     if (dept && payload.status === 'Review') {
-      mockNotifyLineDept(db, dept, 'review', buildLineReviewMsg(task, assignee, actor));
+      mockNotifyLineDept(db, dept, 'review', buildLineReviewMsg(updatedTask, assignee, actor));
     }
     if (dept && payload.status === 'Completed') {
-      mockNotifyLineDept(db, dept, 'complete', buildLineCompleteMsg(task, assignee, actor));
+      mockNotifyLineDept(db, dept, 'complete', buildLineCompleteMsg(updatedTask, assignee, actor));
     }
     return {
-      task,
+      task: updatedTask,
       log: db.taskLogs[0],
     };
   },
   forwardTask(payload) {
     const db = getLocalDb();
+    const task = db.tasks.find((t) => String(t.id) === String(payload.taskId));
+    if (!task) throw new Error('ไม่พบงาน');
+    assertCanControlTask(db, payload.userId, task);
     assertDeptAssign(db, payload.userId, payload.newAssigneeId);
     const name = db.users.find((u) => u.id === payload.newAssigneeId)?.name || payload.newAssigneeId;
     db.tasks = db.tasks.map((t) =>
@@ -902,21 +936,23 @@ const localHandlers = {
       actionType: 'Forwarded',
       detail: `โอนงานให้ ${name}`,
     }, ...db.taskLogs];
-    const task = db.tasks.find((t) => String(t.id) === String(payload.taskId));
+    const forwardedTask = db.tasks.find((t) => String(t.id) === String(payload.taskId));
     const newAssignee = db.users.find((u) => String(u.id) === String(payload.newAssigneeId));
     const actor = db.users.find((u) => String(u.id) === String(payload.userId));
     const dept = newAssignee?.department || '';
-    if (dept && task) {
-      mockNotifyLineDept(db, dept, 'assign', buildLineForwardMsg(task, newAssignee, actor));
+    if (dept && forwardedTask) {
+      mockNotifyLineDept(db, dept, 'assign', buildLineForwardMsg(forwardedTask, newAssignee, actor));
     }
     return {
-      task,
+      task: forwardedTask,
       log: db.taskLogs[0],
     };
   },
   takeoverTask(payload) {
     const db = getLocalDb();
     const task = db.tasks.find((t) => String(t.id) === String(payload.taskId));
+    if (!task) throw new Error('ไม่พบงาน');
+    assertCanTakeoverTask(db, payload.userId, task);
     const oldName = db.users.find((u) => u.id === task?.assignedTo)?.name || '';
     db.tasks = db.tasks.map((t) =>
       String(t.id) === String(payload.taskId)

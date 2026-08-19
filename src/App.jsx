@@ -539,6 +539,7 @@ export default function App() {
     if (!task || !currentUser) return false;
     if (currentUser.role === 'Admin') return true;
     if (String(task.createdBy) === String(currentUser.id)) return true;
+    if (String(task.assignedTo) === String(currentUser.id) && task.status === 'Pending') return true;
     if (currentUser.role === 'Head') {
       const assignee = usersById.get(task.assignedTo);
       return assignee?.department === currentUser.department;
@@ -1237,8 +1238,9 @@ export default function App() {
     }
     if (!window.confirm(`ลบงาน "${task.title}" ถาวร?\n(ลบประวัติและความคิดเห็นด้วย)`)) return;
     setBusy(true);
+    showToast('กำลังลบงาน...');
     try {
-      await api('deleteTask', { taskId, userId: currentUser.id });
+      await api('deleteTask', { taskId: String(taskId), userId: currentUser.id });
       setTasks((prev) => prev.filter((t) => String(t.id) !== String(taskId)));
       setTaskLogs((prev) => prev.filter((l) => String(l.taskId) !== String(taskId)));
       setComments((prev) => prev.filter((c) => String(c.taskId) !== String(taskId)));
