@@ -1,4 +1,4 @@
-import React, { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
+import React, { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   User, CheckCircle, Clock, Plus, LayoutDashboard, LogOut, Send,
   ArrowRightLeft, History, FolderKanban, Briefcase, KanbanSquare, Bell, Calendar as CalendarIcon,
@@ -124,10 +124,10 @@ export default function App() {
   const mobileBellRef = useRef(null);
   const bellPanelRef = useRef(null);
 
-  const showToast = (msg, duration = 3000) => {
+  const showToast = useCallback((msg, duration = 3000) => {
     setToastMsg(msg);
     setTimeout(() => setToastMsg(null), duration);
-  };
+  }, []);
 
   const createReturnLabels = {
     board: 'กลับกระดานงาน',
@@ -140,11 +140,11 @@ export default function App() {
     adminUsers: 'กลับสิทธิ์แผนก',
   };
 
-  const openCreateModule = (returnTo) => {
-    setCreateReturnModule(returnTo || (currentModule === 'create' ? createReturnModule : currentModule));
+  const openCreateModule = useCallback((returnTo) => {
+    setCreateReturnModule((prev) => returnTo || (currentModule === 'create' ? prev : currentModule));
     setCreateType('task');
     setCurrentModule('create');
-  };
+  }, [currentModule]);
 
   const leaveCreateModule = () => {
     setCurrentModule(createReturnModule || 'dashboard');
@@ -152,7 +152,7 @@ export default function App() {
 
   const formatDate = (iso) => formatThaiDate(iso);
 
-  const applyBootstrap = (data, { restoreSession = true, mergeLazy = false } = {}) => {
+  const applyBootstrap = useCallback((data, { restoreSession = true, mergeLazy = false } = {}) => {
     setUsers(data.users || []);
     setOrgUnits(data.orgUnits || []);
     setProjects(data.projects || []);
@@ -197,7 +197,8 @@ export default function App() {
       });
     }
     writeBootstrapCache(data);
-  };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const applyStickySnapshot = (rows) => {
     const list = Array.isArray(rows) ? rows : [];
@@ -540,7 +541,7 @@ export default function App() {
       || (currentUser.role === 'Head' && selectedAssignee?.department === currentUser.department)
     )
   );
-  const canDeleteTask = (task) => {
+  const canDeleteTask = useCallback((task) => {
     if (!task || !currentUser) return false;
     if (currentUser.role === 'Admin') return true;
     if (String(task.createdBy) === String(currentUser.id)) return true;
@@ -550,8 +551,8 @@ export default function App() {
       return assignee?.department === currentUser.department;
     }
     return false;
-  };
-  const canEditTask = (task) => {
+  }, [currentUser, usersById]);
+  const canEditTask = useCallback((task) => {
     if (!task || !currentUser) return false;
     if (currentUser.role === 'Admin') return true;
     if (String(task.createdBy) === String(currentUser.id)) return true;
@@ -561,7 +562,7 @@ export default function App() {
       return assignee?.department === currentUser.department;
     }
     return false;
-  };
+  }, [currentUser, usersById]);
   const canEditTaskProject = !!(
     selectedTask && currentUser && (
       canControlSelectedTask
@@ -940,15 +941,20 @@ export default function App() {
     return () => clearTimeout(timer);
   }, [currentUser?.id, bootLoading]);
 
-  const statusCounts = useMemo(() => {
+  const dashboardDerived = useMemo(() => {
     const counts = { all: visibleTasks.length, Pending: 0, 'In Progress': 0, Completed: 0 };
+    const dueSoon = [];
     visibleTasks.forEach((t) => {
       if (t.status === 'Pending') counts.Pending += 1;
       else if (t.status === 'In Progress') counts['In Progress'] += 1;
       else if (t.status === 'Completed') counts.Completed += 1;
+      if (t.dueDate && t.status !== 'Completed') dueSoon.push(t);
     });
-    return counts;
+    dueSoon.sort((a, b) => new Date(a.dueDate) - new Date(b.dueDate));
+    return { counts, dueSoon };
   }, [visibleTasks]);
+  const statusCounts = dashboardDerived.counts;
+  const dashboardDueSoon = dashboardDerived.dueSoon;
 
   const tasksByDueDay = useMemo(() => {
     const m = new Map();
@@ -1785,17 +1791,13 @@ export default function App() {
                   <CalendarIcon className="w-5 h-5 mr-2 text-rose-400" /> งานที่ใกล้ถึงกำหนด / ล่าช้า
                 </h3>
                 <div className="space-y-3 flex-1">
-                  {visibleTasks
-                    .filter((t) => t.dueDate && t.status !== 'Completed')
-                    .sort((a, b) => new Date(a.dueDate) - new Date(b.dueDate))
-                    .slice(0, 5)
-                    .map((task) => {
+                  {dashboardDueSoon.slice(0, 5).map((task) => {
                       const overdue = isOverdue(task.dueDate, task.status);
                       return (
                         <div key={task.id} className={`flex justify-between items-center p-3.5 rounded-2xl border ${overdue ? 'bg-rose-50/80 border-rose-100' : 'bg-[#f3f9fc] border-transparent'}`}>
                           <div className="overflow-hidden">
                             <p className="font-bold text-[#1e3a4c] text-sm truncate">{task.title}</p>
-                            <p className="text-[11px] text-[#5b7a8a] mt-0.5 font-medium">รับผิดชอบ: {users.find((u) => u.id === task.assignedTo)?.name}</p>
+                            <p className="text-[11px] text-[#5b7a8a] mt-0.5 font-medium">รับผิดชอบ: {usersById.get(task.assignedTo)?.name}</p>
                           </div>
                           <div className="shrink-0 pl-3">
                             <span className={`text-[10px] font-bold px-2.5 py-1 rounded-full tracking-wide ${overdue ? 'bg-rose-500 text-white' : 'bg-white text-[#5b7a8a] border border-slate-100'}`}>
@@ -1965,11 +1967,11 @@ export default function App() {
             busy={busy}
             canEditTask={canEditTask}
             canDeleteTask={canDeleteTask}
-            onSelectTask={(task) => { setSelectedTask(task); setTaskModalTab('details'); }}
+            onSelectTask={useCallback((task) => { setSelectedTask(task); setTaskModalTab('details'); }, [])}
             onSaveTaskTitle={handleSaveBoardTaskTitle}
             onDeleteTask={handleDeleteTask}
-            onClearProjectFilter={() => setActiveProjectId(null)}
-            onOpenCreate={() => openCreateModule('board')}
+            onClearProjectFilter={useCallback(() => setActiveProjectId(null), [])}
+            onOpenCreate={useCallback(() => openCreateModule('board'), [openCreateModule])}
           />
         )}
 

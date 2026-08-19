@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   KanbanSquare,
   LayoutList,
@@ -76,16 +76,14 @@ export default function BoardView({
     return () => document.removeEventListener('mousedown', onDoc);
   }, [personFilterOpen]);
 
-  const displayTasks = viewMode === 'mine'
-    ? filteredTasks.filter((t) => String(t.assignedTo) === String(currentUser?.id))
-    : filteredTasks;
-
-  const displayByStatus = viewMode === 'mine'
-    ? BOARD_STATUSES.reduce((acc, status) => {
-      acc[status] = displayTasks.filter((t) => t.status === status);
+  const displayByStatus = useMemo(() => {
+    if (viewMode !== 'mine') return boardTasksByStatus;
+    const myId = String(currentUser?.id || '');
+    return BOARD_STATUSES.reduce((acc, status) => {
+      acc[status] = filteredTasks.filter((t) => String(t.assignedTo) === myId && t.status === status);
       return acc;
-    }, {})
-    : boardTasksByStatus;
+    }, {});
+  }, [viewMode, filteredTasks, boardTasksByStatus, currentUser?.id]);
 
   const handleStartEdit = (task) => {
     setEditingTaskId(task.id);
