@@ -630,6 +630,10 @@ function updateTaskStatus(payload) {
   var taskId = String(payload.taskId);
   var newStatus = String(payload.status);
   var userId = String(payload.userId || '');
+  if (!userId) throw new Error('ต้องระบุผู้ใช้');
+  var existing = findTaskById_(taskId);
+  if (!existing) throw new Error('ไม่พบงาน');
+  assertCanControlTask_(userId, existing);
   var updates = { status: newStatus };
   if (newStatus === 'Completed') {
     updates.completedAt = new Date().toISOString();
@@ -652,6 +656,10 @@ function forwardTask(payload) {
   var taskId = String(payload.taskId);
   var newAssigneeId = String(payload.newAssigneeId);
   var userId = String(payload.userId || '');
+  if (!userId) throw new Error('ต้องระบุผู้ใช้');
+  var existing = findTaskById_(taskId);
+  if (!existing) throw new Error('ไม่พบงาน');
+  assertCanControlTask_(userId, existing);
   assertDeptAssign_(userId, newAssigneeId);
   var found = updateRowById_(TASKS_SHEET, taskId, {
     assignedTo: newAssigneeId,
@@ -669,6 +677,7 @@ function takeoverTask(payload) {
   var userId = String(payload.userId);
   var existing = findTaskById_(taskId);
   if (!existing) throw new Error('ไม่พบงาน');
+  assertCanTakeoverTask_(userId, existing);
   var oldAssignee = String(existing.assignedTo || '');
   var found = updateRowById_(TASKS_SHEET, taskId, {
     assignedTo: userId,
@@ -846,6 +855,33 @@ function assertCanEditTask_(userId, task) {
   throw new Error('ไม่มีสิทธิ์แก้ไขงานนี้');
 }
 
+function assertCanControlTask_(userId, task) {
+  var user = findUserById_(userId);
+  if (!user || String(user.active) === 'FALSE') throw new Error('ไม่พบผู้ใช้');
+  if (user.role === 'Admin') return;
+  if (String(task.assignedTo) === String(userId)) return;
+  if (user.role === 'Head') {
+    var assignee = findUserById_(task.assignedTo);
+    if (assignee && String(assignee.department || '') === String(user.department || '')) return;
+  }
+  throw new Error('ไม่มีสิทธิ์ดำเนินการงานนี้');
+}
+
+function assertCanTakeoverTask_(userId, task) {
+  var user = findUserById_(userId);
+  if (!user || String(user.active) === 'FALSE') throw new Error('ไม่พบผู้ใช้');
+  if (String(task.assignedTo) === String(userId)) throw new Error('คุณรับผิดชอบงานนี้อยู่แล้ว');
+  if (String(task.status) === 'Completed') throw new Error('งานเสร็จแล้ว ไม่สามารถดึงงานได้');
+  if (user.role === 'Admin') return;
+  if (user.role === 'Head') {
+    var assignee = findUserById_(task.assignedTo);
+    if (assignee && String(assignee.department || '') === String(user.department || '')) return;
+    throw new Error('ไม่มีสิทธิ์ดึงงานนี้');
+  }
+  if (user.role === 'Staff') return;
+  throw new Error('ไม่มีสิทธิ์ดึงงานนี้');
+}
+
 function assertProjectVisibleToUser_(userId, project) {
   var user = findUserById_(userId);
   if (!user) throw new Error('ไม่พบผู้ใช้');
@@ -878,6 +914,7 @@ function assertCanDeleteTask_(userId, task) {
   if (!user || String(user.active) === 'FALSE') throw new Error('ไม่พบผู้ใช้');
   if (user.role === 'Admin') return;
   if (String(task.createdBy) === String(userId)) return;
+  if (String(task.assignedTo) === String(userId) && String(task.status) === 'Pending') return;
   if (user.role === 'Head') {
     var assignee = findUserById_(task.assignedTo);
     if (assignee && String(assignee.department || '') === String(user.department || '')) return;
@@ -887,14 +924,18 @@ function assertCanDeleteTask_(userId, task) {
 
 function deleteRowsByField_(sheetName, field, value) {
   var sheet = getSheet_(sheetName);
-  var data = sheet.getDataRange().getValues();
-  if (data.length <= 1) return;
+  var lastRow = sheet.getLastRow();
+  var lastCol = sheet.getLastColumn();
+  if (lastRow < 2 || lastCol < 1) return;
+  var data = sheet.getRange(1, 1, lastRow, lastCol).getValues();
   var headers = data[0];
   var idx = headers.indexOf(field);
   if (idx < 0) return;
   var needle = String(value);
   for (var i = data.length - 1; i >= 1; i--) {
-    if (String(data[i][idx]) === needle) sheet.deleteRow(i + 1);
+    if (String(data[i][idx]) !== needle) continue;
+    if (!data[i][0] && data[i].every(function (c) { return c === ''; })) continue;
+    sheet.deleteRow(i + 1);
   }
 }
 
