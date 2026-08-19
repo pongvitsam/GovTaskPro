@@ -298,23 +298,44 @@ function getBootstrap(opt) {
       }
     }
 
-    // Comments/logs are lazy via getTaskActivity — skip Comments sheet on boot
+    // Read all sheets in one pass: get all sheet objects up front to avoid
+    // repeated SpreadsheetApp.getSheetByName() round-trips.
+    var sheetsMap = {};
+    var allSheets = ss.getSheets();
+    for (var si = 0; si < allSheets.length; si++) {
+      sheetsMap[allSheets[si].getName()] = allSheets[si];
+    }
+
     var payload = {
-      users: listUsersFromSs_(ss),
-      projects: listProjectsFromSs_(ss),
-      tasks: listTasksFromSs_(ss),
+      users: listObjectsFromSheet_(sheetsMap[USERS_SHEET]).map(normalizeUser_),
+      projects: listObjectsFromSheet_(sheetsMap[PROJECTS_SHEET]).map(normalizeProject_),
+      tasks: listObjectsFromSheet_(sheetsMap[TASKS_SHEET]).map(normalizeTask_),
       taskLogs: [],
       comments: [],
       commentCounts: {},
-      milestones: listMilestonesFromSs_(ss),
-      contractExtensions: listContractExtensionsFromSs_(ss),
-      orgUnits: listOrgUnitsFromSs_(ss),
+      milestones: listObjectsFromSheet_(sheetsMap[MILESTONES_SHEET]).map(normalizeMilestone_).sort(function (a, b) { return (a.sortOrder || 0) - (b.sortOrder || 0); }),
+      contractExtensions: listObjectsFromSheet_(sheetsMap[CONTRACT_EXTENSIONS_SHEET]).map(normalizeContractExtension_).sort(function (a, b) {
+        if (a.projectId !== b.projectId) return String(a.projectId).localeCompare(String(b.projectId));
+        return (a.extensionNo || 0) - (b.extensionNo || 0);
+      }),
+      orgUnits: sheetsMap[ORG_UNITS_SHEET]
+        ? listObjectsFromSheet_(sheetsMap[ORG_UNITS_SHEET]).map(normalizeOrgUnit_).filter(function (o) { return o.active && o.name; })
+        : [],
       serverTime: new Date().toISOString()
     };
 
+    // Warm in-memory caches from the data we already read
+    _usersListCache = payload.users.map(function (u) {
+      return { id: u.id, name: u.name, role: u.role, department: u.department,
+        division: u.division, active: u.active, email: u.email,
+        notifyEmail: u.notifyEmail, notifyAssign: u.notifyAssign,
+        notifyStatus: u.notifyStatus, notifyReview: u.notifyReview,
+        notifyLineDefault: u.notifyLineDefault, username: u.username };
+    });
+
     try {
       var json = JSON.stringify(payload);
-      if (json.length < 95000) {
+      if (json.length < 500000) {
         cache.put(BOOT_CACHE_KEY, json, BOOT_CACHE_TTL);
       }
     } catch (cacheErr) { /* ignore */ }
@@ -2268,11 +2289,18 @@ function ensureDemoShowcase_() {
     ['u8', 'วิชัย (พนักงานการเงิน)', 'Staff', 'Finance', 'กองงบประมาณ', 'TRUE', '', 'FALSE', 'TRUE', 'TRUE', 'FALSE', 'TRUE', 'wichai', '1234'],
     ['u9', 'บัญชีปิดใช้ (ตัวอย่าง)', 'Staff', 'IT', 'กองเทคโนโลยี', 'FALSE', '', 'FALSE', 'TRUE', 'TRUE', 'FALSE', 'TRUE', 'olduser', '1234']
   ];
+  var userIds = buildSheetIdSet_(USERS_SHEET);
+  var newUsers = [];
   for (var ui = 0; ui < demoUsers.length; ui++) {
-    if (!sheetHasId_(USERS_SHEET, demoUsers[ui][0])) {
-      writeRows_(getSheet_(USERS_SHEET), getSheet_(USERS_SHEET).getLastRow() + 1, [demoUsers[ui]]);
-      added.users++;
+    if (!userIds[String(demoUsers[ui][0])]) {
+      newUsers.push(demoUsers[ui]);
+      userIds[String(demoUsers[ui][0])] = true;
     }
+  }
+  if (newUsers.length) {
+    var uSheet = getSheet_(USERS_SHEET);
+    writeRows_(uSheet, uSheet.getLastRow() + 1, newUsers);
+    added.users += newUsers.length;
   }
 
   var demoProjects = [
@@ -2282,12 +2310,12 @@ function ensureDemoShowcase_() {
     ['p4', 'ระบบประเมินผลประจำปี', 'โปรเจกต์แผนก HR — สิทธิ์แยกตามแผนก', 'u5', 'HR', iso(-10), d(-10), d(30)],
     ['p5', 'จัดทำงบประมาณปี 69', 'โปรเจกต์แผนก Finance', 'u7', 'Finance', iso(-5), d(-5), d(40)]
   ];
+  var projIds = buildSheetIdSet_(PROJECTS_SHEET);
+  var newProjs = [];
   for (var pi = 0; pi < demoProjects.length; pi++) {
-    if (!sheetHasId_(PROJECTS_SHEET, demoProjects[pi][0])) {
-      writeRows_(getSheet_(PROJECTS_SHEET), getSheet_(PROJECTS_SHEET).getLastRow() + 1, [demoProjects[pi]]);
-      added.projects++;
-    }
+    if (!projIds[String(demoProjects[pi][0])]) { newProjs.push(demoProjects[pi]); projIds[String(demoProjects[pi][0])] = true; }
   }
+  if (newProjs.length) { var pSheet = getSheet_(PROJECTS_SHEET); writeRows_(pSheet, pSheet.getLastRow() + 1, newProjs); added.projects += newProjs.length; }
 
   var demoMs = [
     ['m1', 'p1', 'เก็บความต้องการ & ออกแบบ', 'ประชุมผู้ใช้และออกแบบ UI/DB', d(-14), d(-7), 20, 1, 'TRUE', iso(-6)],
@@ -2307,27 +2335,27 @@ function ensureDemoShowcase_() {
     ['m15', 'p5', 'รวบรวมคำของบ', 'จากทุกกอง', d(-5), d(7), 50, 1, 'FALSE', ''],
     ['m16', 'p5', 'ปรับยอด & อนุมัติ', 'เสนอ ผอ.', d(7), d(40), 50, 2, 'FALSE', '']
   ];
+  var msIds = buildSheetIdSet_(MILESTONES_SHEET);
+  var newMs = [];
   for (var mi = 0; mi < demoMs.length; mi++) {
-    if (!sheetHasId_(MILESTONES_SHEET, demoMs[mi][0])) {
-      writeRows_(getSheet_(MILESTONES_SHEET), getSheet_(MILESTONES_SHEET).getLastRow() + 1, [demoMs[mi]]);
-      added.milestones++;
-    }
+    if (!msIds[String(demoMs[mi][0])]) { newMs.push(demoMs[mi]); msIds[String(demoMs[mi][0])] = true; }
   }
+  if (newMs.length) { var mSheet = getSheet_(MILESTONES_SHEET); writeRows_(mSheet, mSheet.getLastRow() + 1, newMs); added.milestones += newMs.length; }
 
   var demoExtensions = [
     ['ce_demo_1', 'p1', 1, d(45), d(60), 'm4', 'รอผลทดสอบ UAT และปรับแก้ตามข้อเสนอแนะของผู้ใช้งาน', 'บันทึกอนุมัติ IT-EXT-001/2569', d(-2), 'u1', iso(-2), iso(-2)],
     ['ce_demo_2', 'p1', 2, d(60), d(75), 'm5', 'เลื่อนการขึ้นระบบจริงเพื่อรอการเชื่อมต่อระบบกลาง', 'บันทึกอนุมัติ IT-EXT-002/2569', d(-1), 'u1', iso(-1), iso(-1)],
     ['ce_demo_3', 'p3', 1, d(60), d(75), 'm11', 'รออะไหล่ Network เพิ่มเติมจากผู้จำหน่าย', 'บันทึกอนุมัติ NET-EXT-001/2569', d(0), 'u1', iso(0), iso(0)]
   ];
+  var ceIds = buildSheetIdSet_(CONTRACT_EXTENSIONS_SHEET);
+  var newCe = [];
   for (var cei = 0; cei < demoExtensions.length; cei++) {
-    if (!sheetHasId_(CONTRACT_EXTENSIONS_SHEET, demoExtensions[cei][0])) {
-      writeRows_(getSheet_(CONTRACT_EXTENSIONS_SHEET), getSheet_(CONTRACT_EXTENSIONS_SHEET).getLastRow() + 1, [demoExtensions[cei]]);
-      added.contractExtensions++;
-    }
+    if (!ceIds[String(demoExtensions[cei][0])]) { newCe.push(demoExtensions[cei]); ceIds[String(demoExtensions[cei][0])] = true; }
   }
+  if (newCe.length) { var ceSheet = getSheet_(CONTRACT_EXTENSIONS_SHEET); writeRows_(ceSheet, ceSheet.getLastRow() + 1, newCe); added.contractExtensions += newCe.length; }
   // Demo projects reflect the latest approved contract end date.
-  if (sheetHasId_(PROJECTS_SHEET, 'p1')) updateRowById_(PROJECTS_SHEET, 'p1', { endDate: d(75) });
-  if (sheetHasId_(PROJECTS_SHEET, 'p3')) updateRowById_(PROJECTS_SHEET, 'p3', { endDate: d(75) });
+  if (projIds['p1']) updateRowById_(PROJECTS_SHEET, 'p1', { endDate: d(75) });
+  if (projIds['p3']) updateRowById_(PROJECTS_SHEET, 'p3', { endDate: d(75) });
 
   var demoTasks = [
     [1, 'p1', 'ออกแบบหน้า Login ใหม่', 'ใช้โทนสีองค์กร — สถานะเสร็จสิ้น', 'u1', 'u2', 'Completed', 'Assigned', iso(-2), 'FALSE', iso(-7), iso(-2)],
@@ -2347,12 +2375,12 @@ function ensureDemoShowcase_() {
     [15, 'p2', 'ติดป้ายอุปกรณ์ Rack', 'ปฏิทินวันนี้', 'u1', 'u3', 'Pending', 'Assigned', iso(0), 'FALSE', iso(-1), ''],
     [16, 'p3', 'สำรวจ AP ชั้น 3', 'ปฏิทินอีก 10 วัน', 'u1', 'u2', 'Pending', 'Assigned', iso(10), 'FALSE', iso(-1), '']
   ];
+  var taskIds = buildSheetIdSet_(TASKS_SHEET);
+  var newTasks = [];
   for (var ti = 0; ti < demoTasks.length; ti++) {
-    if (!sheetHasId_(TASKS_SHEET, demoTasks[ti][0])) {
-      writeRows_(getSheet_(TASKS_SHEET), getSheet_(TASKS_SHEET).getLastRow() + 1, [demoTasks[ti]]);
-      added.tasks++;
-    }
+    if (!taskIds[String(demoTasks[ti][0])]) { newTasks.push(demoTasks[ti]); taskIds[String(demoTasks[ti][0])] = true; }
   }
+  if (newTasks.length) { var tSheet = getSheet_(TASKS_SHEET); writeRows_(tSheet, tSheet.getLastRow() + 1, newTasks); added.tasks += newTasks.length; }
 
   var demoLogs = [
     ['l1', 4, iso(-4), 'u1', 'Created', 'มอบหมายงานให้ สมศักดิ์'],
@@ -2370,12 +2398,12 @@ function ensureDemoShowcase_() {
     ['l13', 3, iso(-3), 'u3', 'Status Changed', 'เปลี่ยนสถานะเป็น "เสร็จสิ้น" · วันเสร็จ'],
     ['l14', 8, iso(0, -1), 'u1', 'Created', 'มอบหมายงานเขียนคู่มือ']
   ];
+  var logIds = buildSheetIdSet_(LOGS_SHEET);
+  var newLogs = [];
   for (var li = 0; li < demoLogs.length; li++) {
-    if (!sheetHasId_(LOGS_SHEET, demoLogs[li][0])) {
-      writeRows_(getSheet_(LOGS_SHEET), getSheet_(LOGS_SHEET).getLastRow() + 1, [demoLogs[li]]);
-      added.logs++;
-    }
+    if (!logIds[String(demoLogs[li][0])]) { newLogs.push(demoLogs[li]); logIds[String(demoLogs[li][0])] = true; }
   }
+  if (newLogs.length) { var lSheet = getSheet_(LOGS_SHEET); writeRows_(lSheet, lSheet.getLastRow() + 1, newLogs); added.logs += newLogs.length; }
 
   var demoComments = [
     ['c1', 2, iso(0, -18), 'u1', 'ติดปัญหาตรงไหนเรื่อง API ทักมาได้เลยนะ'],
@@ -2384,12 +2412,12 @@ function ensureDemoShowcase_() {
     ['c4', 9, iso(-1), 'u5', 'ใช้เทมเพลตใหม่ในโฟลเดอร์แชร์ได้เลย'],
     ['c5', 12, iso(-2), 'u8', 'รอตัวเลขจาก IT อีกชุดครับ']
   ];
+  var cmIds = buildSheetIdSet_(COMMENTS_SHEET);
+  var newCm = [];
   for (var ci = 0; ci < demoComments.length; ci++) {
-    if (!sheetHasId_(COMMENTS_SHEET, demoComments[ci][0])) {
-      writeRows_(getSheet_(COMMENTS_SHEET), getSheet_(COMMENTS_SHEET).getLastRow() + 1, [demoComments[ci]]);
-      added.comments++;
-    }
+    if (!cmIds[String(demoComments[ci][0])]) { newCm.push(demoComments[ci]); cmIds[String(demoComments[ci][0])] = true; }
   }
+  if (newCm.length) { var cmSheet = getSheet_(COMMENTS_SHEET); writeRows_(cmSheet, cmSheet.getLastRow() + 1, newCm); added.comments += newCm.length; }
 
   var demoStickies = [
     ['sn1', 'u1', 'ประชุมทีม IT', 'เตรียมสไลด์รายงานประจำเดือน', 'yellow', '📌', 48, 56, 220, 200, 1, iso(-1), iso(-1)],
@@ -2398,12 +2426,12 @@ function ensureDemoShowcase_() {
     ['sn4', 'u5', 'รอบประเมิน', 'ปิดรับแบบฟอร์มวันศุกร์', 'pink', '📋', 60, 70, 220, 190, 1, iso(-2), iso(-2)],
     ['sn5', 'u7', 'งบ 69', 'นัดประชุมผอ. สัปดาห์หน้า', 'blue', '💰', 90, 90, 220, 190, 1, iso(-1), iso(-1)]
   ];
+  var stickyIds = buildSheetIdSet_(STICKY_NOTES_SHEET);
+  var newStickies = [];
   for (var si = 0; si < demoStickies.length; si++) {
-    if (!sheetHasId_(STICKY_NOTES_SHEET, demoStickies[si][0])) {
-      writeRows_(getSheet_(STICKY_NOTES_SHEET), getSheet_(STICKY_NOTES_SHEET).getLastRow() + 1, [demoStickies[si]]);
-      added.stickies++;
-    }
+    if (!stickyIds[String(demoStickies[si][0])]) { newStickies.push(demoStickies[si]); stickyIds[String(demoStickies[si][0])] = true; }
   }
+  if (newStickies.length) { var snSheet = getSheet_(STICKY_NOTES_SHEET); writeRows_(snSheet, snSheet.getLastRow() + 1, newStickies); added.stickies += newStickies.length; }
 
   return {
     ok: true,
