@@ -1,6 +1,6 @@
 const SESSION_KEY = 'gtp_session_v1';
 const BOOT_CACHE_KEY = 'gtp_client_boot_v1';
-const BOOT_CACHE_MAX_AGE_MS = 5 * 60 * 1000;
+export const BOOT_CACHE_MAX_AGE_MS = 5 * 60 * 1000;
 
 /** Persist login per browser/device (each device keeps its own session). */
 export function readSession() {
@@ -68,10 +68,18 @@ export function readBootstrapCache() {
 
 export function writeBootstrapCache(data) {
   if (!data?.users) return;
-  try {
-    localStorage.setItem(BOOT_CACHE_KEY, JSON.stringify({ savedAt: Date.now(), data }));
-  } catch {
-    /* quota / private mode */
+  const payload = JSON.stringify({ savedAt: Date.now(), data });
+  const write = () => {
+    try {
+      localStorage.setItem(BOOT_CACHE_KEY, payload);
+    } catch {
+      /* quota / private mode */
+    }
+  };
+  if (typeof requestIdleCallback === 'function') {
+    requestIdleCallback(write, { timeout: 2000 });
+  } else {
+    setTimeout(write, 0);
   }
 }
 

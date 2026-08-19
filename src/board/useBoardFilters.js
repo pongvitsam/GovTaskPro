@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useState, useDeferredValue } from 'react';
 import {
   applyBoardFilters,
   groupTasksByStatus,
@@ -11,6 +11,7 @@ export function useBoardFilters({ visibleTasks, currentUser, projectsById, assig
   const [statusFilter, setStatusFilter] = useState('all');
   const [overdueOnly, setOverdueOnly] = useState(false);
   const [myTasksOnly, setMyTasksOnly] = useState(false);
+  const deferredSearch = useDeferredValue(search);
 
   const boardFilterUsers = useMemo(
     () => [...assignableUsers].sort((a, b) => String(a.name).localeCompare(String(b.name), 'th')),
@@ -46,14 +47,14 @@ export function useBoardFilters({ visibleTasks, currentUser, projectsById, assig
 
   const filteredTasks = useMemo(
     () => applyBoardFilters(visibleTasks, {
-      search,
+      search: deferredSearch,
       personFilter,
       statusFilter,
       overdueOnly,
       myTasksOnly,
       currentUserId: currentUser?.id,
     }, { projectsById }),
-    [visibleTasks, search, personFilter, statusFilter, overdueOnly, myTasksOnly, currentUser?.id, projectsById],
+    [visibleTasks, deferredSearch, personFilter, statusFilter, overdueOnly, myTasksOnly, currentUser?.id, projectsById],
   );
 
   const boardTasksByStatus = useMemo(

@@ -13,8 +13,8 @@ function gasRun(fnName, ...args) {
     const timer = setTimeout(() => {
       if (settled) return;
       settled = true;
-      reject(new Error('หมดเวลาเชื่อมต่อเซิร์ฟเวอร์ (20 วินาที) — ลองรีเฟรชหน้า หรือตรวจสิทธิ์ Sheets'));
-    }, 20000);
+      reject(new Error('หมดเวลาเชื่อมต่อเซิร์ฟเวอร์ (45 วินาที) — ลองรีเฟรชหน้า หรือตรวจสิทธิ์ Sheets'));
+    }, 45000);
 
     const runner = google.script.run
       .withSuccessHandler((result) => {

@@ -41,7 +41,7 @@ export default function VirtualBoardColumn({
   const shownTasks = hiddenCount > 0 ? tasks.slice(0, limit) : tasks;
 
   const estimateSize = compact ? CARD_HEIGHT_COMPACT : CARD_HEIGHT_NORMAL;
-  const useVirtual = shownTasks.length > 20;
+  const useVirtual = shownTasks.length > 8;
   const virtualizer = useVirtualizer({
     count: shownTasks.length,
     getScrollElement: () => parentRef.current,

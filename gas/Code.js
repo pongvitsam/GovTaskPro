@@ -235,7 +235,7 @@ function include_(filename) {
 
 var SCHEMA_VERSION = '14';
 var BOOT_CACHE_KEY = 'gtp_boot_v10';
-var BOOT_CACHE_TTL = 180;
+var BOOT_CACHE_TTL = 300;
 var _ssCache = null;
 var _sheetHeaderCache = {};
 var _usersListCache = null;
@@ -243,7 +243,14 @@ var _usersByIdMap = null;
 var STICKY_COLORS = ['yellow', 'orange', 'pink', 'mint', 'teal', 'blue', 'lavender', 'white'];
 var STICKY_FONTS = ['handwriting', 'sarabun', 'manrope', 'sans', 'mono'];
 
+function invalidateLocalCaches_() {
+  _usersListCache = null;
+  _usersByIdMap = null;
+  _orgUnitsRawCache = null;
+}
+
 function invalidateBootstrapCache_() {
+  invalidateLocalCaches_();
   try {
     CacheService.getScriptCache().remove(BOOT_CACHE_KEY);
   } catch (e) { /* ignore */ }
@@ -264,17 +271,30 @@ function getBootstrap(opt) {
       }
     }
 
+    var lock = LockService.getScriptLock();
+    var gotLock = false;
+    try {
+      gotLock = lock.tryLock(5000);
+      if (!forceFresh) {
+        var hitAfterLock = cache.get(BOOT_CACHE_KEY);
+        if (hitAfterLock) {
+          try {
+            return JSON.parse(hitAfterLock);
+          } catch (parseErr2) { /* rebuild */ }
+        }
+      }
+
     var ss = openDatabase_(false);
     var props = PropertiesService.getScriptProperties();
     if ((props.getProperty('SCHEMA_VERSION') || '') !== SCHEMA_VERSION) {
-      var lock = LockService.getScriptLock();
+      var migrateLock = LockService.getScriptLock();
       try {
-        lock.waitLock(8000);
+        migrateLock.waitLock(8000);
         maybeMigrateAndSeed_(ss);
       } catch (lockErr) {
         throw new Error('ระบบกำลังเตรียมฐานข้อมูล กรุณารอสักครู่แล้วลองใหม่');
       } finally {
-        try { lock.releaseLock(); } catch (e) {}
+        try { migrateLock.releaseLock(); } catch (e) {}
       }
     }
 
@@ -300,6 +320,11 @@ function getBootstrap(opt) {
     } catch (cacheErr) { /* ignore */ }
 
     return payload;
+    } finally {
+      if (gotLock) {
+        try { lock.releaseLock(); } catch (e) { /* ignore */ }
+      }
+    }
   } catch (err) {
     throw new Error(err && err.message ? err.message : String(err));
   }
@@ -362,16 +387,21 @@ function getProjectActivity(payload) {
     var logHeaders = rawLogs[0];
     var taskIdIdx = logHeaders.indexOf('taskId');
     if (taskIdIdx >= 0) {
+      var logIdIdx = logHeaders.indexOf('id');
+      var logTsIdx = logHeaders.indexOf('timestamp');
+      var logByIdx = logHeaders.indexOf('actionBy');
+      var logTypeIdx = logHeaders.indexOf('actionType');
+      var logDetailIdx = logHeaders.indexOf('detail');
       for (var li = 1; li < rawLogs.length; li++) {
         var l = rawLogs[li];
         if (!taskIds[String(l[taskIdIdx])]) continue;
         taskLogs.push({
-          id: String(l[logHeaders.indexOf('id')]),
+          id: String(l[logIdIdx]),
           taskId: isFinite(Number(l[taskIdIdx])) ? Number(l[taskIdIdx]) : String(l[taskIdIdx]),
-          timestamp: toIso_(l[logHeaders.indexOf('timestamp')]),
-          actionBy: String(l[logHeaders.indexOf('actionBy')] || ''),
-          actionType: String(l[logHeaders.indexOf('actionType')] || ''),
-          detail: String(l[logHeaders.indexOf('detail')] || '')
+          timestamp: toIso_(l[logTsIdx]),
+          actionBy: String(l[logByIdx] || ''),
+          actionType: String(l[logTypeIdx] || ''),
+          detail: String(l[logDetailIdx] || '')
         });
       }
     }
@@ -473,18 +503,9 @@ function deleteMilestone(payload) {
   openDatabase_(false);
   var id = String(payload.id || '');
   if (!id) throw new Error('ไม่พบขั้นตอน');
-  var sheet = getSheet_(MILESTONES_SHEET);
-  var data = sheet.getDataRange().getValues();
-  var headers = data[0];
-  var idIdx = headers.indexOf('id');
-  for (var i = 1; i < data.length; i++) {
-    if (String(data[i][idIdx]) === id) {
-      sheet.deleteRow(i + 1);
-      invalidateBootstrapCache_();
-      return { ok: true, id: id };
-    }
-  }
-  throw new Error('ไม่พบขั้นตอน');
+  deleteRowsByField_(MILESTONES_SHEET, 'id', id);
+  invalidateBootstrapCache_();
+  return { ok: true, id: id };
 }
 
 function createContractExtension(payload) {
@@ -566,17 +587,9 @@ function deleteContractExtension(payload) {
   openDatabase_(false);
   var id = String(payload.id || '');
   if (!id) throw new Error('ไม่พบรายการขยายสัญญา');
-  var sheet = getSheet_(CONTRACT_EXTENSIONS_SHEET);
-  var data = sheet.getDataRange().getValues();
-  if (data.length < 2) throw new Error('ไม่พบรายการขยายสัญญา');
-  var idIdx = data[0].indexOf('id');
-  for (var i = 1; i < data.length; i++) {
-    if (String(data[i][idIdx]) !== id) continue;
-    sheet.deleteRow(i + 1);
-    invalidateBootstrapCache_();
-    return { ok: true, id: id };
-  }
-  throw new Error('ไม่พบรายการขยายสัญญา');
+  deleteRowsByField_(CONTRACT_EXTENSIONS_SHEET, 'id', id);
+  invalidateBootstrapCache_();
+  return { ok: true, id: id };
 }
 
 function findProjectById_(projectId) {
@@ -631,16 +644,16 @@ function updateTaskStatus(payload) {
   var newStatus = String(payload.status);
   var userId = String(payload.userId || '');
   if (!userId) throw new Error('ต้องระบุผู้ใช้');
-  var existing = findTaskById_(taskId);
-  if (!existing) throw new Error('ไม่พบงาน');
-  assertCanControlTask_(userId, existing);
-  var updates = { status: newStatus };
-  if (newStatus === 'Completed') {
-    updates.completedAt = new Date().toISOString();
-  } else {
-    updates.completedAt = '';
-  }
-  var found = updateRowById_(TASKS_SHEET, taskId, updates);
+  var found = mutateTaskById_(taskId, function (task) {
+    assertCanControlTask_(userId, task);
+    var updates = { status: newStatus };
+    if (newStatus === 'Completed') {
+      updates.completedAt = new Date().toISOString();
+    } else {
+      updates.completedAt = '';
+    }
+    return updates;
+  });
   if (!found) throw new Error('ไม่พบงาน');
   var defaultDetail = 'เปลี่ยนสถานะเป็น ' + newStatus;
   if (newStatus === 'Completed') {
@@ -657,13 +670,10 @@ function forwardTask(payload) {
   var newAssigneeId = String(payload.newAssigneeId);
   var userId = String(payload.userId || '');
   if (!userId) throw new Error('ต้องระบุผู้ใช้');
-  var existing = findTaskById_(taskId);
-  if (!existing) throw new Error('ไม่พบงาน');
-  assertCanControlTask_(userId, existing);
   assertDeptAssign_(userId, newAssigneeId);
-  var found = updateRowById_(TASKS_SHEET, taskId, {
-    assignedTo: newAssigneeId,
-    status: 'Pending'
+  var found = mutateTaskById_(taskId, function (task) {
+    assertCanControlTask_(userId, task);
+    return { assignedTo: newAssigneeId, status: 'Pending' };
   });
   if (!found) throw new Error('ไม่พบงาน');
   var name = findUserName_(newAssigneeId);
@@ -675,13 +685,11 @@ function takeoverTask(payload) {
   openDatabase_(false);
   var taskId = String(payload.taskId);
   var userId = String(payload.userId);
-  var existing = findTaskById_(taskId);
-  if (!existing) throw new Error('ไม่พบงาน');
-  assertCanTakeoverTask_(userId, existing);
-  var oldAssignee = String(existing.assignedTo || '');
-  var found = updateRowById_(TASKS_SHEET, taskId, {
-    assignedTo: userId,
-    status: 'In Progress'
+  var oldAssignee = '';
+  var found = mutateTaskById_(taskId, function (task) {
+    assertCanTakeoverTask_(userId, task);
+    oldAssignee = String(task.assignedTo || '');
+    return { assignedTo: userId, status: 'In Progress' };
   });
   if (!found) throw new Error('ไม่พบงาน');
   var takeLog = addLog_(taskId, userId, 'Takeover', 'ดึงงานมาจาก ' + findUserName_(oldAssignee) + ' เพื่อดำเนินการต่อ');
@@ -909,6 +917,38 @@ function findTaskById_(taskId) {
   return null;
 }
 
+function mutateTaskById_(taskId, beforeUpdate) {
+  var sheet = getSheet_(TASKS_SHEET);
+  var lastRow = sheet.getLastRow();
+  var lastCol = sheet.getLastColumn();
+  if (lastRow < 2 || lastCol < 1) return null;
+  var values = sheet.getRange(1, 1, lastRow, lastCol).getValues();
+  var headers = values[0];
+  var idIdx = headers.indexOf('id');
+  if (idIdx < 0) return null;
+  var needle = String(taskId);
+  var colCount = headers.length;
+  for (var i = 1; i < values.length; i++) {
+    if (String(values[i][idIdx]) !== needle) continue;
+    if (!values[i][0] && values[i].every(function (c) { return c === ''; })) continue;
+    var task = normalizeTask_(rowToObject_(headers, values[i]));
+    var updates = beforeUpdate(task);
+    if (!updates) return null;
+    for (var key in updates) {
+      if (!Object.prototype.hasOwnProperty.call(updates, key)) continue;
+      if (updates[key] === undefined) continue;
+      var col = headers.indexOf(key);
+      if (col < 0) continue;
+      values[i][col] = updates[key] === null ? '' : updates[key];
+    }
+    var writeRow = [];
+    for (var c = 0; c < colCount; c++) writeRow.push(values[i][c]);
+    sheet.getRange(i + 1, 1, 1, colCount).setValues([writeRow]);
+    return normalizeTask_(rowToObject_(headers, values[i]));
+  }
+  return null;
+}
+
 function assertCanDeleteTask_(userId, task) {
   var user = findUserById_(userId);
   if (!user || String(user.active) === 'FALSE') throw new Error('ไม่พบผู้ใช้');
@@ -932,10 +972,40 @@ function deleteRowsByField_(sheetName, field, value) {
   var idx = headers.indexOf(field);
   if (idx < 0) return;
   var needle = String(value);
-  for (var i = data.length - 1; i >= 1; i--) {
+  var removeCount = 0;
+  for (var i = 1; i < data.length; i++) {
     if (String(data[i][idx]) !== needle) continue;
     if (!data[i][0] && data[i].every(function (c) { return c === ''; })) continue;
-    sheet.deleteRow(i + 1);
+    removeCount++;
+  }
+  if (removeCount === 0) return;
+  if (removeCount === 1) {
+    for (var j = data.length - 1; j >= 1; j--) {
+      if (String(data[j][idx]) !== needle) continue;
+      if (!data[j][0] && data[j].every(function (c) { return c === ''; })) continue;
+      sheet.deleteRow(j + 1);
+      return;
+    }
+  }
+  var kept = [headers];
+  for (var k = 1; k < data.length; k++) {
+    if (String(data[k][idx]) === needle) {
+      if (!data[k][0] && data[k].every(function (c) { return c === ''; })) {
+        kept.push(data[k]);
+      }
+      continue;
+    }
+    kept.push(data[k]);
+  }
+  rewriteSheetRows_(sheet, kept, lastRow, lastCol);
+}
+
+function rewriteSheetRows_(sheet, rows, prevLastRow, prevLastCol) {
+  if (prevLastRow > 0 && prevLastCol > 0) {
+    sheet.getRange(1, 1, prevLastRow, prevLastCol).clearContent();
+  }
+  if (rows.length > 0 && rows[0].length > 0) {
+    sheet.getRange(1, 1, rows.length, rows[0].length).setValues(rows);
   }
 }
 
@@ -950,7 +1020,6 @@ function addComment(payload) {
   };
   if (!row.text) throw new Error('ข้อความว่าง');
   appendObject_(COMMENTS_SHEET, COMMENT_HEADERS, row);
-  invalidateBootstrapCache_();
   return {
     id: String(row.id),
     taskId: isFinite(Number(row.taskId)) ? Number(row.taskId) : String(row.taskId),
@@ -1186,17 +1255,9 @@ function deleteStickyNote(payload) {
   }
 
   var sheet = getSheet_(STICKY_NOTES_SHEET);
-  var data = sheet.getDataRange().getValues();
-  var headers = data[0];
-  var idIdx = headers.indexOf('id');
-  for (var i = 1; i < data.length; i++) {
-    if (String(data[i][idIdx]) === id) {
-      sheet.deleteRow(i + 1);
-      invalidateStickyCache_(userId);
-      return { ok: true, id: id, deleted: true };
-    }
-  }
-  throw new Error('ไม่พบโน้ต');
+  deleteRowsByField_(STICKY_NOTES_SHEET, 'id', id);
+  invalidateStickyCache_(userId);
+  return { ok: true, id: id, deleted: true };
 }
 
 function emptyStickyTrash(payload) {
@@ -1205,21 +1266,25 @@ function emptyStickyTrash(payload) {
   var userId = String((payload && payload.userId) || '');
   if (!userId) throw new Error('ต้องระบุผู้ใช้');
   var sheet = getSheet_(STICKY_NOTES_SHEET);
-  var data = sheet.getDataRange().getValues();
-  if (data.length < 2) return { ok: true, removed: 0 };
+  var lastRow = sheet.getLastRow();
+  var lastCol = sheet.getLastColumn();
+  if (lastRow < 2 || lastCol < 1) return { ok: true, removed: 0 };
+  var data = sheet.getRange(1, 1, lastRow, lastCol).getValues();
   var headers = data[0];
-  var idIdx = headers.indexOf('id');
   var userIdx = headers.indexOf('userId');
   var trashIdx = headers.indexOf('trashed');
   if (trashIdx < 0) return { ok: true, removed: 0 };
+  var kept = [headers];
   var removed = 0;
-  for (var i = data.length - 1; i >= 1; i--) {
-    if (String(data[i][userIdx]) !== String(userId)) continue;
-    var trashed = boolFlag_(data[i][trashIdx], false);
-    if (!trashed) continue;
-    sheet.deleteRow(i + 1);
-    removed++;
+  for (var i = 1; i < data.length; i++) {
+    if (String(data[i][userIdx]) === String(userId) && boolFlag_(data[i][trashIdx], false)) {
+      removed++;
+      continue;
+    }
+    kept.push(data[i]);
   }
+  if (removed === 0) return { ok: true, removed: 0 };
+  rewriteSheetRows_(sheet, kept, lastRow, lastCol);
   invalidateStickyCache_(userId);
   return { ok: true, removed: removed };
 }
@@ -1402,8 +1467,10 @@ function appendObject_(sheetName, headers, obj) {
 
 function updateRowById_(sheetName, id, updates) {
   var sheet = getSheet_(sheetName);
-  var data = sheet.getDataRange().getValues();
-  if (data.length < 2) return null;
+  var lastRow = sheet.getLastRow();
+  var lastCol = sheet.getLastColumn();
+  if (lastRow < 2 || lastCol < 1) return null;
+  var data = sheet.getRange(1, 1, lastRow, lastCol).getValues();
   var headers = data[0];
   var idIdx = headers.indexOf('id');
   if (idIdx < 0) return null;
