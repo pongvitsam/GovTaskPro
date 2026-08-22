@@ -2,7 +2,7 @@ name: Deploy Google Apps Script
 
 on:
   push:
-    branches: ['**']
+    branches: [main]
     paths:
       - 'gas/**'
       - 'src/**'
@@ -37,9 +37,13 @@ jobs:
           CLASPRC_JSON: ${{ secrets.CLASPRC_JSON }}
         run: |
           if [ -z "$CLASPRC_JSON" ]; then
+<<<<<<< Updated upstream
             echo "::warning::CLASPRC_JSON secret is not configured — skipping GAS Actions deploy."
             echo "Local/cloud agent deploy still works via: npm run deploy (needs ~/.clasprc.json)"
             echo "Optional CI setup: Get-Content \$env:USERPROFILE\\.clasprc.json -Raw | gh secret set CLASPRC_JSON -R pongvitsam/GovTaskPro"
+=======
+            echo "::notice::Skipping Actions GAS deploy (no CLASPRC_JSON). App is deployed by agent via npm run deploy."
+>>>>>>> Stashed changes
             exit 0
           fi
           echo "$CLASPRC_JSON" > ~/.clasprc.json
