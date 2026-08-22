@@ -238,8 +238,8 @@ function include_(filename) {
   return include(filename);
 }
 
-var SCHEMA_VERSION = '14';
-var BOOT_CACHE_KEY = 'gtp_boot_v10';
+var SCHEMA_VERSION = '15';
+var BOOT_CACHE_KEY = 'gtp_boot_v11';
 var BOOT_CACHE_TTL = 300;
 var _ssCache = null;
 var _sheetHeaderCache = {};
@@ -1378,6 +1378,7 @@ function maybeMigrateAndSeed_(ss) {
   var props = PropertiesService.getScriptProperties();
   var version = props.getProperty('SCHEMA_VERSION') || '';
   if (version === SCHEMA_VERSION) {
+    ensureSheets_(ss);
     ensureAdminUser_();
     try { ensureOrgUnitsSeed_(); } catch (orgWarm) { /* non-fatal */ }
     return;
@@ -1393,6 +1394,7 @@ function maybeMigrateAndSeed_(ss) {
   try { ensureDemoShowcase_(); } catch (demoErr) { /* non-fatal */ }
   ensureAdminUser_();
   props.setProperty('SCHEMA_VERSION', SCHEMA_VERSION);
+  invalidateBootstrapCache_();
 }
 
 function ensureSheets_(ss) {
