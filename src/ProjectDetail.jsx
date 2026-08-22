@@ -1574,12 +1574,13 @@ export default function ProjectDetail({
                       {monthTicks.map((m) => {
                         const x = timeToRatio(m.t, sheet.start, sheet.end) * timelineW;
                         const x2 = timeToRatio(m.endT, sheet.start, sheet.end) * timelineW;
-                        const colW = Math.max(0, x2 - x);
+                        const colW = Math.max(0, x2 - x) || WEEK_COL_W;
+                        const cx = x + colW / 2;
                         return (
                           <g key={`m-${m.monthKey}`}>
-                            <rect x={x} y={0} width={colW || WEEK_COL_W} height={MONTH_ROW_H} fill="#eef2ff" opacity="0.85" />
+                            <rect x={x} y={0} width={colW} height={MONTH_ROW_H} fill="#eef2ff" opacity="0.85" />
                             <line x1={x} y1={0} x2={x} y2={HEADER_H} stroke="#c7d2fe" strokeWidth="1" />
-                            <text x={x + 4} y={16} fontSize="10" fill="#4338ca" fontWeight="800">{m.label}</text>
+                            <text x={cx} y={16} fontSize="10" fill="#4338ca" fontWeight="800" textAnchor="middle">{m.label}</text>
                           </g>
                         );
                       })}
@@ -1588,15 +1589,16 @@ export default function ProjectDetail({
                         const x = timeToRatio(w.t, sheet.start, sheet.end) * timelineW;
                         const nextT = weekTicks[wi + 1]?.t ?? sheet.end;
                         const x2 = timeToRatio(nextT, sheet.start, sheet.end) * timelineW;
-                        const colW = Math.max(0, x2 - x);
+                        const colW = Math.max(0, x2 - x) || WEEK_COL_W;
+                        const cx = x + colW / 2;
                         return (
                           <g key={`w-${w.t}-${w.weekNo}`}>
                             {wi % 2 === 1 && (
-                              <rect x={x} y={MONTH_ROW_H} width={colW || WEEK_COL_W} height={timelineH - MONTH_ROW_H} fill="#f1f5f9" opacity="0.45" />
+                              <rect x={x} y={MONTH_ROW_H} width={colW} height={timelineH - MONTH_ROW_H} fill="#f1f5f9" opacity="0.45" />
                             )}
                             <line x1={x} y1={MONTH_ROW_H} x2={x} y2={timelineH} stroke="#cbd5e1" strokeWidth="1" />
-                            <text x={x + 4} y={MONTH_ROW_H + 14} fontSize="10" fill="#334155" fontWeight="800">{w.label}</text>
-                            <text x={x + 4} y={MONTH_ROW_H + 26} fontSize="8" fill="#94a3b8" fontWeight="600">{w.sublabel}</text>
+                            <text x={cx} y={MONTH_ROW_H + 14} fontSize="10" fill="#334155" fontWeight="800" textAnchor="middle">{w.label}</text>
+                            <text x={cx} y={MONTH_ROW_H + 26} fontSize="8" fill="#94a3b8" fontWeight="600" textAnchor="middle">{w.sublabel}</text>
                           </g>
                         );
                       })}
