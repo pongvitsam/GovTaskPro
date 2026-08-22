@@ -2271,11 +2271,13 @@ function ensureDemoShowcase_() {
   ensureOrgUnitExists_('department', 'SYSTEM', '', 'SYSTEM');
   ensureOrgUnitExists_('department', 'HR', '', 'HR');
   ensureOrgUnitExists_('department', 'Finance', '', 'FIN');
+  ensureOrgUnitExists_('department', 'ผธท.2', '', 'PTH2');
   ensureOrgUnitExists_('division', 'กองเทคโนโลยี', 'IT');
   ensureOrgUnitExists_('division', 'ผู้ดูแลระบบ', 'SYSTEM');
   ensureOrgUnitExists_('division', 'กองบุคคล', 'HR');
   ensureOrgUnitExists_('division', 'กองงบประมาณ', 'Finance');
-  added.orgs = 8;
+  ensureOrgUnitExists_('division', 'กองพัฒนาระบบไฟฟ้า', 'ผธท.2');
+  added.orgs = 10;
 
   var demoUsers = [
     ['admin', 'ผู้ดูแลระบบ', 'Admin', 'SYSTEM', 'ผู้ดูแลระบบ', 'TRUE', 'admin@demo.local', 'TRUE', 'TRUE', 'TRUE', 'TRUE', 'TRUE', 'admin', '1234'],
@@ -2287,7 +2289,11 @@ function ensureDemoShowcase_() {
     ['u6', 'มาลี (พนักงาน HR)', 'Staff', 'HR', 'กองบุคคล', 'TRUE', '', 'FALSE', 'TRUE', 'TRUE', 'FALSE', 'TRUE', 'mali', '1234'],
     ['u7', 'คุณวิชัย (หัวหน้าการเงิน)', 'Head', 'Finance', 'กองงบประมาณ', 'TRUE', '', 'FALSE', 'TRUE', 'TRUE', 'TRUE', 'TRUE', 'finhead', '1234'],
     ['u8', 'วิชัย (พนักงานการเงิน)', 'Staff', 'Finance', 'กองงบประมาณ', 'TRUE', '', 'FALSE', 'TRUE', 'TRUE', 'FALSE', 'TRUE', 'wichai', '1234'],
-    ['u9', 'บัญชีปิดใช้ (ตัวอย่าง)', 'Staff', 'IT', 'กองเทคโนโลยี', 'FALSE', '', 'FALSE', 'TRUE', 'TRUE', 'FALSE', 'TRUE', 'olduser', '1234']
+    ['u9', 'บัญชีปิดใช้ (ตัวอย่าง)', 'Staff', 'IT', 'กองเทคโนโลยี', 'FALSE', '', 'FALSE', 'TRUE', 'TRUE', 'FALSE', 'TRUE', 'olduser', '1234'],
+    ['u_pth2_head', 'คุณสมหมาย (หัวหน้า ผธท.2)', 'Head', 'ผธท.2', 'กองพัฒนาระบบไฟฟ้า', 'TRUE', 'pth2@demo.local', 'TRUE', 'TRUE', 'TRUE', 'TRUE', 'TRUE', 'pth2head', '1234'],
+    ['u_pth2_1', 'วิชัย (วิศวกร ผธท.2)', 'Staff', 'ผธท.2', 'กองพัฒนาระบบไฟฟ้า', 'TRUE', 'pth2vichai@demo.local', 'TRUE', 'TRUE', 'TRUE', 'FALSE', 'TRUE', 'pth2vichai', '1234'],
+    ['u_pth2_2', 'มณี (เอกสารสัญญา)', 'Staff', 'ผธท.2', 'กองพัฒนาระบบไฟฟ้า', 'TRUE', '', 'FALSE', 'TRUE', 'TRUE', 'FALSE', 'TRUE', 'pth2manee', '1234'],
+    ['u_pth2_3', 'เกษียร (ภาคสนาม)', 'Staff', 'ผธท.2', 'กองพัฒนาระบบไฟฟ้า', 'TRUE', '', 'FALSE', 'TRUE', 'TRUE', 'FALSE', 'TRUE', 'pth2kaset', '1234']
   ];
   var userIds = buildSheetIdSet_(USERS_SHEET);
   var newUsers = [];
@@ -2554,6 +2560,131 @@ function ensureDemoShowcase_() {
       var itCmSheet = getSheet_(COMMENTS_SHEET);
       writeRows_(itCmSheet, itCmSheet.getLastRow() + 1, [itComments[ici]]);
       cmIds[String(itComments[ici][0])] = true;
+      added.comments += 1;
+    }
+  }
+
+  // โปรเจกตสาธิตครบทุกฟังก์ชัน — แผนก ผธท.2 โรงพยาบาลจ๊ะเอ๋ (งานไม่รวมกระดานหลัก)
+  if (!projIds['p_demo_joae']) {
+    appendObject_(PROJECTS_SHEET, PROJECT_HEADERS, {
+      id: 'p_demo_joae',
+      name: '[ตัวอย่าง] ติดตั้งโซลาร์เซลล์ โรงพยาบาลจ๊ะเอ๋',
+      description: 'Mockup ครบทุกฟังก์ชัน — สัญญา 2 ฝ่าย, ทีมงาน, kWp, แผนงาน, S-Curve, ขยายสัญญา 3 ฝ่าย, งานบอร์ด (แสดงเฉพาะในโปรเจกตนี้)',
+      createdBy: 'u_pth2_head',
+      department: 'ผธท.2',
+      createdAt: iso(-35),
+      startDate: d(-30),
+      endDate: d(115),
+      customerName: 'โรงพยาบาลจ๊ะเอ๋',
+      customerContractNo: 'CUS-JOAE-PV-2026-001',
+      customerContractValue: 22800000,
+      customerStartDate: d(-28),
+      customerEndDate: d(150),
+      customerContact: '053-999-888 คุณผู้อำนวยการ',
+      contractorName: 'บริษัท ซันเพาเวอร์ เมด จำกัด',
+      contractorContractNo: 'CON-JOAE-PV-2026-001',
+      contractorContractValue: 17600000,
+      contractorStartDate: d(-22),
+      contractorEndDate: d(100),
+      contractorContact: '081-555-1234 คุณประเสริฐ',
+      projectTeam: serializeProjectTeam_([
+        { name: 'คุณสมหมาย ใจดี', position: 'ผู้จัดการโครงการ (ผธท.2)' },
+        { name: 'วิชัย พรหมมา', position: 'วิศวกรไฟฟ้า/โซลาร์' },
+        { name: 'มณี แสงทอง', position: 'เอกสารและสัญญา' },
+        { name: 'เกษียร มั่นคง', position: 'ติดตามงานภาคสนาม' }
+      ]),
+      siteAddress: 'โรงพยาบาลจ๊ะเอ๋ 99 ถ.เชียงใหม่-ลำปาง ต.สุเทพ อ.เมือง จ.เชียงใหม่ 50200',
+      systemSizeKwp: 280
+    });
+    projIds['p_demo_joae'] = true;
+    added.projects += 1;
+  }
+
+  var joaeMs = [
+    ['m_joae_1', 'p_demo_joae', 'สำรวจหลังคา & ออกแบบระบบ', 'Site survey อาคาร A/B, คำนวณ kWp, ออกแบบ Single Line', d(-30), d(-12), 15, 1, 'TRUE', iso(-11)],
+    ['m_joae_2', 'p_demo_joae', 'จัดหาแผง/อินเวอร์เตอร์ & ขนส่ง', 'PO วัสดุ, ประสานผู้รับเหมา — รอขยายสัญญาผู้รับเหมา', d(-12), d(18), 20, 2, 'FALSE', ''],
+    ['m_joae_3', 'p_demo_joae', 'ติดตั้งโครงสร้างและแผง', 'งานบนหลังคาอาคารผู้ป่วย — ขั้นตอนหลัก S-Curve', d(18), d(55), 35, 3, 'FALSE', ''],
+    ['m_joae_4', 'p_demo_joae', 'ระบบไฟฟ้า PEA & Commissioning', 'เดินสาย ต่อ กฟภ. ทดสอบระบบ', d(55), d(80), 20, 4, 'FALSE', ''],
+    ['m_joae_5', 'p_demo_joae', 'ส่งมอบ รพ.จ๊ะเอ๋ & ติดตาม', 'Handover + เอกสารรับประกัน + อบรมเจ้าหน้าที่', d(80), d(110), 10, 5, 'FALSE', '']
+  ];
+  for (var jmi = 0; jmi < joaeMs.length; jmi++) {
+    if (!msIds[String(joaeMs[jmi][0])]) {
+      var joaeMsSheet = getSheet_(MILESTONES_SHEET);
+      writeRows_(joaeMsSheet, joaeMsSheet.getLastRow() + 1, [joaeMs[jmi]]);
+      msIds[String(joaeMs[jmi][0])] = true;
+      added.milestones += 1;
+    }
+  }
+
+  var joaeExtensions = [
+    ['ce_joae_1', 'p_demo_joae', 1, d(85), d(100), 'm_joae_3', 'ผู้รับเหมาขอเลื่อน — รอแผ่นกันลื่นสำหรับหลังคาโรงพยาบาล', 'บันทึกอนุมัติ CON-JOAE-001/2569', d(-4), 'u_pth2_head', iso(-4), iso(-4), 'contractor'],
+    ['ce_joae_2', 'p_demo_joae', 2, d(130), d(150), 'm_joae_5', 'รพ.จ๊ะเอ๋ ขอเลื่อนส่งมอบ — รอ กฟภ. ตรวจรับระบบ', 'บันทึกอนุมัติ CUS-JOAE-001/2569', d(-2), 'u_pth2_head', iso(-2), iso(-2), 'customer'],
+    ['ce_joae_3', 'p_demo_joae', 3, d(110), d(115), 'm_joae_4', 'ขยายกรอบบริหารโครงการ — รอผลทดสอบระบบสำรองไฟ', 'บันทึกอนุมัติ PRJ-JOAE-001/2569', d(-1), 'u_pth2_head', iso(-1), iso(-1), 'project']
+  ];
+  for (var jei = 0; jei < joaeExtensions.length; jei++) {
+    if (!ceIds[String(joaeExtensions[jei][0])]) {
+      var joaeCeSheet = getSheet_(CONTRACT_EXTENSIONS_SHEET);
+      writeRows_(joaeCeSheet, joaeCeSheet.getLastRow() + 1, [joaeExtensions[jei]]);
+      ceIds[String(joaeExtensions[jei][0])] = true;
+      added.contractExtensions += 1;
+    }
+  }
+  if (projIds['p_demo_joae']) {
+    updateRowById_(PROJECTS_SHEET, 'p_demo_joae', {
+      endDate: d(115),
+      customerEndDate: d(150),
+      contractorEndDate: d(100)
+    });
+  }
+
+  var joaeTasks = [
+    [201, 'p_demo_joae', 'สำรวจหลังคาอาคาร A/B', 'สถานะเสร็จสิ้น — ตัวอย่าง Completed', 'u_pth2_head', 'u_pth2_3', 'Completed', 'Assigned', iso(-6), 'FALSE', iso(-22), iso(-6)],
+    [202, 'p_demo_joae', 'ประสานผู้รับเหมาติดตั้งแผง', 'กำลังทำ + คอมเมนต์', 'u_pth2_head', 'u_pth2_1', 'In Progress', 'Assigned', iso(12), 'FALSE', iso(-9), ''],
+    [203, 'p_demo_joae', 'ตรวจรับงานเดินสาย กฟภ.', 'รอตรวจหัวหน้า — Review', 'u_pth2_head', 'u_pth2_2', 'Review', 'Assigned', iso(0), 'FALSE', iso(-5), ''],
+    [204, 'p_demo_joae', 'จัดทำเอกสารส่งมอบ รพ.จ๊ะเอ๋', 'Pending — งานใหม่รอรับ', 'u_pth2_head', 'u_pth2_2', 'Pending', 'Assigned', iso(6), 'FALSE', iso(-1), ''],
+    [205, 'p_demo_joae', 'อัปเดต S-Curve รายสัปดาห์', 'Self + ทำซ้ำ', 'u_pth2_head', 'u_pth2_head', 'In Progress', 'Self', iso(4), 'TRUE', iso(-3), ''],
+    [206, 'p_demo_joae', 'ลงนามสัญญา รพ.จ๊ะเอ๋', 'เสร็จแล้ว — สัญญาลูกค้า', 'u_pth2_head', 'u_pth2_1', 'Completed', 'Assigned', iso(-18), 'FALSE', iso(-25), iso(-18)]
+  ];
+  for (var jti = 0; jti < joaeTasks.length; jti++) {
+    if (!taskIds[String(joaeTasks[jti][0])]) {
+      var joaeTaskSheet = getSheet_(TASKS_SHEET);
+      writeRows_(joaeTaskSheet, joaeTaskSheet.getLastRow() + 1, [joaeTasks[jti]]);
+      taskIds[String(joaeTasks[jti][0])] = true;
+      added.tasks += 1;
+    }
+  }
+
+  var joaeLogs = [
+    ['l_joae_1', 201, iso(-22), 'u_pth2_head', 'Created', 'มอบหมายงานให้ เกษียร'],
+    ['l_joae_2', 201, iso(-6), 'u_pth2_3', 'Status Changed', 'เปลี่ยนสถานะเป็น "เสร็จสิ้น"'],
+    ['l_joae_3', 202, iso(-9), 'u_pth2_head', 'Created', 'มอบหมายงานให้ วิชัย'],
+    ['l_joae_4', 202, iso(-2), 'u_pth2_1', 'Status Changed', 'เปลี่ยนสถานะเป็น "กำลังทำ"'],
+    ['l_joae_5', 203, iso(-5), 'u_pth2_head', 'Created', 'มอบหมายงานให้ มณี'],
+    ['l_joae_6', 203, iso(0, -3), 'u_pth2_2', 'Status Changed', 'เปลี่ยนสถานะเป็น "รอตรวจ"'],
+    ['l_joae_7', 204, iso(-1), 'u_pth2_head', 'Created', 'มอบหมายงานจัดทำเอกสารส่งมอบ'],
+    ['l_joae_8', 206, iso(-25), 'u_pth2_head', 'Created', 'มอบหมายงานลงนามสัญญา'],
+    ['l_joae_9', 206, iso(-18), 'u_pth2_1', 'Status Changed', 'เปลี่ยนสถานะเป็น "เสร็จสิ้น"']
+  ];
+  for (var jli = 0; jli < joaeLogs.length; jli++) {
+    if (!logIds[String(joaeLogs[jli][0])]) {
+      var joaeLogSheet = getSheet_(LOGS_SHEET);
+      writeRows_(joaeLogSheet, joaeLogSheet.getLastRow() + 1, [joaeLogs[jli]]);
+      logIds[String(joaeLogs[jli][0])] = true;
+      added.logs += 1;
+    }
+  }
+
+  var joaeComments = [
+    ['c_joae_1', 202, iso(0, -20), 'u_pth2_head', 'ผู้รับเหมายืนยันเริ่มติดตั้งสัปดาห์หน้า รบกวนติดตามใบส่งของ'],
+    ['c_joae_2', 202, iso(0, -16), 'u_pth2_1', 'รับทราบครับ จะประสานคลังวัสดุและแจ้ง รพ.จ๊ะเอ๋'],
+    ['c_joae_3', 203, iso(0, -8), 'u_pth2_2', 'เดินสาย กฟภ. เสร็จแล้ว รอหัวหน้าตรวจรับ'],
+    ['c_joae_4', 204, iso(-1), 'u_pth2_head', 'ใช้เทมเพลตส่งมอบในโฟลเดอร์แชร์ ผธท.2/JoAe-Solar']
+  ];
+  for (var jci = 0; jci < joaeComments.length; jci++) {
+    if (!cmIds[String(joaeComments[jci][0])]) {
+      var joaeCmSheet = getSheet_(COMMENTS_SHEET);
+      writeRows_(joaeCmSheet, joaeCmSheet.getLastRow() + 1, [joaeComments[jci]]);
+      cmIds[String(joaeComments[jci][0])] = true;
       added.comments += 1;
     }
   }

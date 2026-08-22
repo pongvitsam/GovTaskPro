@@ -13,6 +13,7 @@ import ProjectTimeBar from './ProjectTimeBar';
 import { readSession, saveSession, clearSession, readBootstrapCache, writeBootstrapCache, bootstrapCacheAgeMs, BOOT_CACHE_MAX_AGE_MS } from './session';
 import ThaiDateField from './ThaiDateField';
 import { buildProjectActivityForProject, summarizeRecentActivity } from './projectActivity';
+import { shouldHideShowcaseTask, isShowcaseProject } from './showcaseProjects';
 import BoardView from './board/BoardView';
 import { getStatusColor, getStatusText, isOverdue } from './board/boardUtils';
 
@@ -478,15 +479,18 @@ export default function App() {
 
   const visibleTasks = useMemo(() => {
     if (!currentUser) return [];
+    let list;
     if (currentUser.role === 'Admin') {
-      return tasks.filter((task) => (activeProjectId ? task.projectId === activeProjectId : true));
+      list = tasks.filter((task) => (activeProjectId ? task.projectId === activeProjectId : true));
+    } else {
+      list = tasks.filter((task) => {
+        const assignee = usersById.get(task.assignedTo);
+        const isMyDepartment = assignee?.department === currentUser.department;
+        const matchesProject = activeProjectId ? task.projectId === activeProjectId : true;
+        return isMyDepartment && matchesProject;
+      });
     }
-    return tasks.filter((task) => {
-      const assignee = usersById.get(task.assignedTo);
-      const isMyDepartment = assignee?.department === currentUser.department;
-      const matchesProject = activeProjectId ? task.projectId === activeProjectId : true;
-      return isMyDepartment && matchesProject;
-    });
+    return list.filter((task) => !shouldHideShowcaseTask(task, activeProjectId));
   }, [tasks, usersById, currentUser, activeProjectId]);
 
   const activeUsers = useMemo(() => users.filter((u) => u.active !== false), [users]);
@@ -1905,6 +1909,11 @@ export default function App() {
                       </span>
                     </div>
                     <h3 className="gtp-display font-extrabold text-lg text-[#1e3a4c] mb-2 group-hover:text-teal-700">{proj.name}</h3>
+                    {isShowcaseProject(proj) && (
+                      <p className="text-[10px] font-extrabold text-violet-700 bg-violet-50 border border-violet-100 rounded-full px-2.5 py-1 w-fit mb-2">
+                        โปรเจกตตัวอย่าง · งานไม่รวมกระดานหลัก
+                      </p>
+                    )}
                     <p className="text-sm text-[#5b7a8a] line-clamp-2 mb-2 flex-1 font-medium leading-relaxed">{proj.description}</p>
                     {(proj.customerName || proj.contractorName) && (
                       <p className="text-[11px] font-bold text-slate-600 mb-2 line-clamp-2">

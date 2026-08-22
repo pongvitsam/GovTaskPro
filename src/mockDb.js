@@ -1,6 +1,6 @@
 /** Local mock DB for Vite DEV only (stripped from production bundle) */
 
-const SEED_VERSION = 11;
+const SEED_VERSION = 12;
 
 function emptyProjectExtras() {
   return {
@@ -74,6 +74,10 @@ function buildDemoSeed() {
       user({ id: 'u7', name: 'คุณวิชัย (หัวหน้าการเงิน)', role: 'Head', department: 'Finance', division: 'กองงบประมาณ', username: 'finhead' }),
       user({ id: 'u8', name: 'วิชัย (พนักงานการเงิน)', role: 'Staff', department: 'Finance', division: 'กองงบประมาณ', username: 'wichai' }),
       user({ id: 'u9', name: 'บัญชีปิดใช้ (ตัวอย่าง)', role: 'Staff', department: 'IT', division: 'กองเทคโนโลยี', username: 'olduser', active: false }),
+      user({ id: 'u_pth2_head', name: 'คุณสมหมาย (หัวหน้า ผธท.2)', role: 'Head', department: 'ผธท.2', division: 'กองพัฒนาระบบไฟฟ้า', username: 'pth2head', email: 'pth2@demo.local', notifyEmail: true }),
+      user({ id: 'u_pth2_1', name: 'วิชัย (วิศวกร ผธท.2)', role: 'Staff', department: 'ผธท.2', division: 'กองพัฒนาระบบไฟฟ้า', username: 'pth2vichai', email: 'pth2vichai@demo.local', notifyEmail: true }),
+      user({ id: 'u_pth2_2', name: 'มณี (เอกสารสัญญา)', role: 'Staff', department: 'ผธท.2', division: 'กองพัฒนาระบบไฟฟ้า', username: 'pth2manee' }),
+      user({ id: 'u_pth2_3', name: 'เกษียร (ภาคสนาม)', role: 'Staff', department: 'ผธท.2', division: 'กองพัฒนาระบบไฟฟ้า', username: 'pth2kaset' }),
     ],
     projects: [
       {
@@ -159,6 +163,36 @@ function buildDemoSeed() {
         siteAddress: '123/4 ถ.พหลโยธิน แขวงลาดยาว เขตจตุจักร กรุงเทพฯ 10900',
         systemSizeKwp: 350,
       },
+      {
+        id: 'p_demo_joae',
+        name: '[ตัวอย่าง] ติดตั้งโซลาร์เซลล์ โรงพยาบาลจ๊ะเอ๋',
+        description: 'Mockup ครบทุกฟังก์ชัน — สัญญา 2 ฝ่าย, ทีมงาน, kWp, แผนงาน, S-Curve, ขยายสัญญา 3 ฝ่าย, งานบอร์ด (แสดงเฉพาะในโปรเจกตนี้)',
+        createdBy: 'u_pth2_head',
+        department: 'ผธท.2',
+        createdAt: t(-35),
+        startDate: d(-30),
+        endDate: d(115),
+        customerName: 'โรงพยาบาลจ๊ะเอ๋',
+        customerContractNo: 'CUS-JOAE-PV-2026-001',
+        customerContractValue: 22800000,
+        customerStartDate: d(-28),
+        customerEndDate: d(150),
+        customerContact: '053-999-888 คุณผู้อำนวยการ',
+        contractorName: 'บริษัท ซันเพาเวอร์ เมด จำกัด',
+        contractorContractNo: 'CON-JOAE-PV-2026-001',
+        contractorContractValue: 17600000,
+        contractorStartDate: d(-22),
+        contractorEndDate: d(100),
+        contractorContact: '081-555-1234 คุณประเสริฐ',
+        projectTeam: [
+          { name: 'คุณสมหมาย ใจดี', position: 'ผู้จัดการโครงการ (ผธท.2)' },
+          { name: 'วิชัย พรหมมา', position: 'วิศวกรไฟฟ้า/โซลาร์' },
+          { name: 'มณี แสงทอง', position: 'เอกสารและสัญญา' },
+          { name: 'เกษียร มั่นคง', position: 'ติดตามงานภาคสนาม' },
+        ],
+        siteAddress: 'โรงพยาบาลจ๊ะเอ๋ 99 ถ.เชียงใหม่-ลำปาง ต.สุเทพ อ.เมือง จ.เชียงใหม่ 50200',
+        systemSizeKwp: 280,
+      },
     ],
     milestones: [
       { id: 'm1', projectId: 'p1', title: 'เก็บความต้องการ & ออกแบบ', description: 'ประชุมผู้ใช้และออกแบบ UI/DB', plannedStart: d(-14), plannedEnd: d(-7), weight: 20, sortOrder: 1, completed: true, completedAt: t(-6) },
@@ -186,6 +220,11 @@ function buildDemoSeed() {
       { id: 'm_demo_it_3', projectId: 'p_demo_it', title: 'ติดตั้งโครงสร้างและแผง', description: 'งานก่อสร้างบนหลังคา — ขั้นตอนหลัก S-Curve', plannedStart: d(15), plannedEnd: d(50), weight: 35, sortOrder: 3, completed: false, completedAt: null },
       { id: 'm_demo_it_4', projectId: 'p_demo_it', title: 'ระบบไฟฟ้า & ทดสอบ', description: 'เดินสาย ต่ออินเวอร์เตอร์ Commissioning', plannedStart: d(50), plannedEnd: d(75), weight: 20, sortOrder: 4, completed: false, completedAt: null },
       { id: 'm_demo_it_5', projectId: 'p_demo_it', title: 'ส่งมอบ & ติดตามหลังขาย', description: 'Handover ลูกค้า + เอกสารรับประกัน', plannedStart: d(75), plannedEnd: d(100), weight: 10, sortOrder: 5, completed: false, completedAt: null },
+      { id: 'm_joae_1', projectId: 'p_demo_joae', title: 'สำรวจหลังคา & ออกแบบระบบ', description: 'Site survey อาคาร A/B, คำนวณ kWp, ออกแบบ Single Line', plannedStart: d(-30), plannedEnd: d(-12), weight: 15, sortOrder: 1, completed: true, completedAt: t(-11) },
+      { id: 'm_joae_2', projectId: 'p_demo_joae', title: 'จัดหาแผง/อินเวอร์เตอร์ & ขนส่ง', description: 'PO วัสดุ, ประสานผู้รับเหมา — รอขยายสัญญาผู้รับเหมา', plannedStart: d(-12), plannedEnd: d(18), weight: 20, sortOrder: 2, completed: false, completedAt: null },
+      { id: 'm_joae_3', projectId: 'p_demo_joae', title: 'ติดตั้งโครงสร้างและแผง', description: 'งานบนหลังคาอาคารผู้ป่วย — ขั้นตอนหลัก S-Curve', plannedStart: d(18), plannedEnd: d(55), weight: 35, sortOrder: 3, completed: false, completedAt: null },
+      { id: 'm_joae_4', projectId: 'p_demo_joae', title: 'ระบบไฟฟ้า PEA & Commissioning', description: 'เดินสาย ต่อ กฟภ. ทดสอบระบบ', plannedStart: d(55), plannedEnd: d(80), weight: 20, sortOrder: 4, completed: false, completedAt: null },
+      { id: 'm_joae_5', projectId: 'p_demo_joae', title: 'ส่งมอบ รพ.จ๊ะเอ๋ & ติดตาม', description: 'Handover + เอกสารรับประกัน + อบรมเจ้าหน้าที่', plannedStart: d(80), plannedEnd: d(110), weight: 10, sortOrder: 5, completed: false, completedAt: null },
     ],
     contractExtensions: [
       {
@@ -230,6 +269,27 @@ function buildDemoSeed() {
         approvalRef: 'บันทึกอนุมัติ PRJ-EXT-001/2569', approvedAt: d(-1),
         createdBy: 'u1', createdAt: t(-1), updatedAt: t(-1), party: 'project',
       },
+      {
+        id: 'ce_joae_1', projectId: 'p_demo_joae', extensionNo: 1,
+        fromDate: d(85), toDate: d(100), startMilestoneId: 'm_joae_3',
+        reason: 'ผู้รับเหมาขอเลื่อน — รอแผ่นกันลื่นสำหรับหลังคาโรงพยาบาล',
+        approvalRef: 'บันทึกอนุมัติ CON-JOAE-001/2569', approvedAt: d(-4),
+        createdBy: 'u_pth2_head', createdAt: t(-4), updatedAt: t(-4), party: 'contractor',
+      },
+      {
+        id: 'ce_joae_2', projectId: 'p_demo_joae', extensionNo: 2,
+        fromDate: d(130), toDate: d(150), startMilestoneId: 'm_joae_5',
+        reason: 'รพ.จ๊ะเอ๋ ขอเลื่อนส่งมอบ — รอ กฟภ. ตรวจรับระบบ',
+        approvalRef: 'บันทึกอนุมัติ CUS-JOAE-001/2569', approvedAt: d(-2),
+        createdBy: 'u_pth2_head', createdAt: t(-2), updatedAt: t(-2), party: 'customer',
+      },
+      {
+        id: 'ce_joae_3', projectId: 'p_demo_joae', extensionNo: 3,
+        fromDate: d(110), toDate: d(115), startMilestoneId: 'm_joae_4',
+        reason: 'ขยายกรอบบริหารโครงการ — รอผลทดสอบระบบสำรองไฟ',
+        approvalRef: 'บันทึกอนุมัติ PRJ-JOAE-001/2569', approvedAt: d(-1),
+        createdBy: 'u_pth2_head', createdAt: t(-1), updatedAt: t(-1), party: 'project',
+      },
     ],
     tasks: [
       { id: 1, projectId: 'p1', title: 'ออกแบบหน้า Login ใหม่', description: 'ใช้โทนสีองค์กร — สถานะเสร็จสิ้น', createdBy: 'u1', assignedTo: 'u2', status: 'Completed', type: 'Assigned', dueDate: t(-2), isRecurring: false, createdAt: t(-7), completedAt: t(-2) },
@@ -254,6 +314,12 @@ function buildDemoSeed() {
       { id: 104, projectId: 'p_demo_it', title: 'จัดทำเอกสารส่งมอบลูกค้า', description: 'งานใหม่รอรับ — สถานะ Pending', createdBy: 'u1', assignedTo: 'u3', status: 'Pending', type: 'Assigned', dueDate: t(5), isRecurring: false, createdAt: t(-1) },
       { id: 105, projectId: 'p_demo_it', title: 'อัปเดตแผน S-Curve รายสัปดาห์', description: 'งาน Self + ทำซ้ำ — ตัวอย่างงานส่วนตัว', createdBy: 'u1', assignedTo: 'u1', status: 'In Progress', type: 'Self', dueDate: t(3), isRecurring: true, createdAt: t(-2) },
       { id: 106, projectId: 'p_demo_it', title: 'ลงนามสัญญาลูกค้า', description: 'เสร็จแล้ว — ตัวอย่างสัญญาฝ่ายลูกค้า', createdBy: 'u1', assignedTo: 'u2', status: 'Completed', type: 'Assigned', dueDate: t(-15), isRecurring: false, createdAt: t(-22), completedAt: t(-15) },
+      { id: 201, projectId: 'p_demo_joae', title: 'สำรวจหลังคาอาคาร A/B', description: 'สถานะเสร็จสิ้น — ตัวอย่าง Completed', createdBy: 'u_pth2_head', assignedTo: 'u_pth2_3', status: 'Completed', type: 'Assigned', dueDate: t(-6), isRecurring: false, createdAt: t(-22), completedAt: t(-6) },
+      { id: 202, projectId: 'p_demo_joae', title: 'ประสานผู้รับเหมาติดตั้งแผง', description: 'กำลังทำ + คอมเมนต์', createdBy: 'u_pth2_head', assignedTo: 'u_pth2_1', status: 'In Progress', type: 'Assigned', dueDate: t(12), isRecurring: false, createdAt: t(-9) },
+      { id: 203, projectId: 'p_demo_joae', title: 'ตรวจรับงานเดินสาย กฟภ.', description: 'รอตรวจหัวหน้า — Review', createdBy: 'u_pth2_head', assignedTo: 'u_pth2_2', status: 'Review', type: 'Assigned', dueDate: t(0), isRecurring: false, createdAt: t(-5) },
+      { id: 204, projectId: 'p_demo_joae', title: 'จัดทำเอกสารส่งมอบ รพ.จ๊ะเอ๋', description: 'Pending — งานใหม่รอรับ', createdBy: 'u_pth2_head', assignedTo: 'u_pth2_2', status: 'Pending', type: 'Assigned', dueDate: t(6), isRecurring: false, createdAt: t(-1) },
+      { id: 205, projectId: 'p_demo_joae', title: 'อัปเดต S-Curve รายสัปดาห์', description: 'Self + ทำซ้ำ', createdBy: 'u_pth2_head', assignedTo: 'u_pth2_head', status: 'In Progress', type: 'Self', dueDate: t(4), isRecurring: true, createdAt: t(-3) },
+      { id: 206, projectId: 'p_demo_joae', title: 'ลงนามสัญญา รพ.จ๊ะเอ๋', description: 'เสร็จแล้ว — สัญญาลูกค้า', createdBy: 'u_pth2_head', assignedTo: 'u_pth2_1', status: 'Completed', type: 'Assigned', dueDate: t(-18), isRecurring: false, createdAt: t(-25), completedAt: t(-18) },
     ],
     taskLogs: [
       { id: 'l1', taskId: 4, timestamp: t(-4), actionBy: 'u1', actionType: 'Created', detail: 'มอบหมายงานให้ สมศักดิ์' },
@@ -279,6 +345,15 @@ function buildDemoSeed() {
       { id: 'l_demo_it_7', taskId: 104, timestamp: t(-1), actionBy: 'u1', actionType: 'Created', detail: 'มอบหมายงานจัดทำเอกสารส่งมอบ' },
       { id: 'l_demo_it_8', taskId: 106, timestamp: t(-22), actionBy: 'u1', actionType: 'Created', detail: 'มอบหมายงานลงนามสัญญา' },
       { id: 'l_demo_it_9', taskId: 106, timestamp: t(-15), actionBy: 'u2', actionType: 'Status Changed', detail: 'เปลี่ยนสถานะเป็น "เสร็จสิ้น"' },
+      { id: 'l_joae_1', taskId: 201, timestamp: t(-22), actionBy: 'u_pth2_head', actionType: 'Created', detail: 'มอบหมายงานให้ เกษียร' },
+      { id: 'l_joae_2', taskId: 201, timestamp: t(-6), actionBy: 'u_pth2_3', actionType: 'Status Changed', detail: 'เปลี่ยนสถานะเป็น "เสร็จสิ้น"' },
+      { id: 'l_joae_3', taskId: 202, timestamp: t(-9), actionBy: 'u_pth2_head', actionType: 'Created', detail: 'มอบหมายงานให้ วิชัย' },
+      { id: 'l_joae_4', taskId: 202, timestamp: t(-2), actionBy: 'u_pth2_1', actionType: 'Status Changed', detail: 'เปลี่ยนสถานะเป็น "กำลังทำ"' },
+      { id: 'l_joae_5', taskId: 203, timestamp: t(-5), actionBy: 'u_pth2_head', actionType: 'Created', detail: 'มอบหมายงานให้ มณี' },
+      { id: 'l_joae_6', taskId: 203, timestamp: t(0, -3), actionBy: 'u_pth2_2', actionType: 'Status Changed', detail: 'เปลี่ยนสถานะเป็น "รอตรวจ"' },
+      { id: 'l_joae_7', taskId: 204, timestamp: t(-1), actionBy: 'u_pth2_head', actionType: 'Created', detail: 'มอบหมายงานจัดทำเอกสารส่งมอบ' },
+      { id: 'l_joae_8', taskId: 206, timestamp: t(-25), actionBy: 'u_pth2_head', actionType: 'Created', detail: 'มอบหมายงานลงนามสัญญา' },
+      { id: 'l_joae_9', taskId: 206, timestamp: t(-18), actionBy: 'u_pth2_1', actionType: 'Status Changed', detail: 'เปลี่ยนสถานะเป็น "เสร็จสิ้น"' },
     ],
     comments: [
       { id: 'c1', taskId: 2, timestamp: t(0, -18), authorId: 'u1', text: 'ติดปัญหาตรงไหนเรื่อง API ทักมาได้เลยนะ' },
@@ -290,6 +365,10 @@ function buildDemoSeed() {
       { id: 'c_demo_it_2', taskId: 102, timestamp: t(0, -16), authorId: 'u2', text: 'รับทราบครับ จะประสานคลังวัสดุให้' },
       { id: 'c_demo_it_3', taskId: 103, timestamp: t(0, -8), authorId: 'u3', text: 'เดินสายเสร็จแล้ว รอหัวหน้าตรวจรับ' },
       { id: 'c_demo_it_4', taskId: 104, timestamp: t(-1), authorId: 'u1', text: 'ใช้เทมเพลตส่งมอบในโฟลเดอร์แชร์ IT/Solar' },
+      { id: 'c_joae_1', taskId: 202, timestamp: t(0, -20), authorId: 'u_pth2_head', text: 'ผู้รับเหมายืนยันเริ่มติดตั้งสัปดาห์หน้า รบกวนติดตามใบส่งของ' },
+      { id: 'c_joae_2', taskId: 202, timestamp: t(0, -16), authorId: 'u_pth2_1', text: 'รับทราบครับ จะประสานคลังวัสดุและแจ้ง รพ.จ๊ะเอ๋' },
+      { id: 'c_joae_3', taskId: 203, timestamp: t(0, -8), authorId: 'u_pth2_2', text: 'เดินสาย กฟภ. เสร็จแล้ว รอหัวหน้าตรวจรับ' },
+      { id: 'c_joae_4', taskId: 204, timestamp: t(-1), authorId: 'u_pth2_head', text: 'ใช้เทมเพลตส่งมอบในโฟลเดอร์แชร์ ผธท.2/JoAe-Solar' },
     ],
     stickyNotes: [
       { id: 'sn1', userId: 'u1', title: 'ประชุมทีม IT', body: 'เตรียมสไลด์รายงานประจำเดือน', color: 'yellow', emoji: '📌', x: 48, y: 56, width: 240, height: 220, zIndex: 1, createdAt: t(-1), updatedAt: t(-1), noteType: 'text', items: [], labels: ['งาน'], pinned: true, archived: false, trashed: false, reminderAt: t(1), imageUrl: '' },
@@ -303,10 +382,12 @@ function buildDemoSeed() {
       { id: 'org_d2', type: 'department', name: 'SYSTEM', parent: '', active: true, code: 'SYSTEM', lineEnabled: false, lineGroupId: '', lineChannelToken: '', lineNotifyAssign: true, lineNotifyReview: true, lineNotifyComplete: true },
       { id: 'org_d3', type: 'department', name: 'HR', parent: '', active: true, code: 'HR', lineEnabled: false, lineGroupId: '', lineChannelToken: '', lineNotifyAssign: true, lineNotifyReview: true, lineNotifyComplete: true },
       { id: 'org_d4', type: 'department', name: 'Finance', parent: '', active: true, code: 'FIN', lineEnabled: false, lineGroupId: '', lineChannelToken: '', lineNotifyAssign: true, lineNotifyReview: true, lineNotifyComplete: true },
+      { id: 'org_d5', type: 'department', name: 'ผธท.2', parent: '', active: true, code: 'PTH2', lineEnabled: false, lineGroupId: '', lineChannelToken: '', lineNotifyAssign: true, lineNotifyReview: true, lineNotifyComplete: true },
       { id: 'org_v1', type: 'division', name: 'กองเทคโนโลยี', parent: 'IT', active: true, code: '' },
       { id: 'org_v2', type: 'division', name: 'ผู้ดูแลระบบ', parent: 'SYSTEM', active: true, code: '' },
       { id: 'org_v3', type: 'division', name: 'กองบุคคล', parent: 'HR', active: true, code: '' },
       { id: 'org_v4', type: 'division', name: 'กองงบประมาณ', parent: 'Finance', active: true, code: '' },
+      { id: 'org_v5', type: 'division', name: 'กองพัฒนาระบบไฟฟ้า', parent: 'ผธท.2', active: true, code: '' },
     ],
   };
 }
