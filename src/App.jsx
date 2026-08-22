@@ -1931,7 +1931,15 @@ export default function App() {
                           : ''}
                       </p>
                     )}
-                    <ProjectTimeBar startDate={proj.startDate} endDate={proj.endDate} compact />
+                    <ProjectTimeBar
+                      startDate={proj.startDate}
+                      endDate={proj.endDate}
+                      customerStartDate={proj.customerStartDate}
+                      customerEndDate={proj.customerEndDate}
+                      contractorStartDate={proj.contractorStartDate}
+                      contractorEndDate={proj.contractorEndDate}
+                      compact
+                    />
                     <div className="mt-4">
                       <div className="flex justify-between text-xs font-bold text-[#1e3a4c] mb-2">
                         <span>ความคืบหน้าแผน (S-Curve)</span>

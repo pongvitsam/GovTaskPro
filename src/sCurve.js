@@ -118,17 +118,30 @@ export function buildWeekAxis(start, end) {
     });
     weekNo += 1;
   }
-  // Ensure last week column covers project end if remainder days exist
-  const last = ticks[ticks.length - 1];
-  if (last && end - last.t > 3 * 86400000 && last.t + 7 * 86400000 <= end + 86400000) {
-    // already stepped; if end is past last tick start, fine
-  }
   return ticks;
 }
 
-/** @deprecated use buildWeekAxis — kept for compatibility */
+/** Month bands spanning [start, end] for S-Curve / Gantt month header row */
 export function buildMonthAxis(start, end) {
-  return buildWeekAxis(start, end);
+  if (start == null || end == null) return [];
+  const months = [];
+  const cursor = new Date(start);
+  cursor.setDate(1);
+  cursor.setHours(0, 0, 0, 0);
+
+  while (cursor.getTime() <= end) {
+    const monthStartMs = Math.max(start, cursor.getTime());
+    const nextMonth = new Date(cursor.getFullYear(), cursor.getMonth() + 1, 1);
+    const monthEndMs = Math.min(end, nextMonth.getTime() - 86400000);
+    months.push({
+      t: monthStartMs,
+      endT: monthEndMs,
+      label: cursor.toLocaleDateString('th-TH', { month: 'short', year: 'numeric' }),
+      monthKey: `${cursor.getFullYear()}-${cursor.getMonth()}`,
+    });
+    cursor.setMonth(cursor.getMonth() + 1);
+  }
+  return months;
 }
 
 /**
@@ -189,12 +202,13 @@ export function buildSCurveSheet(project, milestones) {
   });
 
   const weeks = buildWeekAxis(curve.start, curve.end);
+  const months = buildMonthAxis(curve.start, curve.end);
 
   return {
     ...curve,
     rows,
     weeks,
-    months: weeks, // alias — UI may still read months
+    months,
     densePeriods: curve.periods,
   };
 }
@@ -272,6 +286,7 @@ export function buildSCurveCsv(project, sheet) {
   push(['ตามแผน (ถึงวันนี้) %', sheet.plannedPct]);
   push(['ส่วนต่าง %', Math.round((sheet.actualPct - sheet.plannedPct) * 10) / 10]);
   push(['จำนวนสัปดาห์', (sheet.weeks || []).length]);
+  push(['จำนวนเดือน', (sheet.months || []).length]);
   lines.push('');
 
   push(['ขั้นตอน']);

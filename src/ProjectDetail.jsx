@@ -18,6 +18,15 @@ import {
   summarizeRecentActivity,
 } from './projectActivity';
 import { addCalendarDays, calendarDaysInclusive, parseProjectTeam } from './projectTime';
+import {
+  PARTY_OPTIONS,
+  partyLabel,
+  partyTheme,
+  sumExtensionDaysForParty,
+  countExtensionsForParty,
+  getOriginalPartyEnd,
+  getCurrentPartyEnd,
+} from './contractParty';
 
 const TABS = [
   { id: 'activity', label: 'ความเคลื่อนไหว', icon: History },
@@ -26,16 +35,6 @@ const TABS = [
   { id: 'scurve', label: 'S-Curve', icon: LineChart },
   { id: 'settings', label: 'ตั้งค่าโปรเจกต์', icon: Settings2 },
 ];
-
-const PARTY_OPTIONS = [
-  { id: 'contractor', label: 'สัญญาผู้รับเหมา' },
-  { id: 'customer', label: 'สัญญาลูกค้า' },
-  { id: 'project', label: 'ช่วงบริหารโครงการ' },
-];
-
-function partyLabel(party) {
-  return PARTY_OPTIONS.find((p) => p.id === party)?.label || 'สัญญาผู้รับเหมา';
-}
 
 function toInputDate(v) {
   if (!v) return '';
@@ -107,7 +106,9 @@ function DurationHint({ startDate, endDate, onApplyDays, disabled }) {
 }
 
 const ROW_H = 44;
-const HEADER_H = 42;
+const MONTH_ROW_H = 26;
+const WEEK_ROW_H = 28;
+const HEADER_H = MONTH_ROW_H + WEEK_ROW_H;
 const CURVE_PAD_Y = 10;
 const WEEK_COL_W = 56;
 
@@ -420,16 +421,23 @@ export default function ProjectDetail({
     return summarizeRecentActivity(events, 7);
   }, [project, projectTasks, mergedProjectTaskLogs, projectMilestones, projectExtensions]);
 
-  const originalContractEnd = projectExtensions[0]?.fromDate || project.endDate;
-  const effectiveContractEnd = projectExtensions.reduce((latest, x) => {
-    if (!x.toDate) return latest;
-    if (!latest || new Date(x.toDate).getTime() > new Date(latest).getTime()) return x.toDate;
-    return latest;
-  }, project.endDate || null);
-  const totalExtensionDays = projectExtensions.reduce(
-    (sum, x) => sum + daysBetween(x.fromDate, x.toDate),
-    0
-  );
+  const extensionStatsByParty = useMemo(() => (
+    ['contractor', 'customer', 'project'].map((partyId) => {
+      const theme = partyTheme(partyId);
+      const count = countExtensionsForParty(projectExtensions, partyId);
+      const totalDays = sumExtensionDaysForParty(projectExtensions, partyId);
+      return {
+        partyId,
+        theme,
+        count,
+        totalDays,
+        originalEnd: getOriginalPartyEnd(project, partyId, projectExtensions),
+        currentEnd: getCurrentPartyEnd(project, partyId),
+      };
+    })
+  ), [project, projectExtensions]);
+
+  const effectiveContractEnd = getCurrentPartyEnd(project, 'project') || project.endDate || null;
 
   const defaultExtensionMilestone = projectMilestones.find((m) => !m.completed)?.id
     || projectMilestones[projectMilestones.length - 1]?.id
@@ -467,7 +475,8 @@ export default function ProjectDetail({
     [tab, project, projectMilestones]
   );
 
-  const weekTicks = sheet?.weeks || sheet?.months || [];
+  const weekTicks = sheet?.weeks || [];
+  const monthTicks = sheet?.months || [];
   const timelineW = Math.max(720, weekTicks.length * WEEK_COL_W);
   const timelineH = sheet ? Math.max(HEADER_H + sheet.rows.length * ROW_H, HEADER_H + 120) : HEADER_H + 120;
   const curveH = timelineH - HEADER_H;
@@ -745,23 +754,14 @@ export default function ProjectDetail({
             <span className="text-slate-800">{activitySummary.label}</span>
           </button>
           <div className="mt-4 max-w-xl space-y-2">
-            <ProjectTimeBar startDate={project.startDate} endDate={effectiveContractEnd} />
-            {(project.customerStartDate || project.contractorStartDate) && (
-              <div className="text-[11px] font-bold text-slate-500 space-y-1">
-                {project.customerStartDate && (
-                  <p>
-                    สัญญาลูกค้า {calendarDaysInclusive(project.customerStartDate, project.customerEndDate) || '—'} วัน
-                    {' · '}{formatThaiDate(project.customerStartDate)} → {formatThaiDate(project.customerEndDate)}
-                  </p>
-                )}
-                {project.contractorStartDate && (
-                  <p>
-                    สัญญาผู้รับเหมา {calendarDaysInclusive(project.contractorStartDate, project.contractorEndDate) || '—'} วัน
-                    {' · '}{formatThaiDate(project.contractorStartDate)} → {formatThaiDate(project.contractorEndDate)}
-                  </p>
-                )}
-              </div>
-            )}
+            <ProjectTimeBar
+              startDate={project.startDate}
+              endDate={project.endDate}
+              customerStartDate={project.customerStartDate}
+              customerEndDate={project.customerEndDate}
+              contractorStartDate={project.contractorStartDate}
+              contractorEndDate={project.contractorEndDate}
+            />
           </div>
         </div>
         <button
@@ -1180,18 +1180,51 @@ export default function ProjectDetail({
 
       {tab === 'contract' && (
         <div className="space-y-6">
-          <div className="grid grid-cols-2 xl:grid-cols-4 gap-3">
-            {[
-              { label: 'ขยายแล้ว', value: `${projectExtensions.length} ครั้ง`, tone: 'text-amber-700', bg: 'from-amber-50' },
-              { label: 'วันสิ้นสุดเดิม', value: formatThaiDateLong(originalContractEnd, { emptyLabel: 'ไม่ระบุ' }), tone: 'text-slate-700', bg: 'from-slate-50' },
-              { label: 'วันสิ้นสุดปัจจุบัน', value: formatThaiDateLong(effectiveContractEnd, { emptyLabel: 'ไม่ระบุ' }), tone: 'text-blue-700', bg: 'from-blue-50' },
-              { label: 'ระยะเวลาที่ขยายรวม', value: `${totalExtensionDays} วัน`, tone: 'text-emerald-700', bg: 'from-emerald-50' },
-            ].map((stat) => (
-              <div key={stat.label} className={`bg-gradient-to-br ${stat.bg} to-white border border-slate-200 rounded-2xl p-4 shadow-sm`}>
-                <p className="text-[11px] font-bold text-slate-500 mb-1">{stat.label}</p>
-                <p className={`text-lg font-black leading-tight ${stat.tone}`}>{stat.value}</p>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            {extensionStatsByParty.map((stat) => (
+              <div
+                key={stat.partyId}
+                className={`bg-gradient-to-br ${stat.theme.cardBg} to-white border ${stat.theme.border} rounded-2xl p-4 shadow-sm`}
+              >
+                <p className={`text-[11px] font-extrabold uppercase tracking-wide mb-2 ${stat.theme.text}`}>
+                  {stat.theme.label}
+                </p>
+                <div className="space-y-2">
+                  <div>
+                    <p className="text-[10px] font-bold text-slate-500">ขยายแล้ว</p>
+                    <p className={`text-xl font-black ${stat.theme.text}`}>{stat.count} ครั้ง</p>
+                  </div>
+                  <div>
+                    <p className="text-[10px] font-bold text-slate-500">ระยะเวลาที่ขยายรวม (ฝ่ายนี้)</p>
+                    <p className={`text-lg font-black ${stat.count ? 'text-emerald-700' : 'text-slate-400'}`}>
+                      {stat.count ? `+${stat.totalDays} วัน` : '—'}
+                    </p>
+                  </div>
+                  <div className="pt-2 border-t border-slate-100 text-[11px] font-bold text-slate-600 space-y-0.5">
+                    <p>
+                      <span className="text-slate-400">เดิม:</span>{' '}
+                      {formatThaiDateLong(stat.originalEnd, { emptyLabel: 'ไม่ระบุ' })}
+                    </p>
+                    <p>
+                      <span className="text-slate-400">ปัจจุบัน:</span>{' '}
+                      {formatThaiDateLong(stat.currentEnd, { emptyLabel: 'ไม่ระบุ' })}
+                    </p>
+                  </div>
+                </div>
               </div>
             ))}
+          </div>
+
+          <div className="flex flex-wrap gap-2 text-[11px] font-bold">
+            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-amber-50 text-amber-800 border border-amber-200">
+              <span className="w-2.5 h-2.5 rounded-full bg-amber-500" /> ผู้รับเหมา
+            </span>
+            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-violet-50 text-violet-800 border border-violet-200">
+              <span className="w-2.5 h-2.5 rounded-full bg-violet-500" /> ลูกค้า
+            </span>
+            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-teal-50 text-teal-800 border border-teal-200">
+              <span className="w-2.5 h-2.5 rounded-full bg-teal-500" /> บริหารโครงการ
+            </span>
           </div>
 
           <form onSubmit={handleAddContractExtension} className="bg-white border border-amber-200 rounded-3xl p-5 md:p-6 shadow-sm space-y-5">
@@ -1316,19 +1349,23 @@ export default function ProjectDetail({
               {projectExtensions.map((ext, idx) => {
                 const milestone = projectMilestones.find((m) => String(m.id) === String(ext.startMilestoneId));
                 const extensionDays = daysBetween(ext.fromDate, ext.toDate);
+                const theme = partyTheme(ext.party);
                 return (
-                  <article key={ext.id} className="relative border border-amber-200 bg-gradient-to-br from-amber-50/70 to-white rounded-2xl p-5 pl-16">
-                    <div className="absolute left-4 top-5 w-9 h-9 rounded-full bg-amber-500 text-white flex items-center justify-center font-black shadow-md">
+                  <article
+                    key={ext.id}
+                    className={`relative border ${theme.articleBorder} bg-gradient-to-br ${theme.articleBg} to-white rounded-2xl p-5 pl-16`}
+                  >
+                    <div className={`absolute left-4 top-5 w-9 h-9 rounded-full ${theme.badge} text-white flex items-center justify-center font-black shadow-md`}>
                       {ext.extensionNo || idx + 1}
                     </div>
                     {idx < projectExtensions.length - 1 && (
-                      <div className="absolute left-[2rem] top-14 bottom-[-1.1rem] w-0.5 bg-amber-200" />
+                      <div className={`absolute left-[2rem] top-14 bottom-[-1.1rem] w-0.5 ${theme.line}`} />
                     )}
                     <div className="flex flex-wrap items-start justify-between gap-3">
                       <div>
                         <h4 className="font-black text-slate-800">ขยายสัญญาครั้งที่ {ext.extensionNo || idx + 1}</h4>
                         <div className="flex flex-wrap gap-2 mt-2">
-                          <span className="inline-flex items-center text-xs font-bold text-violet-700 bg-violet-50 border border-violet-100 px-2.5 py-1 rounded-full">
+                          <span className={`inline-flex items-center text-xs font-bold ${theme.badgeText} ${theme.badgeBg} border px-2.5 py-1 rounded-full`}>
                             {partyLabel(ext.party)}
                           </span>
                           <span className="inline-flex items-center text-xs font-bold text-blue-700 bg-blue-50 border border-blue-100 px-2.5 py-1 rounded-full">
@@ -1389,11 +1426,12 @@ export default function ProjectDetail({
 
       {tab === 'scurve' && sheet && (
         <div className="space-y-5">
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
             {[
               { label: 'ความคืบหน้าจริง', val: `${sheet.actualPct}%`, c: 'text-rose-600' },
               { label: 'ตามแผน (ถึงวันนี้)', val: `${sheet.plannedPct}%`, c: 'text-blue-600' },
               { label: 'ส่วนต่าง', val: `${Math.round((sheet.actualPct - sheet.plannedPct) * 10) / 10}%`, c: sheet.actualPct >= sheet.plannedPct ? 'text-emerald-600' : 'text-rose-600' },
+              { label: 'จำนวนเดือน', val: String(monthTicks.length), c: 'text-violet-700' },
               { label: 'จำนวนสัปดาห์', val: String(weekTicks.length), c: 'text-slate-800' },
             ].map((s) => (
               <div key={s.label} className="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm">
@@ -1406,8 +1444,8 @@ export default function ProjectDetail({
           <div className="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
             <div className="px-4 py-3 bg-slate-50 border-b border-slate-200 flex flex-wrap items-center justify-between gap-2">
               <div>
-                <h3 className="font-extrabold text-slate-800 text-sm">แผนงาน · Gantt · S-Curve (รายสัปดาห์)</h3>
-                <p className="text-[11px] text-slate-500 font-medium mt-0.5">คอลัมน์แกนเวลา = สัปดาห์ (W1, W2, …) · แท่งแผน + เส้นสะสม</p>
+                <h3 className="font-extrabold text-slate-800 text-sm">แผนงาน · Gantt · S-Curve (รายเดือน / รายสัปดาห์)</h3>
+                <p className="text-[11px] text-slate-500 font-medium mt-0.5">แถวบน = เดือน · แถวล่าง = สัปดาห์ (W1, W2, …) · แท่งแผน + เส้นสะสม</p>
               </div>
               <div className="flex flex-wrap items-center gap-2">
                 <div className="flex flex-wrap gap-3 text-[11px] font-bold mr-1">
@@ -1511,6 +1549,19 @@ export default function ProjectDetail({
                       style={{ minHeight: timelineH, minWidth: timelineW }}
                     >
                       <rect x="0" y="0" width={timelineW} height={HEADER_H} fill="#f8fafc" />
+                      {monthTicks.map((m) => {
+                        const x = timeToRatio(m.t, sheet.start, sheet.end) * timelineW;
+                        const x2 = timeToRatio(m.endT, sheet.start, sheet.end) * timelineW;
+                        const colW = Math.max(0, x2 - x);
+                        return (
+                          <g key={`m-${m.monthKey}`}>
+                            <rect x={x} y={0} width={colW || WEEK_COL_W} height={MONTH_ROW_H} fill="#eef2ff" opacity="0.85" />
+                            <line x1={x} y1={0} x2={x} y2={HEADER_H} stroke="#c7d2fe" strokeWidth="1" />
+                            <text x={x + 4} y={16} fontSize="10" fill="#4338ca" fontWeight="800">{m.label}</text>
+                          </g>
+                        );
+                      })}
+                      <line x1="0" y1={MONTH_ROW_H} x2={timelineW} y2={MONTH_ROW_H} stroke="#e2e8f0" strokeWidth="1" />
                       {weekTicks.map((w, wi) => {
                         const x = timeToRatio(w.t, sheet.start, sheet.end) * timelineW;
                         const nextT = weekTicks[wi + 1]?.t ?? sheet.end;
@@ -1519,11 +1570,11 @@ export default function ProjectDetail({
                         return (
                           <g key={`w-${w.t}-${w.weekNo}`}>
                             {wi % 2 === 1 && (
-                              <rect x={x} y={0} width={colW || WEEK_COL_W} height={timelineH} fill="#f1f5f9" opacity="0.45" />
+                              <rect x={x} y={MONTH_ROW_H} width={colW || WEEK_COL_W} height={timelineH - MONTH_ROW_H} fill="#f1f5f9" opacity="0.45" />
                             )}
-                            <line x1={x} y1={0} x2={x} y2={timelineH} stroke="#cbd5e1" strokeWidth="1" />
-                            <text x={x + 4} y={16} fontSize="10" fill="#334155" fontWeight="800">{w.label}</text>
-                            <text x={x + 4} y={30} fontSize="8" fill="#94a3b8" fontWeight="600">{w.sublabel}</text>
+                            <line x1={x} y1={MONTH_ROW_H} x2={x} y2={timelineH} stroke="#cbd5e1" strokeWidth="1" />
+                            <text x={x + 4} y={MONTH_ROW_H + 14} fontSize="10" fill="#334155" fontWeight="800">{w.label}</text>
+                            <text x={x + 4} y={MONTH_ROW_H + 26} fontSize="8" fill="#94a3b8" fontWeight="600">{w.sublabel}</text>
                           </g>
                         );
                       })}

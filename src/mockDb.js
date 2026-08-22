@@ -1,6 +1,6 @@
 /** Local mock DB for Vite DEV only (stripped from production bundle) */
 
-const SEED_VERSION = 10;
+const SEED_VERSION = 11;
 
 function emptyProjectExtras() {
   return {
