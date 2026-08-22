@@ -22,7 +22,7 @@
     "react-dom": "^19.1.0"
   },
   "devDependencies": {
-    "@google/clasp": "^2.4.2",
+    "@google/clasp": "^3.4.0",
     "@tailwindcss/vite": "^4.1.11",
     "@vitejs/plugin-react": "^4.6.0",
     "tailwindcss": "^4.1.11",
