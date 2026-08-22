@@ -1654,6 +1654,7 @@ function requireAdmin_(adminId) {
 function findDeptByCode_(code) {
   var needle = String(code || '').trim().toLowerCase();
   if (!needle) return null;
+  if (needle === 'pth2') needle = 'ผธท.2';
   var raw = listOrgUnitsRaw_();
   for (var i = 0; i < raw.length; i++) {
     var o = raw[i];
@@ -2045,8 +2046,11 @@ function ensureOrgUnitExists_(type, name, parent, codeOpt) {
       var patch = {};
       if (type === 'division' && parent && String(o.parent || '').trim() !== parent) patch.parent = parent;
       if (String(o.active).toUpperCase() === 'FALSE') patch.active = 'TRUE';
-      if (type === 'department' && code && !String(o.code || '').trim()) patch.code = code;
-      if (Object.keys(patch).length) updateRowById_(ORG_UNITS_SHEET, String(o.id), patch);
+      if (type === 'department' && code && String(o.code || '').trim() !== code) patch.code = code;
+      if (Object.keys(patch).length) {
+        updateRowById_(ORG_UNITS_SHEET, String(o.id), patch);
+        invalidateLocalCaches_();
+      }
       return String(o.id);
     }
   }
@@ -2278,6 +2282,12 @@ function ensureDemoShowcase_() {
   ensureOrgUnitExists_('division', 'กองงบประมาณ', 'Finance');
   ensureOrgUnitExists_('division', 'กองพัฒนาระบบไฟฟ้า', 'ผธท.2');
   added.orgs = 10;
+  invalidateLocalCaches_();
+  var pth2Dept = findDeptByCode_('PTH2') || findDeptByCode_('ผธท.2');
+  if (pth2Dept && String(pth2Dept.code || '').toUpperCase() !== 'PTH2') {
+    updateRowById_(ORG_UNITS_SHEET, String(pth2Dept.id), { code: 'PTH2' });
+    invalidateLocalCaches_();
+  }
 
   var demoUsers = [
     ['admin', 'ผู้ดูแลระบบ', 'Admin', 'SYSTEM', 'ผู้ดูแลระบบ', 'TRUE', 'admin@demo.local', 'TRUE', 'TRUE', 'TRUE', 'TRUE', 'TRUE', 'admin', '1234'],
