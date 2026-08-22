@@ -76,6 +76,12 @@ export default function BoardView({
     return () => document.removeEventListener('mousedown', onDoc);
   }, [personFilterOpen]);
 
+  const displayTasks = useMemo(() => {
+    if (viewMode !== 'mine') return filteredTasks;
+    const myId = String(currentUser?.id || '');
+    return filteredTasks.filter((t) => String(t.assignedTo) === myId);
+  }, [viewMode, filteredTasks, currentUser?.id]);
+
   const displayByStatus = useMemo(() => {
     if (viewMode !== 'mine') return boardTasksByStatus;
     const myId = String(currentUser?.id || '');
