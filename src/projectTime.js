@@ -79,3 +79,36 @@ export function getProjectTimeProgress(startDate, endDate, now = new Date()) {
     status: 'active',
   };
 }
+
+/** Inclusive calendar-day count between start and end (date-only). */
+export function calendarDaysInclusive(startDate, endDate) {
+  const start = toDay(startDate);
+  const end = toDay(endDate);
+  if (start == null || end == null || end < start) return 0;
+  return Math.round((end - start) / DAY) + 1;
+}
+
+/** End date (YYYY-MM-DD) from start + inclusive day count. */
+export function addCalendarDays(startDate, days) {
+  const start = toDay(startDate);
+  const n = Number(days);
+  if (start == null || !Number.isFinite(n) || n < 1) return '';
+  return new Date(start + (n - 1) * DAY).toISOString().slice(0, 10);
+}
+
+export function parseProjectTeam(raw) {
+  if (!raw) return [];
+  if (Array.isArray(raw)) {
+    return raw
+      .map((m) => ({
+        name: String(m?.name || '').trim(),
+        position: String(m?.position || '').trim(),
+      }))
+      .filter((m) => m.name);
+  }
+  try {
+    return parseProjectTeam(JSON.parse(String(raw)));
+  } catch {
+    return [];
+  }
+}

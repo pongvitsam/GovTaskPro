@@ -17,6 +17,7 @@ import {
   buildProjectActivityEvents,
   summarizeRecentActivity,
 } from './projectActivity';
+import { addCalendarDays, calendarDaysInclusive, parseProjectTeam } from './projectTime';
 
 const TABS = [
   { id: 'activity', label: 'ความเคลื่อนไหว', icon: History },
@@ -26,9 +27,83 @@ const TABS = [
   { id: 'settings', label: 'ตั้งค่าโปรเจกต์', icon: Settings2 },
 ];
 
+const PARTY_OPTIONS = [
+  { id: 'contractor', label: 'สัญญาผู้รับเหมา' },
+  { id: 'customer', label: 'สัญญาลูกค้า' },
+  { id: 'project', label: 'ช่วงบริหารโครงการ' },
+];
+
+function partyLabel(party) {
+  return PARTY_OPTIONS.find((p) => p.id === party)?.label || 'สัญญาผู้รับเหมา';
+}
+
 function toInputDate(v) {
   if (!v) return '';
   return String(v).slice(0, 10);
+}
+
+function buildSettingsState(project) {
+  return {
+    name: project?.name || '',
+    description: project?.description || '',
+    startDate: toInputDate(project?.startDate),
+    endDate: toInputDate(project?.endDate),
+    siteAddress: project?.siteAddress || '',
+    systemSizeKwp: project?.systemSizeKwp ?? '',
+    customerName: project?.customerName || '',
+    customerContractNo: project?.customerContractNo || '',
+    customerContractValue: project?.customerContractValue ?? '',
+    customerStartDate: toInputDate(project?.customerStartDate),
+    customerEndDate: toInputDate(project?.customerEndDate),
+    customerContact: project?.customerContact || '',
+    contractorName: project?.contractorName || '',
+    contractorContractNo: project?.contractorContractNo || '',
+    contractorContractValue: project?.contractorContractValue ?? '',
+    contractorStartDate: toInputDate(project?.contractorStartDate),
+    contractorEndDate: toInputDate(project?.contractorEndDate),
+    contractorContact: project?.contractorContact || '',
+    projectTeam: parseProjectTeam(project?.projectTeam).length
+      ? parseProjectTeam(project?.projectTeam)
+      : [{ name: '', position: '' }],
+  };
+}
+
+function DurationHint({ startDate, endDate, onApplyDays, disabled }) {
+  const days = calendarDaysInclusive(startDate, endDate);
+  const [draftDays, setDraftDays] = useState(days ? String(days) : '');
+  useEffect(() => {
+    setDraftDays(days ? String(days) : '');
+  }, [days, startDate, endDate]);
+
+  return (
+    <div className="flex flex-wrap items-end gap-3 mt-2">
+      <p className="text-xs font-bold text-slate-500">
+        {days > 0 ? `รวม ${days} วัน (รวมวันเริ่ม–สิ้นสุด)` : 'ยังไม่ครบช่วงวันที่'}
+      </p>
+      <div className="flex items-center gap-2">
+        <input
+          type="number"
+          min="1"
+          disabled={disabled || !startDate}
+          value={draftDays}
+          onChange={(e) => setDraftDays(e.target.value)}
+          placeholder="จำนวนวัน"
+          className="w-28 border border-slate-100 rounded-xl px-2.5 py-1.5 text-xs font-bold outline-none focus:border-teal-400 disabled:bg-slate-50"
+        />
+        <button
+          type="button"
+          disabled={disabled || !startDate || !Number(draftDays)}
+          onClick={() => {
+            const next = addCalendarDays(startDate, Number(draftDays));
+            if (next) onApplyDays(next);
+          }}
+          className="text-[11px] font-extrabold text-teal-700 bg-teal-50 border border-teal-100 px-2.5 py-1.5 rounded-xl disabled:opacity-40"
+        >
+          คำนวณวันสิ้นสุด
+        </button>
+      </div>
+    </div>
+  );
 }
 
 const ROW_H = 44;
@@ -262,21 +337,19 @@ export default function ProjectDetail({
   const [activityLoading, setActivityLoading] = useState(false);
   const [activityLoadError, setActivityLoadError] = useState(null);
   const scurveSvgRef = useRef(null);
-  const [settings, setSettings] = useState({
-    name: project?.name || '',
-    description: project?.description || '',
-    startDate: toInputDate(project?.startDate),
-    endDate: toInputDate(project?.endDate),
-  });
+  const [settings, setSettings] = useState(() => buildSettingsState(project));
 
   useEffect(() => {
-    setSettings({
-      name: project?.name || '',
-      description: project?.description || '',
-      startDate: toInputDate(project?.startDate),
-      endDate: toInputDate(project?.endDate),
-    });
-  }, [project?.id, project?.name, project?.description, project?.startDate, project?.endDate]);
+    setSettings(buildSettingsState(project));
+  }, [
+    project?.id, project?.name, project?.description, project?.startDate, project?.endDate,
+    project?.siteAddress, project?.systemSizeKwp,
+    project?.customerName, project?.customerContractNo, project?.customerContractValue,
+    project?.customerStartDate, project?.customerEndDate, project?.customerContact,
+    project?.contractorName, project?.contractorContractNo, project?.contractorContractValue,
+    project?.contractorStartDate, project?.contractorEndDate, project?.contractorContact,
+    project?.projectTeam,
+  ]);
 
   const projectTasks = useMemo(
     () => (tasks || []).filter((t) => String(t.projectId) === String(project.id)),
@@ -368,18 +441,21 @@ export default function ProjectDetail({
     reason: '',
     approvalRef: '',
     approvedAt: '',
+    party: 'contractor',
   });
 
   useEffect(() => {
+    const partyEnd = project.contractorEndDate || effectiveContractEnd;
     setNewExtension({
-      fromDate: toInputDate(effectiveContractEnd),
+      fromDate: toInputDate(partyEnd),
       toDate: '',
       startMilestoneId: defaultExtensionMilestone,
       reason: '',
       approvalRef: '',
       approvedAt: '',
+      party: 'contractor',
     });
-  }, [project.id, effectiveContractEnd, defaultExtensionMilestone, projectExtensions.length]);
+  }, [project.id, effectiveContractEnd, defaultExtensionMilestone, projectExtensions.length, project.contractorEndDate]);
 
   const progress = useMemo(() => {
     const c = buildSCurve(project, projectMilestones, { maxPoints: 2 });
@@ -453,12 +529,35 @@ export default function ProjectDetail({
       showToast('กรุณาเข้าสู่ระบบก่อนแก้ไข');
       return;
     }
+    const team = (settings.projectTeam || [])
+      .map((m) => ({ name: String(m.name || '').trim(), position: String(m.position || '').trim() }))
+      .filter((m) => m.name);
+    const numOrNull = (v) => {
+      if (v === '' || v === null || v === undefined) return null;
+      const n = Number(v);
+      return Number.isFinite(n) ? n : null;
+    };
     await onSaveProject({
       id: project.id,
       name: settings.name,
       description: settings.description,
       startDate: settings.startDate || null,
       endDate: settings.endDate || null,
+      siteAddress: settings.siteAddress || '',
+      systemSizeKwp: numOrNull(settings.systemSizeKwp),
+      customerName: settings.customerName || '',
+      customerContractNo: settings.customerContractNo || '',
+      customerContractValue: numOrNull(settings.customerContractValue),
+      customerStartDate: settings.customerStartDate || null,
+      customerEndDate: settings.customerEndDate || null,
+      customerContact: settings.customerContact || '',
+      contractorName: settings.contractorName || '',
+      contractorContractNo: settings.contractorContractNo || '',
+      contractorContractValue: numOrNull(settings.contractorContractValue),
+      contractorStartDate: settings.contractorStartDate || null,
+      contractorEndDate: settings.contractorEndDate || null,
+      contractorContact: settings.contractorContact || '',
+      projectTeam: team,
     });
   };
 
@@ -560,6 +659,7 @@ export default function ProjectDetail({
       approvalRef: newExtension.approvalRef.trim(),
       approvedAt: newExtension.approvedAt || null,
       createdBy: currentUser.id,
+      party: newExtension.party || 'contractor',
     });
     if (row) {
       setNewExtension({
@@ -569,6 +669,7 @@ export default function ProjectDetail({
         reason: '',
         approvalRef: '',
         approvedAt: '',
+        party: row.party || newExtension.party || 'contractor',
       });
     }
   };
@@ -582,10 +683,41 @@ export default function ProjectDetail({
           </button>
           <h2 className="text-2xl md:text-3xl font-extrabold text-slate-800 tracking-tight">{project.name}</h2>
           <p className="text-slate-500 text-sm mt-2 font-medium max-w-3xl">{project.description || 'ยังไม่มีรายละเอียด'}</p>
+          {(project.customerName || project.contractorName || project.siteAddress || project.systemSizeKwp) && (
+            <div className="mt-3 space-y-1 text-sm font-medium text-slate-600 max-w-3xl">
+              {project.customerName && (
+                <p>
+                  <span className="text-slate-400 font-bold">ลูกค้า:</span> {project.customerName}
+                  {project.customerContractNo ? ` · ${project.customerContractNo}` : ''}
+                  {project.customerStartDate || project.customerEndDate
+                    ? ` · ${formatThaiDate(project.customerStartDate)} → ${formatThaiDate(project.customerEndDate)}`
+                    : ''}
+                </p>
+              )}
+              {project.contractorName && (
+                <p>
+                  <span className="text-slate-400 font-bold">ผู้รับเหมา:</span> {project.contractorName}
+                  {project.contractorContractNo ? ` · ${project.contractorContractNo}` : ''}
+                  {project.contractorStartDate || project.contractorEndDate
+                    ? ` · ${formatThaiDate(project.contractorStartDate)} → ${formatThaiDate(project.contractorEndDate)}`
+                    : ''}
+                </p>
+              )}
+              {(project.siteAddress || project.systemSizeKwp) && (
+                <p>
+                  {project.siteAddress && <span>{project.siteAddress}</span>}
+                  {project.siteAddress && project.systemSizeKwp ? ' · ' : ''}
+                  {project.systemSizeKwp != null && project.systemSizeKwp !== '' && (
+                    <span>{Number(project.systemSizeKwp).toLocaleString('th-TH')} kWp</span>
+                  )}
+                </p>
+              )}
+            </div>
+          )}
           <div className="flex flex-wrap gap-2 mt-4">
             <span className="text-[11px] font-bold px-3 py-1.5 rounded-full bg-slate-100 text-slate-700 border border-slate-200 flex items-center">
               <CalendarIcon className="w-3.5 h-3.5 mr-1.5" />
-              {formatThaiDate(project.startDate)} → {formatThaiDate(project.endDate)}
+              บริหาร {formatThaiDate(project.startDate)} → {formatThaiDate(project.endDate)}
             </span>
             <span className="text-[11px] font-bold px-3 py-1.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
               ขั้นตอนเสร็จ {doneCount}/{projectMilestones.length}
@@ -612,8 +744,24 @@ export default function ProjectDetail({
             <span className="text-slate-500">7 วันล่าสุด:</span>{' '}
             <span className="text-slate-800">{activitySummary.label}</span>
           </button>
-          <div className="mt-4 max-w-xl">
+          <div className="mt-4 max-w-xl space-y-2">
             <ProjectTimeBar startDate={project.startDate} endDate={effectiveContractEnd} />
+            {(project.customerStartDate || project.contractorStartDate) && (
+              <div className="text-[11px] font-bold text-slate-500 space-y-1">
+                {project.customerStartDate && (
+                  <p>
+                    สัญญาลูกค้า {calendarDaysInclusive(project.customerStartDate, project.customerEndDate) || '—'} วัน
+                    {' · '}{formatThaiDate(project.customerStartDate)} → {formatThaiDate(project.customerEndDate)}
+                  </p>
+                )}
+                {project.contractorStartDate && (
+                  <p>
+                    สัญญาผู้รับเหมา {calendarDaysInclusive(project.contractorStartDate, project.contractorEndDate) || '—'} วัน
+                    {' · '}{formatThaiDate(project.contractorStartDate)} → {formatThaiDate(project.contractorEndDate)}
+                  </p>
+                )}
+              </div>
+            )}
           </div>
         </div>
         <button
@@ -656,50 +804,290 @@ export default function ProjectDetail({
       )}
 
       {tab === 'settings' && (
-        <form onSubmit={handleSaveSettings} className="bg-white border border-slate-200 rounded-3xl p-6 md:p-8 shadow-sm max-w-3xl space-y-5">
+        <form onSubmit={handleSaveSettings} className="bg-white border border-slate-200 rounded-3xl p-6 md:p-8 shadow-sm max-w-4xl space-y-8">
           <h3 className="font-extrabold text-slate-800 text-lg">ตั้งค่ารายละเอียดโปรเจกต์</h3>
-          <div>
-            <label className="block text-sm font-extrabold text-slate-700 mb-2">ชื่อโปรเจกต์</label>
-            <input
-              required
-              disabled={!canEdit || busy}
-              value={settings.name}
-              onChange={(e) => setSettings({ ...settings, name: e.target.value })}
-              className="w-full border border-slate-100 rounded-2xl p-3.5 font-medium outline-none focus:border-teal-400 disabled:bg-slate-50"
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-extrabold text-slate-700 mb-2">รายละเอียด</label>
-            <textarea
-              disabled={!canEdit || busy}
-              rows={3}
-              value={settings.description}
-              onChange={(e) => setSettings({ ...settings, description: e.target.value })}
-              className="w-full border border-slate-100 rounded-2xl p-3.5 font-medium outline-none focus:border-teal-400 disabled:bg-slate-50"
-            />
-          </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+
+          <section className="space-y-5">
+            <h4 className="text-sm font-black text-teal-800 uppercase tracking-wide">ข้อมูลทั่วไป</h4>
             <div>
-              <label className="block text-sm font-extrabold text-slate-700 mb-2">วันเริ่มบริหารโครงการ</label>
-              <ThaiDateField
-                clearable
+              <label className="block text-sm font-extrabold text-slate-700 mb-2">ชื่อโปรเจกต์</label>
+              <input
+                required
                 disabled={!canEdit || busy}
-                placeholder="วันเริ่ม พ.ศ."
-                value={settings.startDate}
-                onChange={(v) => setSettings({ ...settings, startDate: v })}
+                value={settings.name}
+                onChange={(e) => setSettings({ ...settings, name: e.target.value })}
+                className="w-full border border-slate-100 rounded-2xl p-3.5 font-medium outline-none focus:border-teal-400 disabled:bg-slate-50"
               />
             </div>
             <div>
-              <label className="block text-sm font-extrabold text-slate-700 mb-2">วันสิ้นสุดโครงการ</label>
-              <ThaiDateField
-                clearable
+              <label className="block text-sm font-extrabold text-slate-700 mb-2">รายละเอียด</label>
+              <textarea
                 disabled={!canEdit || busy}
-                placeholder="วันสิ้นสุด พ.ศ."
-                value={settings.endDate}
-                onChange={(v) => setSettings({ ...settings, endDate: v })}
+                rows={3}
+                value={settings.description}
+                onChange={(e) => setSettings({ ...settings, description: e.target.value })}
+                className="w-full border border-slate-100 rounded-2xl p-3.5 font-medium outline-none focus:border-teal-400 disabled:bg-slate-50"
               />
             </div>
-          </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+              <div className="md:col-span-2">
+                <label className="block text-sm font-extrabold text-slate-700 mb-2">ที่ตั้งติดตั้ง</label>
+                <input
+                  disabled={!canEdit || busy}
+                  value={settings.siteAddress}
+                  onChange={(e) => setSettings({ ...settings, siteAddress: e.target.value })}
+                  placeholder="ที่อยู่ไซต์งาน"
+                  className="w-full border border-slate-100 rounded-2xl p-3.5 font-medium outline-none focus:border-teal-400 disabled:bg-slate-50"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-extrabold text-slate-700 mb-2">ขนาดระบบ (kWp)</label>
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  disabled={!canEdit || busy}
+                  value={settings.systemSizeKwp}
+                  onChange={(e) => setSettings({ ...settings, systemSizeKwp: e.target.value })}
+                  className="w-full border border-slate-100 rounded-2xl p-3.5 font-medium outline-none focus:border-teal-400 disabled:bg-slate-50"
+                />
+              </div>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+              <div>
+                <label className="block text-sm font-extrabold text-slate-700 mb-2">วันเริ่มบริหารโครงการ</label>
+                <ThaiDateField
+                  clearable
+                  disabled={!canEdit || busy}
+                  placeholder="วันเริ่ม พ.ศ."
+                  value={settings.startDate}
+                  onChange={(v) => setSettings({ ...settings, startDate: v })}
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-extrabold text-slate-700 mb-2">วันสิ้นสุดบริหารโครงการ</label>
+                <ThaiDateField
+                  clearable
+                  disabled={!canEdit || busy}
+                  placeholder="วันสิ้นสุด พ.ศ."
+                  value={settings.endDate}
+                  onChange={(v) => setSettings({ ...settings, endDate: v })}
+                />
+              </div>
+            </div>
+            <DurationHint
+              startDate={settings.startDate}
+              endDate={settings.endDate}
+              disabled={!canEdit || busy}
+              onApplyDays={(endDate) => setSettings((prev) => ({ ...prev, endDate }))}
+            />
+          </section>
+
+          <section className="space-y-5 border-t border-slate-100 pt-6">
+            <h4 className="text-sm font-black text-blue-800 uppercase tracking-wide">สัญญาลูกค้า</h4>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+              <div>
+                <label className="block text-sm font-extrabold text-slate-700 mb-2">ชื่อลูกค้า</label>
+                <input
+                  disabled={!canEdit || busy}
+                  value={settings.customerName}
+                  onChange={(e) => setSettings({ ...settings, customerName: e.target.value })}
+                  className="w-full border border-slate-100 rounded-2xl p-3.5 font-medium outline-none focus:border-teal-400 disabled:bg-slate-50"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-extrabold text-slate-700 mb-2">เลขที่สัญญา</label>
+                <input
+                  disabled={!canEdit || busy}
+                  value={settings.customerContractNo}
+                  onChange={(e) => setSettings({ ...settings, customerContractNo: e.target.value })}
+                  className="w-full border border-slate-100 rounded-2xl p-3.5 font-medium outline-none focus:border-teal-400 disabled:bg-slate-50"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-extrabold text-slate-700 mb-2">มูลค่าสัญญา (บาท)</label>
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  disabled={!canEdit || busy}
+                  value={settings.customerContractValue}
+                  onChange={(e) => setSettings({ ...settings, customerContractValue: e.target.value })}
+                  className="w-full border border-slate-100 rounded-2xl p-3.5 font-medium outline-none focus:border-teal-400 disabled:bg-slate-50"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-extrabold text-slate-700 mb-2">ติดต่อ</label>
+                <input
+                  disabled={!canEdit || busy}
+                  value={settings.customerContact}
+                  onChange={(e) => setSettings({ ...settings, customerContact: e.target.value })}
+                  placeholder="เบอร์โทร / อีเมล"
+                  className="w-full border border-slate-100 rounded-2xl p-3.5 font-medium outline-none focus:border-teal-400 disabled:bg-slate-50"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-extrabold text-slate-700 mb-2">วันเริ่มสัญญา</label>
+                <ThaiDateField
+                  clearable
+                  disabled={!canEdit || busy}
+                  placeholder="วันเริ่ม พ.ศ."
+                  value={settings.customerStartDate}
+                  onChange={(v) => setSettings({ ...settings, customerStartDate: v })}
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-extrabold text-slate-700 mb-2">วันสิ้นสุดสัญญา</label>
+                <ThaiDateField
+                  clearable
+                  disabled={!canEdit || busy}
+                  placeholder="วันสิ้นสุด พ.ศ."
+                  value={settings.customerEndDate}
+                  onChange={(v) => setSettings({ ...settings, customerEndDate: v })}
+                />
+              </div>
+            </div>
+            <DurationHint
+              startDate={settings.customerStartDate}
+              endDate={settings.customerEndDate}
+              disabled={!canEdit || busy}
+              onApplyDays={(customerEndDate) => setSettings((prev) => ({ ...prev, customerEndDate }))}
+            />
+          </section>
+
+          <section className="space-y-5 border-t border-slate-100 pt-6">
+            <h4 className="text-sm font-black text-amber-800 uppercase tracking-wide">สัญญาผู้รับเหมา</h4>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+              <div>
+                <label className="block text-sm font-extrabold text-slate-700 mb-2">ชื่อผู้รับเหมา</label>
+                <input
+                  disabled={!canEdit || busy}
+                  value={settings.contractorName}
+                  onChange={(e) => setSettings({ ...settings, contractorName: e.target.value })}
+                  className="w-full border border-slate-100 rounded-2xl p-3.5 font-medium outline-none focus:border-teal-400 disabled:bg-slate-50"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-extrabold text-slate-700 mb-2">เลขที่สัญญา</label>
+                <input
+                  disabled={!canEdit || busy}
+                  value={settings.contractorContractNo}
+                  onChange={(e) => setSettings({ ...settings, contractorContractNo: e.target.value })}
+                  className="w-full border border-slate-100 rounded-2xl p-3.5 font-medium outline-none focus:border-teal-400 disabled:bg-slate-50"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-extrabold text-slate-700 mb-2">มูลค่าสัญญา (บาท)</label>
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  disabled={!canEdit || busy}
+                  value={settings.contractorContractValue}
+                  onChange={(e) => setSettings({ ...settings, contractorContractValue: e.target.value })}
+                  className="w-full border border-slate-100 rounded-2xl p-3.5 font-medium outline-none focus:border-teal-400 disabled:bg-slate-50"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-extrabold text-slate-700 mb-2">ติดต่อ</label>
+                <input
+                  disabled={!canEdit || busy}
+                  value={settings.contractorContact}
+                  onChange={(e) => setSettings({ ...settings, contractorContact: e.target.value })}
+                  placeholder="เบอร์โทร / อีเมล"
+                  className="w-full border border-slate-100 rounded-2xl p-3.5 font-medium outline-none focus:border-teal-400 disabled:bg-slate-50"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-extrabold text-slate-700 mb-2">วันเริ่มสัญญา / ก่อสร้าง</label>
+                <ThaiDateField
+                  clearable
+                  disabled={!canEdit || busy}
+                  placeholder="วันเริ่ม พ.ศ."
+                  value={settings.contractorStartDate}
+                  onChange={(v) => setSettings({ ...settings, contractorStartDate: v })}
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-extrabold text-slate-700 mb-2">วันสิ้นสุดสัญญา / ก่อสร้าง</label>
+                <ThaiDateField
+                  clearable
+                  disabled={!canEdit || busy}
+                  placeholder="วันสิ้นสุด พ.ศ."
+                  value={settings.contractorEndDate}
+                  onChange={(v) => setSettings({ ...settings, contractorEndDate: v })}
+                />
+              </div>
+            </div>
+            <DurationHint
+              startDate={settings.contractorStartDate}
+              endDate={settings.contractorEndDate}
+              disabled={!canEdit || busy}
+              onApplyDays={(contractorEndDate) => setSettings((prev) => ({ ...prev, contractorEndDate }))}
+            />
+          </section>
+
+          <section className="space-y-4 border-t border-slate-100 pt-6">
+            <div className="flex items-center justify-between gap-3">
+              <h4 className="text-sm font-black text-violet-800 uppercase tracking-wide">ทีมบริหารโครงการ</h4>
+              <button
+                type="button"
+                disabled={!canEdit || busy}
+                onClick={() => setSettings((prev) => ({
+                  ...prev,
+                  projectTeam: [...(prev.projectTeam || []), { name: '', position: '' }],
+                }))}
+                className="text-xs font-extrabold text-violet-700 bg-violet-50 border border-violet-100 px-3 py-1.5 rounded-xl disabled:opacity-40"
+              >
+                + เพิ่มสมาชิก
+              </button>
+            </div>
+            <div className="space-y-3">
+              {(settings.projectTeam || []).map((member, idx) => (
+                <div key={idx} className="grid grid-cols-1 md:grid-cols-[1fr_1fr_auto] gap-3 items-end">
+                  <div>
+                    <label className="block text-xs font-bold text-slate-500 mb-1">ชื่อ</label>
+                    <input
+                      disabled={!canEdit || busy}
+                      value={member.name}
+                      onChange={(e) => {
+                        const next = [...settings.projectTeam];
+                        next[idx] = { ...next[idx], name: e.target.value };
+                        setSettings({ ...settings, projectTeam: next });
+                      }}
+                      className="w-full border border-slate-100 rounded-2xl p-3 font-medium outline-none focus:border-teal-400 disabled:bg-slate-50"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-slate-500 mb-1">ตำแหน่ง</label>
+                    <input
+                      disabled={!canEdit || busy}
+                      value={member.position}
+                      onChange={(e) => {
+                        const next = [...settings.projectTeam];
+                        next[idx] = { ...next[idx], position: e.target.value };
+                        setSettings({ ...settings, projectTeam: next });
+                      }}
+                      className="w-full border border-slate-100 rounded-2xl p-3 font-medium outline-none focus:border-teal-400 disabled:bg-slate-50"
+                    />
+                  </div>
+                  <button
+                    type="button"
+                    disabled={!canEdit || busy || (settings.projectTeam || []).length <= 1}
+                    onClick={() => setSettings((prev) => ({
+                      ...prev,
+                      projectTeam: prev.projectTeam.filter((_, i) => i !== idx),
+                    }))}
+                    className="p-3 text-rose-500 hover:bg-rose-50 rounded-2xl disabled:opacity-30"
+                    title="ลบ"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          </section>
+
           <button type="submit" disabled={busy || !canEdit} className="bg-blue-600 text-white px-5 py-3 rounded-2xl font-extrabold flex items-center disabled:opacity-60">
             {busy ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Save className="w-4 h-4 mr-2" />}
             บันทึกการตั้งค่า
@@ -814,12 +1202,33 @@ export default function ProjectDetail({
               <div>
                 <h3 className="font-extrabold text-slate-800">บันทึกการขยายสัญญาครั้งใหม่</h3>
                 <p className="text-xs text-slate-500 font-medium mt-0.5">
-                  ระบบจะนับเป็นครั้งที่ {projectExtensions.length + 1} และปรับวันสิ้นสุดโปรเจกต์ให้อัตโนมัติ
+                  ระบบจะนับเป็นครั้งที่ {projectExtensions.length + 1} และปรับวันสิ้นสุดของฝ่ายที่เลือกให้อัตโนมัติ
                 </p>
               </div>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="md:col-span-2">
+                <label className="text-xs font-bold text-slate-600 mb-1.5 block">ขยายสัญญาฝ่าย *</label>
+                <select
+                  required
+                  value={newExtension.party}
+                  onChange={(e) => {
+                    const party = e.target.value;
+                    const fromDate = party === 'customer'
+                      ? toInputDate(project.customerEndDate || project.endDate)
+                      : party === 'project'
+                        ? toInputDate(effectiveContractEnd)
+                        : toInputDate(project.contractorEndDate || effectiveContractEnd);
+                    setNewExtension((prev) => ({ ...prev, party, fromDate }));
+                  }}
+                  className="w-full border border-slate-200 rounded-2xl p-3.5 text-sm font-bold text-slate-700 bg-white outline-none focus:border-amber-400"
+                >
+                  {PARTY_OPTIONS.map((opt) => (
+                    <option key={opt.id} value={opt.id}>{opt.label}</option>
+                  ))}
+                </select>
+              </div>
               <div>
                 <label className="text-xs font-bold text-slate-600 mb-1.5 block">ขยายจากวันที่ *</label>
                 <ThaiDateField
@@ -919,6 +1328,9 @@ export default function ProjectDetail({
                       <div>
                         <h4 className="font-black text-slate-800">ขยายสัญญาครั้งที่ {ext.extensionNo || idx + 1}</h4>
                         <div className="flex flex-wrap gap-2 mt-2">
+                          <span className="inline-flex items-center text-xs font-bold text-violet-700 bg-violet-50 border border-violet-100 px-2.5 py-1 rounded-full">
+                            {partyLabel(ext.party)}
+                          </span>
                           <span className="inline-flex items-center text-xs font-bold text-blue-700 bg-blue-50 border border-blue-100 px-2.5 py-1 rounded-full">
                             <CalendarRange className="w-3.5 h-3.5 mr-1.5" />
                             {formatThaiDateLong(ext.fromDate)} → {formatThaiDateLong(ext.toDate)}

@@ -996,6 +996,8 @@ export default function App() {
             : currentUser.department,
           startDate: formData.get('startDate') || null,
           endDate: formData.get('endDate') || null,
+          customerName: formData.get('customerName') || '',
+          contractorName: formData.get('contractorName') || '',
         });
         setProjects((prev) => upsertById(prev, row));
         setCurrentModule('projects');
@@ -1903,14 +1905,32 @@ export default function App() {
                       </span>
                     </div>
                     <h3 className="gtp-display font-extrabold text-lg text-[#1e3a4c] mb-2 group-hover:text-teal-700">{proj.name}</h3>
-                    <p className="text-sm text-[#5b7a8a] line-clamp-2 mb-3 flex-1 font-medium leading-relaxed">{proj.description}</p>
+                    <p className="text-sm text-[#5b7a8a] line-clamp-2 mb-2 flex-1 font-medium leading-relaxed">{proj.description}</p>
+                    {(proj.customerName || proj.contractorName) && (
+                      <p className="text-[11px] font-bold text-slate-600 mb-2 line-clamp-2">
+                        {proj.customerName ? `ลูกค้า: ${proj.customerName}` : ''}
+                        {proj.customerName && proj.contractorName ? ' · ' : ''}
+                        {proj.contractorName ? `ผู้รับเหมา: ${proj.contractorName}` : ''}
+                      </p>
+                    )}
                     <p className="text-[11px] font-bold text-teal-700/90 mb-2 line-clamp-1" title={activityPreview.label}>
                       <History className="w-3 h-3 inline mr-1 -mt-0.5" />
                       7 วันล่าสุด: {activityPreview.label}
                     </p>
-                    <p className="text-[11px] font-bold text-[#8aa3b0] mb-2">
-                      {formatThaiDate(proj.startDate)} → {formatThaiDate(proj.endDate)}
+                    <p className="text-[11px] font-bold text-[#8aa3b0] mb-1">
+                      บริหาร {formatThaiDate(proj.startDate)} → {formatThaiDate(proj.endDate)}
                     </p>
+                    {(proj.customerStartDate || proj.contractorStartDate) && (
+                      <p className="text-[10px] font-bold text-slate-500 mb-2 line-clamp-2">
+                        {proj.customerStartDate
+                          ? `ลูกค้า ${formatThaiDate(proj.customerStartDate)}→${formatThaiDate(proj.customerEndDate)}`
+                          : ''}
+                        {proj.customerStartDate && proj.contractorStartDate ? ' · ' : ''}
+                        {proj.contractorStartDate
+                          ? `ผู้รับเหมา ${formatThaiDate(proj.contractorStartDate)}→${formatThaiDate(proj.contractorEndDate)}`
+                          : ''}
+                      </p>
+                    )}
                     <ProjectTimeBar startDate={proj.startDate} endDate={proj.endDate} compact />
                     <div className="mt-4">
                       <div className="flex justify-between text-xs font-bold text-[#1e3a4c] mb-2">
@@ -2215,6 +2235,17 @@ export default function App() {
                       <label className="block text-sm font-extrabold text-slate-700 mb-2">วันสิ้นสุดโครงการ</label>
                       <ThaiDateField clearable inputName="endDate" placeholder="วันสิ้นสุด พ.ศ." />
                     </div>
+                    <div>
+                      <label className="block text-sm font-extrabold text-slate-700 mb-2">ชื่อลูกค้า</label>
+                      <input type="text" name="customerName" className="w-full border border-slate-100 rounded-2xl p-3.5 text-slate-800 font-medium outline-none focus:border-teal-400" placeholder="บริษัท / ลูกค้า" />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-extrabold text-slate-700 mb-2">ชื่อผู้รับเหมา</label>
+                      <input type="text" name="contractorName" className="w-full border border-slate-100 rounded-2xl p-3.5 text-slate-800 font-medium outline-none focus:border-teal-400" placeholder="ผู้รับเหมาติดตั้ง" />
+                    </div>
+                    <p className="md:col-span-2 text-[11px] font-medium text-slate-400">
+                      รายละเอียดสัญญา (เลขที่ มูลค่า ระยะเวลา ทีม) กรอกเพิ่มได้ในแท็บตั้งค่าโปรเจกต์หลังสร้าง
+                    </p>
                   </div>
                 )}
                 {createType === 'task' && (

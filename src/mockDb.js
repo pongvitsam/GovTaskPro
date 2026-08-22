@@ -1,6 +1,47 @@
 /** Local mock DB for Vite DEV only (stripped from production bundle) */
 
-const SEED_VERSION = 8;
+const SEED_VERSION = 9;
+
+function emptyProjectExtras() {
+  return {
+    customerName: '',
+    customerContractNo: '',
+    customerContractValue: null,
+    customerStartDate: null,
+    customerEndDate: null,
+    customerContact: '',
+    contractorName: '',
+    contractorContractNo: '',
+    contractorContractValue: null,
+    contractorStartDate: null,
+    contractorEndDate: null,
+    contractorContact: '',
+    projectTeam: [],
+    siteAddress: '',
+    systemSizeKwp: null,
+  };
+}
+
+function normalizeContractParty(party) {
+  const p = String(party || 'contractor').trim().toLowerCase();
+  if (p === 'customer' || p === 'project' || p === 'contractor') return p;
+  return 'contractor';
+}
+
+function applyExtensionDatesToProject(project, party, toDate) {
+  if (!project || !toDate) return project;
+  const next = { ...project };
+  const partyKey = party === 'customer'
+    ? 'customerEndDate'
+    : (party === 'project' ? 'endDate' : 'contractorEndDate');
+  if (!next[partyKey] || new Date(toDate).getTime() > new Date(next[partyKey]).getTime()) {
+    next[partyKey] = toDate;
+  }
+  if (partyKey !== 'endDate' && (!next.endDate || new Date(toDate).getTime() > new Date(next.endDate).getTime())) {
+    next.endDate = toDate;
+  }
+  return next;
+}
 
 function buildDemoSeed() {
   const NOW = Date.now();
@@ -35,11 +76,59 @@ function buildDemoSeed() {
       user({ id: 'u9', name: 'บัญชีปิดใช้ (ตัวอย่าง)', role: 'Staff', department: 'IT', division: 'กองเทคโนโลยี', username: 'olduser', active: false }),
     ],
     projects: [
-      { id: 'p1', name: 'พัฒนาระบบ Intranet กอง', description: 'อัปเกรดระบบภายใน (Next-Gen) — มีประวัติขยายสัญญา 2 ครั้ง', createdBy: 'u1', department: 'IT', createdAt: t(-14), startDate: d(-14), endDate: d(75) },
-      { id: 'p2', name: 'กิจกรรม 5ส ประจำปี', description: 'จัดระเบียบอุปกรณ์และสายไฟ', createdBy: 'u1', department: 'IT', createdAt: t(-7), startDate: d(-7), endDate: d(21) },
-      { id: 'p3', name: 'แผนซ่อมบำรุงประจำไตรมาส (Q3)', description: 'ตรวจสอบอุปกรณ์ Network ทั่วตึก — ขยายสัญญารออะไหล่', createdBy: 'u1', department: 'IT', createdAt: t(-3), startDate: d(-3), endDate: d(75) },
-      { id: 'p4', name: 'ระบบประเมินผลประจำปี', description: 'โปรเจกต์แผนก HR — สิทธิ์แยกตามแผนก', createdBy: 'u5', department: 'HR', createdAt: t(-10), startDate: d(-10), endDate: d(30) },
-      { id: 'p5', name: 'จัดทำงบประมาณปี 69', description: 'โปรเจกต์แผนก Finance', createdBy: 'u7', department: 'Finance', createdAt: t(-5), startDate: d(-5), endDate: d(40) },
+      {
+        id: 'p1', name: 'พัฒนาระบบ Intranet กอง', description: 'อัปเกรดระบบภายใน (Next-Gen) — มีประวัติขยายสัญญา 2 ครั้ง',
+        createdBy: 'u1', department: 'IT', createdAt: t(-14), startDate: d(-14), endDate: d(75),
+        ...emptyProjectExtras(),
+      },
+      {
+        id: 'p2', name: 'กิจกรรม 5ส ประจำปี', description: 'จัดระเบียบอุปกรณ์และสายไฟ',
+        createdBy: 'u1', department: 'IT', createdAt: t(-7), startDate: d(-7), endDate: d(21),
+        ...emptyProjectExtras(),
+      },
+      {
+        id: 'p3', name: 'แผนซ่อมบำรุงประจำไตรมาส (Q3)', description: 'ตรวจสอบอุปกรณ์ Network ทั่วตึก — ขยายสัญญารออะไหล่',
+        createdBy: 'u1', department: 'IT', createdAt: t(-3), startDate: d(-3), endDate: d(75),
+        ...emptyProjectExtras(),
+      },
+      {
+        id: 'p4', name: 'ระบบประเมินผลประจำปี', description: 'โปรเจกต์แผนก HR — สิทธิ์แยกตามแผนก',
+        createdBy: 'u5', department: 'HR', createdAt: t(-10), startDate: d(-10), endDate: d(30),
+        ...emptyProjectExtras(),
+      },
+      {
+        id: 'p5', name: 'จัดทำงบประมาณปี 69', description: 'โปรเจกต์แผนก Finance',
+        createdBy: 'u7', department: 'Finance', createdAt: t(-5), startDate: d(-5), endDate: d(40),
+        ...emptyProjectExtras(),
+      },
+      {
+        id: 'p6',
+        name: 'ติดตั้งโซลาร์เซลล์ โรงงาน ABC',
+        description: 'จัดหาผู้รับเหมาติดตั้งระบบโซลาร์รูฟท็อป 500 kWp',
+        createdBy: 'u1',
+        department: 'IT',
+        createdAt: t(-20),
+        startDate: d(-20),
+        endDate: d(100),
+        customerName: 'บริษัท เอบีซี อินดัสทรี จำกัด',
+        customerContractNo: 'CUS-PV-2026-014',
+        customerContractValue: 12500000,
+        customerStartDate: d(-15),
+        customerEndDate: d(120),
+        customerContact: '02-111-2222',
+        contractorName: 'บริษัท กรีนพาวเวอร์ เอ็นจิเนียริ่ง จำกัด',
+        contractorContractNo: 'CON-PV-2026-008',
+        contractorContractValue: 9800000,
+        contractorStartDate: d(-10),
+        contractorEndDate: d(80),
+        contractorContact: '081-234-5678',
+        projectTeam: [
+          { name: 'สมชาย ใจดี', position: 'ผู้จัดการโครงการ' },
+          { name: 'วิภา แสงทอง', position: 'วิศวกรภาคสนาม' },
+        ],
+        siteAddress: '99 นิคมอุตสาหกรรมบางนา กม.23 สมุทรปราการ',
+        systemSizeKwp: 500,
+      },
     ],
     milestones: [
       { id: 'm1', projectId: 'p1', title: 'เก็บความต้องการ & ออกแบบ', description: 'ประชุมผู้ใช้และออกแบบ UI/DB', plannedStart: d(-14), plannedEnd: d(-7), weight: 20, sortOrder: 1, completed: true, completedAt: t(-6) },
@@ -58,6 +147,10 @@ function buildDemoSeed() {
       { id: 'm14', projectId: 'p4', title: 'ปิดรอบประเมิน', description: 'สรุปคะแนน', plannedStart: d(14), plannedEnd: d(30), weight: 20, sortOrder: 3, completed: false, completedAt: null },
       { id: 'm15', projectId: 'p5', title: 'รวบรวมคำของบ', description: 'จากทุกกอง', plannedStart: d(-5), plannedEnd: d(7), weight: 50, sortOrder: 1, completed: false, completedAt: null },
       { id: 'm16', projectId: 'p5', title: 'ปรับยอด & อนุมัติ', description: 'เสนอ ผอ.', plannedStart: d(7), plannedEnd: d(40), weight: 50, sortOrder: 2, completed: false, completedAt: null },
+      { id: 'm17', projectId: 'p6', title: 'สำรวจไซต์ & ออกแบบระบบ', description: 'Site survey และออกแบบแผง/อินเวอร์เตอร์', plannedStart: d(-20), plannedEnd: d(-5), weight: 15, sortOrder: 1, completed: true, completedAt: t(-6) },
+      { id: 'm18', projectId: 'p6', title: 'จัดหาวัสดุ & ขนส่ง', description: 'แผง อินเวอร์เตอร์ โครงสร้าง', plannedStart: d(-5), plannedEnd: d(20), weight: 25, sortOrder: 2, completed: false, completedAt: null },
+      { id: 'm19', projectId: 'p6', title: 'ติดตั้งโครงสร้างและแผง', description: 'งานก่อสร้างบนหลังคาโรงงาน', plannedStart: d(20), plannedEnd: d(55), weight: 35, sortOrder: 3, completed: false, completedAt: null },
+      { id: 'm20', projectId: 'p6', title: 'ทดสอบระบบ & ส่งมอบ', description: 'Commissioning และส่งมอบลูกค้า', plannedStart: d(55), plannedEnd: d(80), weight: 25, sortOrder: 4, completed: false, completedAt: null },
     ],
     contractExtensions: [
       {
@@ -65,21 +158,21 @@ function buildDemoSeed() {
         fromDate: d(45), toDate: d(60), startMilestoneId: 'm4',
         reason: 'รอผลทดสอบ UAT และปรับแก้ตามข้อเสนอแนะของผู้ใช้งาน',
         approvalRef: 'บันทึกอนุมัติ IT-EXT-001/2569', approvedAt: d(-2),
-        createdBy: 'u1', createdAt: t(-2), updatedAt: t(-2),
+        createdBy: 'u1', createdAt: t(-2), updatedAt: t(-2), party: 'project',
       },
       {
         id: 'ce_demo_2', projectId: 'p1', extensionNo: 2,
         fromDate: d(60), toDate: d(75), startMilestoneId: 'm5',
         reason: 'เลื่อนการขึ้นระบบจริงเพื่อรอการเชื่อมต่อระบบกลาง',
         approvalRef: 'บันทึกอนุมัติ IT-EXT-002/2569', approvedAt: d(-1),
-        createdBy: 'u1', createdAt: t(-1), updatedAt: t(-1),
+        createdBy: 'u1', createdAt: t(-1), updatedAt: t(-1), party: 'project',
       },
       {
         id: 'ce_demo_3', projectId: 'p3', extensionNo: 1,
         fromDate: d(60), toDate: d(75), startMilestoneId: 'm11',
         reason: 'รออะไหล่ Network เพิ่มเติมจากผู้จำหน่าย',
         approvalRef: 'บันทึกอนุมัติ NET-EXT-001/2569', approvedAt: d(0),
-        createdBy: 'u1', createdAt: t(0), updatedAt: t(0),
+        createdBy: 'u1', createdAt: t(0), updatedAt: t(0), party: 'project',
       },
     ],
     tasks: [
@@ -716,6 +809,22 @@ const localHandlers = {
       createdAt: new Date().toISOString(),
       startDate: payload.startDate || null,
       endDate: payload.endDate || null,
+      ...emptyProjectExtras(),
+      customerName: payload.customerName || '',
+      contractorName: payload.contractorName || '',
+      customerContractNo: payload.customerContractNo || '',
+      contractorContractNo: payload.contractorContractNo || '',
+      customerContractValue: payload.customerContractValue ?? null,
+      contractorContractValue: payload.contractorContractValue ?? null,
+      customerStartDate: payload.customerStartDate || null,
+      customerEndDate: payload.customerEndDate || null,
+      contractorStartDate: payload.contractorStartDate || null,
+      contractorEndDate: payload.contractorEndDate || null,
+      customerContact: payload.customerContact || '',
+      contractorContact: payload.contractorContact || '',
+      projectTeam: Array.isArray(payload.projectTeam) ? payload.projectTeam : [],
+      siteAddress: payload.siteAddress || '',
+      systemSizeKwp: payload.systemSizeKwp ?? null,
     };
     if (!row.department) throw new Error('ต้องระบุแผนกของโปรเจกต์');
     db.projects = [row, ...db.projects];
@@ -723,15 +832,19 @@ const localHandlers = {
   },
   updateProject(payload) {
     const db = getLocalDb();
+    const keys = [
+      'name', 'description', 'startDate', 'endDate',
+      'customerName', 'customerContractNo', 'customerContractValue', 'customerStartDate', 'customerEndDate', 'customerContact',
+      'contractorName', 'contractorContractNo', 'contractorContractValue', 'contractorStartDate', 'contractorEndDate', 'contractorContact',
+      'projectTeam', 'siteAddress', 'systemSizeKwp',
+    ];
     db.projects = db.projects.map((p) => {
       if (p.id !== payload.id) return p;
-      return {
-        ...p,
-        name: payload.name ?? p.name,
-        description: payload.description ?? p.description,
-        startDate: payload.startDate ?? p.startDate,
-        endDate: payload.endDate ?? p.endDate,
-      };
+      const next = { ...p };
+      keys.forEach((key) => {
+        if (payload[key] !== undefined) next[key] = payload[key];
+      });
+      return next;
     });
     return db.projects.find((p) => p.id === payload.id);
   },
@@ -796,11 +909,10 @@ const localHandlers = {
       createdBy: String(payload.createdBy || ''),
       createdAt: now,
       updatedAt: now,
+      party: normalizeContractParty(payload.party),
     };
     db.contractExtensions = [...db.contractExtensions, extension];
-    const updatedProject = (!project.endDate || new Date(extension.toDate).getTime() > new Date(project.endDate).getTime())
-      ? { ...project, endDate: extension.toDate }
-      : { ...project };
+    const updatedProject = applyExtensionDatesToProject(project, extension.party, extension.toDate);
     db.projects = db.projects.map((p) => String(p.id) === String(project.id) ? updatedProject : p);
     return { extension, project: updatedProject };
   },
@@ -815,6 +927,7 @@ const localHandlers = {
       id: db.contractExtensions[idx].id,
       projectId: db.contractExtensions[idx].projectId,
       extensionNo: db.contractExtensions[idx].extensionNo,
+      party: normalizeContractParty(payload.party !== undefined ? payload.party : db.contractExtensions[idx].party),
       updatedAt: new Date().toISOString(),
     };
     if (new Date(extension.toDate).getTime() < new Date(extension.fromDate).getTime()) {
@@ -822,9 +935,7 @@ const localHandlers = {
     }
     db.contractExtensions = db.contractExtensions.map((x, i) => i === idx ? extension : x);
     const project = db.projects.find((p) => String(p.id) === String(extension.projectId));
-    const updatedProject = project && (!project.endDate || new Date(extension.toDate).getTime() > new Date(project.endDate).getTime())
-      ? { ...project, endDate: extension.toDate }
-      : (project ? { ...project } : null);
+    const updatedProject = applyExtensionDatesToProject(project, extension.party, extension.toDate);
     if (updatedProject) {
       db.projects = db.projects.map((p) => String(p.id) === String(updatedProject.id) ? updatedProject : p);
     }

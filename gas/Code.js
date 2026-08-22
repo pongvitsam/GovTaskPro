@@ -17,7 +17,12 @@ var USER_HEADERS = [
   'email', 'notifyEmail', 'notifyAssign', 'notifyStatus', 'notifyReview', 'notifyLineDefault',
   'username', 'password'
 ];
-var PROJECT_HEADERS = ['id', 'name', 'description', 'createdBy', 'department', 'createdAt', 'startDate', 'endDate'];
+var PROJECT_HEADERS = [
+  'id', 'name', 'description', 'createdBy', 'department', 'createdAt', 'startDate', 'endDate',
+  'customerName', 'customerContractNo', 'customerContractValue', 'customerStartDate', 'customerEndDate', 'customerContact',
+  'contractorName', 'contractorContractNo', 'contractorContractValue', 'contractorStartDate', 'contractorEndDate', 'contractorContact',
+  'projectTeam', 'siteAddress', 'systemSizeKwp'
+];
 var TASK_HEADERS = [
   'id', 'projectId', 'title', 'description', 'createdBy', 'assignedTo',
   'status', 'type', 'dueDate', 'isRecurring', 'createdAt', 'completedAt'
@@ -31,7 +36,7 @@ var MILESTONE_HEADERS = [
 var CONTRACT_EXTENSION_HEADERS = [
   'id', 'projectId', 'extensionNo', 'fromDate', 'toDate',
   'startMilestoneId', 'reason', 'approvalRef', 'approvedAt',
-  'createdBy', 'createdAt', 'updatedAt'
+  'createdBy', 'createdAt', 'updatedAt', 'party'
 ];
 var STICKY_NOTE_HEADERS = [
   'id', 'userId', 'title', 'body', 'color', 'emoji',
@@ -444,16 +449,12 @@ function createProject(payload) {
     dept = String(payload.department || creator.department || '').trim();
   }
   var id = 'p_' + Date.now();
-  var row = {
+  var row = buildProjectRowFromPayload_(payload, {
     id: id,
-    name: String(payload.name || '').trim(),
-    description: String(payload.description || ''),
     createdBy: String(payload.createdBy || ''),
     department: dept,
-    createdAt: new Date().toISOString(),
-    startDate: payload.startDate ? String(payload.startDate) : '',
-    endDate: payload.endDate ? String(payload.endDate) : ''
-  };
+    createdAt: new Date().toISOString()
+  });
   if (!row.name) throw new Error('ชื่อโปรเจกต์จำเป็น');
   if (!row.department) throw new Error('ต้องระบุแผนกของโปรเจกต์');
   appendObject_(PROJECTS_SHEET, PROJECT_HEADERS, row);
@@ -465,12 +466,7 @@ function updateProject(payload) {
   openDatabase_(false);
   var projectId = String(payload.id || payload.projectId || '');
   if (!projectId) throw new Error('ไม่พบโปรเจกต์');
-  var updates = {
-    name: payload.name,
-    description: payload.description,
-    startDate: payload.startDate,
-    endDate: payload.endDate
-  };
+  var updates = projectFieldUpdatesFromPayload_(payload);
   var found = updateRowById_(PROJECTS_SHEET, projectId, updates);
   if (!found) throw new Error('ไม่พบโปรเจกต์');
   invalidateBootstrapCache_();
@@ -551,6 +547,7 @@ function createContractExtension(payload) {
     maxNo = Math.max(maxNo, Number(existing[i].extensionNo) || 0);
   }
   var now = new Date().toISOString();
+  var party = normalizeContractParty_(payload.party);
   var row = {
     id: 'ce_' + Date.now() + '_' + Math.floor(Math.random() * 1000),
     projectId: projectId,
@@ -563,17 +560,14 @@ function createContractExtension(payload) {
     approvedAt: payload.approvedAt ? String(payload.approvedAt).slice(0, 10) : '',
     createdBy: String(payload.createdBy || ''),
     createdAt: now,
-    updatedAt: now
+    updatedAt: now,
+    party: party
   };
   if (!row.startMilestoneId) throw new Error('กรุณาระบุขั้นตอนที่เริ่มขยาย');
   if (!row.reason) throw new Error('กรุณาระบุเหตุผลการขยายสัญญา');
 
   appendObject_(CONTRACT_EXTENSIONS_SHEET, CONTRACT_EXTENSION_HEADERS, row);
-  var updatedProject = project;
-  if (!project.endDate || new Date(toDate).getTime() > new Date(project.endDate).getTime()) {
-    var foundProject = updateRowById_(PROJECTS_SHEET, projectId, { endDate: toDate });
-    if (foundProject) updatedProject = normalizeProject_(foundProject);
-  }
+  var updatedProject = applyContractExtensionDates_(projectId, party, toDate) || project;
   invalidateBootstrapCache_();
   return { extension: normalizeContractExtension_(row), project: updatedProject };
 }
@@ -589,17 +583,14 @@ function updateContractExtension(payload) {
   if (payload.reason !== undefined) updates.reason = String(payload.reason || '').trim();
   if (payload.approvalRef !== undefined) updates.approvalRef = String(payload.approvalRef || '').trim();
   if (payload.approvedAt !== undefined) updates.approvedAt = payload.approvedAt ? String(payload.approvedAt).slice(0, 10) : '';
+  if (payload.party !== undefined) updates.party = normalizeContractParty_(payload.party);
   if (updates.fromDate && updates.toDate && new Date(updates.toDate).getTime() < new Date(updates.fromDate).getTime()) {
     throw new Error('วันสิ้นสุดใหม่ต้องไม่น้อยกว่าวันเริ่มขยาย');
   }
   var found = updateRowById_(CONTRACT_EXTENSIONS_SHEET, id, updates);
   if (!found) throw new Error('ไม่พบรายการขยายสัญญา');
   var extension = normalizeContractExtension_(found);
-  var project = findProjectById_(extension.projectId);
-  if (project && extension.toDate && (!project.endDate || new Date(extension.toDate).getTime() > new Date(project.endDate).getTime())) {
-    var projectRow = updateRowById_(PROJECTS_SHEET, extension.projectId, { endDate: extension.toDate });
-    if (projectRow) project = normalizeProject_(projectRow);
-  }
+  var project = applyContractExtensionDates_(extension.projectId, extension.party, extension.toDate);
   invalidateBootstrapCache_();
   return { extension: extension, project: project };
 }
@@ -2629,6 +2620,132 @@ function listProjects_() {
   return listProjectsFromSs_(openDatabase_(false));
 }
 
+function normalizeContractParty_(party) {
+  var p = String(party || 'contractor').trim().toLowerCase();
+  if (p === 'customer' || p === 'project' || p === 'contractor') return p;
+  return 'contractor';
+}
+
+function serializeProjectTeam_(team) {
+  if (team == null || team === '') return '[]';
+  if (typeof team === 'string') {
+    try {
+      var parsed = JSON.parse(team);
+      return JSON.stringify(Array.isArray(parsed) ? parsed : []);
+    } catch (e) {
+      return '[]';
+    }
+  }
+  if (!Array.isArray(team)) return '[]';
+  return JSON.stringify(team.map(function (m) {
+    return {
+      name: String((m && m.name) || '').trim(),
+      position: String((m && m.position) || '').trim()
+    };
+  }).filter(function (m) { return m.name; }));
+}
+
+function parseProjectTeam_(raw) {
+  if (!raw) return [];
+  if (Array.isArray(raw)) {
+    return raw.map(function (m) {
+      return {
+        name: String((m && m.name) || '').trim(),
+        position: String((m && m.position) || '').trim()
+      };
+    }).filter(function (m) { return m.name; });
+  }
+  try {
+    var parsed = JSON.parse(String(raw));
+    if (!Array.isArray(parsed)) return [];
+    return parsed.map(function (m) {
+      return {
+        name: String((m && m.name) || '').trim(),
+        position: String((m && m.position) || '').trim()
+      };
+    }).filter(function (m) { return m.name; });
+  } catch (e) {
+    return [];
+  }
+}
+
+function optionalDateOnly_(v) {
+  return v ? toDateOnly_(v) : null;
+}
+
+function optionalString_(v) {
+  return v == null ? '' : String(v);
+}
+
+function optionalNumberOrNull_(v) {
+  if (v === undefined || v === null || v === '') return null;
+  var n = Number(v);
+  return Number.isFinite(n) ? n : null;
+}
+
+function projectFieldUpdatesFromPayload_(payload) {
+  var updates = {};
+  var keys = [
+    'name', 'description', 'startDate', 'endDate',
+    'customerName', 'customerContractNo', 'customerContractValue', 'customerStartDate', 'customerEndDate', 'customerContact',
+    'contractorName', 'contractorContractNo', 'contractorContractValue', 'contractorStartDate', 'contractorEndDate', 'contractorContact',
+    'siteAddress', 'systemSizeKwp'
+  ];
+  for (var i = 0; i < keys.length; i++) {
+    var key = keys[i];
+    if (payload[key] !== undefined) updates[key] = payload[key] == null ? '' : payload[key];
+  }
+  if (payload.projectTeam !== undefined) updates.projectTeam = serializeProjectTeam_(payload.projectTeam);
+  return updates;
+}
+
+function buildProjectRowFromPayload_(payload, base) {
+  var row = base || {};
+  row.name = String(payload.name || '').trim();
+  row.description = String(payload.description || '');
+  row.startDate = payload.startDate ? String(payload.startDate) : '';
+  row.endDate = payload.endDate ? String(payload.endDate) : '';
+  row.customerName = String(payload.customerName || '');
+  row.customerContractNo = String(payload.customerContractNo || '');
+  row.customerContractValue = payload.customerContractValue == null || payload.customerContractValue === ''
+    ? '' : payload.customerContractValue;
+  row.customerStartDate = payload.customerStartDate ? String(payload.customerStartDate) : '';
+  row.customerEndDate = payload.customerEndDate ? String(payload.customerEndDate) : '';
+  row.customerContact = String(payload.customerContact || '');
+  row.contractorName = String(payload.contractorName || '');
+  row.contractorContractNo = String(payload.contractorContractNo || '');
+  row.contractorContractValue = payload.contractorContractValue == null || payload.contractorContractValue === ''
+    ? '' : payload.contractorContractValue;
+  row.contractorStartDate = payload.contractorStartDate ? String(payload.contractorStartDate) : '';
+  row.contractorEndDate = payload.contractorEndDate ? String(payload.contractorEndDate) : '';
+  row.contractorContact = String(payload.contractorContact || '');
+  row.projectTeam = serializeProjectTeam_(payload.projectTeam);
+  row.siteAddress = String(payload.siteAddress || '');
+  row.systemSizeKwp = payload.systemSizeKwp == null || payload.systemSizeKwp === ''
+    ? '' : payload.systemSizeKwp;
+  return row;
+}
+
+function applyContractExtensionDates_(projectId, party, toDate) {
+  if (!toDate) return findProjectById_(projectId);
+  var project = findProjectById_(projectId);
+  if (!project) return null;
+  var updates = {};
+  var partyKey = party === 'customer'
+    ? 'customerEndDate'
+    : (party === 'project' ? 'endDate' : 'contractorEndDate');
+  var currentPartyEnd = project[partyKey];
+  if (!currentPartyEnd || new Date(toDate).getTime() > new Date(currentPartyEnd).getTime()) {
+    updates[partyKey] = toDate;
+  }
+  if (partyKey !== 'endDate' && (!project.endDate || new Date(toDate).getTime() > new Date(project.endDate).getTime())) {
+    updates.endDate = toDate;
+  }
+  if (!Object.keys(updates).length) return project;
+  var found = updateRowById_(PROJECTS_SHEET, projectId, updates);
+  return found ? normalizeProject_(found) : project;
+}
+
 function normalizeProject_(p) {
   return {
     id: String(p.id),
@@ -2637,8 +2754,23 @@ function normalizeProject_(p) {
     createdBy: String(p.createdBy || ''),
     department: String(p.department || ''),
     createdAt: toIso_(p.createdAt),
-    startDate: p.startDate ? toDateOnly_(p.startDate) : null,
-    endDate: p.endDate ? toDateOnly_(p.endDate) : null
+    startDate: optionalDateOnly_(p.startDate),
+    endDate: optionalDateOnly_(p.endDate),
+    customerName: optionalString_(p.customerName),
+    customerContractNo: optionalString_(p.customerContractNo),
+    customerContractValue: optionalNumberOrNull_(p.customerContractValue),
+    customerStartDate: optionalDateOnly_(p.customerStartDate),
+    customerEndDate: optionalDateOnly_(p.customerEndDate),
+    customerContact: optionalString_(p.customerContact),
+    contractorName: optionalString_(p.contractorName),
+    contractorContractNo: optionalString_(p.contractorContractNo),
+    contractorContractValue: optionalNumberOrNull_(p.contractorContractValue),
+    contractorStartDate: optionalDateOnly_(p.contractorStartDate),
+    contractorEndDate: optionalDateOnly_(p.contractorEndDate),
+    contractorContact: optionalString_(p.contractorContact),
+    projectTeam: parseProjectTeam_(p.projectTeam),
+    siteAddress: optionalString_(p.siteAddress),
+    systemSizeKwp: optionalNumberOrNull_(p.systemSizeKwp)
   };
 }
 
@@ -2695,7 +2827,8 @@ function normalizeContractExtension_(x) {
     approvedAt: x.approvedAt ? toDateOnly_(x.approvedAt) : null,
     createdBy: String(x.createdBy || ''),
     createdAt: toIso_(x.createdAt) || new Date().toISOString(),
-    updatedAt: toIso_(x.updatedAt) || toIso_(x.createdAt) || new Date().toISOString()
+    updatedAt: toIso_(x.updatedAt) || toIso_(x.createdAt) || new Date().toISOString(),
+    party: normalizeContractParty_(x.party)
   };
 }
 
