@@ -2,7 +2,7 @@ name: Deploy Google Apps Script
 
 on:
   push:
-    branches: [main]
+    branches: ['**']
     paths:
       - 'gas/**'
       - 'src/**'
@@ -37,9 +37,9 @@ jobs:
           CLASPRC_JSON: ${{ secrets.CLASPRC_JSON }}
         run: |
           if [ -z "$CLASPRC_JSON" ]; then
-            echo "::warning::CLASPRC_JSON secret is not configured — skipping GAS deploy."
+            echo "::error::CLASPRC_JSON secret is not configured — cannot deploy GAS."
             echo "One-time setup: cat ~/.clasprc.json | gh secret set CLASPRC_JSON"
-            exit 0
+            exit 1
           fi
           echo "$CLASPRC_JSON" > ~/.clasprc.json
           npx @google/clasp push -f
