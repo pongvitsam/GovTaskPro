@@ -17,7 +17,10 @@ import {
   buildProjectActivityEvents,
   summarizeRecentActivity,
 } from './projectActivity';
-import { addCalendarDays, calendarDaysInclusive, parseProjectTeam } from './projectTime';
+import {
+  addCalendarDays,
+  calendarDaysInclusive,
+} from './projectTime';
 import {
   PARTY_OPTIONS,
   partyLabel,
@@ -41,6 +44,24 @@ function toInputDate(v) {
   return String(v).slice(0, 10);
 }
 
+/** Local copy — avoids minifier collision with app.js chunk imports */
+function parseProjectTeamLocal(raw) {
+  if (!raw) return [];
+  if (Array.isArray(raw)) {
+    return raw
+      .map((m) => ({
+        name: String(m?.name || '').trim(),
+        position: String(m?.position || '').trim(),
+      }))
+      .filter((m) => m.name);
+  }
+  try {
+    return parseProjectTeamLocal(JSON.parse(String(raw)));
+  } catch {
+    return [];
+  }
+}
+
 function buildSettingsState(project) {
   return {
     name: project?.name || '',
@@ -61,8 +82,8 @@ function buildSettingsState(project) {
     contractorStartDate: toInputDate(project?.contractorStartDate),
     contractorEndDate: toInputDate(project?.contractorEndDate),
     contractorContact: project?.contractorContact || '',
-    projectTeam: parseProjectTeam(project?.projectTeam).length
-      ? parseProjectTeam(project?.projectTeam)
+    projectTeam: parseProjectTeamLocal(project?.projectTeam).length
+      ? parseProjectTeamLocal(project?.projectTeam)
       : [{ name: '', position: '' }],
   };
 }
@@ -421,8 +442,8 @@ export default function ProjectDetail({
     return summarizeRecentActivity(events, 7);
   }, [project, projectTasks, mergedProjectTaskLogs, projectMilestones, projectExtensions]);
 
-  const extensionStatsByParty = useMemo(() => (
-    ['contractor', 'customer', 'project'].map((partyId) => {
+  const extensionStatsByParty = useMemo(
+    () => ['contractor', 'customer', 'project'].map((partyId) => {
       const theme = partyTheme(partyId);
       const count = countExtensionsForParty(projectExtensions, partyId);
       const totalDays = sumExtensionDaysForParty(projectExtensions, partyId);
@@ -434,8 +455,9 @@ export default function ProjectDetail({
         originalEnd: getOriginalPartyEnd(project, partyId, projectExtensions),
         currentEnd: getCurrentPartyEnd(project, partyId),
       };
-    })
-  ), [project, projectExtensions]);
+    }),
+    [project, projectExtensions],
+  );
 
   const effectiveContractEnd = getCurrentPartyEnd(project, 'project') || project.endDate || null;
 
