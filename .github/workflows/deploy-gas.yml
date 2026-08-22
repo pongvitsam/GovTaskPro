@@ -37,9 +37,10 @@ jobs:
           CLASPRC_JSON: ${{ secrets.CLASPRC_JSON }}
         run: |
           if [ -z "$CLASPRC_JSON" ]; then
-            echo "::error::CLASPRC_JSON secret is not configured — cannot deploy GAS."
-            echo "One-time setup: cat ~/.clasprc.json | gh secret set CLASPRC_JSON"
-            exit 1
+            echo "::warning::CLASPRC_JSON secret is not configured — skipping GAS Actions deploy."
+            echo "Local/cloud agent deploy still works via: npm run deploy (needs ~/.clasprc.json)"
+            echo "Optional CI setup: Get-Content \$env:USERPROFILE\\.clasprc.json -Raw | gh secret set CLASPRC_JSON -R pongvitsam/GovTaskPro"
+            exit 0
           fi
           echo "$CLASPRC_JSON" > ~/.clasprc.json
           npx @google/clasp push -f
