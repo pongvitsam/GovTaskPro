@@ -2247,6 +2247,16 @@ function sheetHasId_(sheetName, id) {
   return false;
 }
 
+function buildSheetIdSet_(sheetName) {
+  var rows = listObjects_(sheetName);
+  var set = {};
+  for (var i = 0; i < rows.length; i++) {
+    var id = String(rows[i].id || '');
+    if (id) set[id] = true;
+  }
+  return set;
+}
+
 function ensureDemoShowcase_() {
   ensureSheets_(openDatabase_(false));
   var now = Date.now();
