@@ -1,6 +1,6 @@
 /** Local mock DB for Vite DEV only (stripped from production bundle) */
 
-const SEED_VERSION = 9;
+const SEED_VERSION = 10;
 
 function emptyProjectExtras() {
   return {
@@ -129,6 +129,36 @@ function buildDemoSeed() {
         siteAddress: '99 นิคมอุตสาหกรรมบางนา กม.23 สมุทรปราการ',
         systemSizeKwp: 500,
       },
+      {
+        id: 'p_demo_it',
+        name: '[ตัวอย่าง IT] ติดตั้งโซลาร์เซลล์ — ครบทุกฟังก์ชัน',
+        description: 'โปรเจกตสาธิตสำหรับแผนก IT — สัญญาลูกค้า/ผู้รับเหมา, ทีมงาน, ที่ตั้ง, kWp, แผนงาน, S-Curve, ขยายสัญญา 3 ฝ่าย, งานครบทุกสถานะ',
+        createdBy: 'u1',
+        department: 'IT',
+        createdAt: t(-30),
+        startDate: d(-25),
+        endDate: d(110),
+        customerName: 'บริษัท เอ็นเนอร์จี้ พลัส จำกัด',
+        customerContractNo: 'CUS-PV-DEMO-2026-001',
+        customerContractValue: 18500000,
+        customerStartDate: d(-25),
+        customerEndDate: d(140),
+        customerContact: '02-999-8888 คุณสุดา',
+        contractorName: 'บริษัท ซันไลท์ โซลาร์ จำกัด',
+        contractorContractNo: 'CON-PV-DEMO-2026-001',
+        contractorContractValue: 14200000,
+        contractorStartDate: d(-20),
+        contractorEndDate: d(95),
+        contractorContact: '089-777-6655 คุณประเสริฐ',
+        projectTeam: [
+          { name: 'คุณบอส (หัวหน้า IT)', position: 'ผู้จัดการโครงการ' },
+          { name: 'สมชาย (พนักงาน IT)', position: 'วิศวกรประสานงาน' },
+          { name: 'สมหญิง (พนักงาน IT)', position: 'เอกสารและสัญญา' },
+          { name: 'สมศักดิ์ (พนักงาน IT)', position: 'ติดตามงานภาคสนาม' },
+        ],
+        siteAddress: '123/4 ถ.พหลโยธิน แขวงลาดยาว เขตจตุจักร กรุงเทพฯ 10900',
+        systemSizeKwp: 350,
+      },
     ],
     milestones: [
       { id: 'm1', projectId: 'p1', title: 'เก็บความต้องการ & ออกแบบ', description: 'ประชุมผู้ใช้และออกแบบ UI/DB', plannedStart: d(-14), plannedEnd: d(-7), weight: 20, sortOrder: 1, completed: true, completedAt: t(-6) },
@@ -151,6 +181,11 @@ function buildDemoSeed() {
       { id: 'm18', projectId: 'p6', title: 'จัดหาวัสดุ & ขนส่ง', description: 'แผง อินเวอร์เตอร์ โครงสร้าง', plannedStart: d(-5), plannedEnd: d(20), weight: 25, sortOrder: 2, completed: false, completedAt: null },
       { id: 'm19', projectId: 'p6', title: 'ติดตั้งโครงสร้างและแผง', description: 'งานก่อสร้างบนหลังคาโรงงาน', plannedStart: d(20), plannedEnd: d(55), weight: 35, sortOrder: 3, completed: false, completedAt: null },
       { id: 'm20', projectId: 'p6', title: 'ทดสอบระบบ & ส่งมอบ', description: 'Commissioning และส่งมอบลูกค้า', plannedStart: d(55), plannedEnd: d(80), weight: 25, sortOrder: 4, completed: false, completedAt: null },
+      { id: 'm_demo_it_1', projectId: 'p_demo_it', title: 'สำรวจไซต์ & ออกแบบระบบ', description: 'Site survey, ออกแบบแผง/อินเวอร์เตอร์, คำนวณ kWp', plannedStart: d(-25), plannedEnd: d(-10), weight: 15, sortOrder: 1, completed: true, completedAt: t(-9) },
+      { id: 'm_demo_it_2', projectId: 'p_demo_it', title: 'จัดหาวัสดุ & ขนส่ง', description: 'แผง อินเวอร์เตอร์ โครงสร้าง — รอขยายสัญญาผู้รับเหมา', plannedStart: d(-10), plannedEnd: d(15), weight: 20, sortOrder: 2, completed: false, completedAt: null },
+      { id: 'm_demo_it_3', projectId: 'p_demo_it', title: 'ติดตั้งโครงสร้างและแผง', description: 'งานก่อสร้างบนหลังคา — ขั้นตอนหลัก S-Curve', plannedStart: d(15), plannedEnd: d(50), weight: 35, sortOrder: 3, completed: false, completedAt: null },
+      { id: 'm_demo_it_4', projectId: 'p_demo_it', title: 'ระบบไฟฟ้า & ทดสอบ', description: 'เดินสาย ต่ออินเวอร์เตอร์ Commissioning', plannedStart: d(50), plannedEnd: d(75), weight: 20, sortOrder: 4, completed: false, completedAt: null },
+      { id: 'm_demo_it_5', projectId: 'p_demo_it', title: 'ส่งมอบ & ติดตามหลังขาย', description: 'Handover ลูกค้า + เอกสารรับประกัน', plannedStart: d(75), plannedEnd: d(100), weight: 10, sortOrder: 5, completed: false, completedAt: null },
     ],
     contractExtensions: [
       {
@@ -174,6 +209,27 @@ function buildDemoSeed() {
         approvalRef: 'บันทึกอนุมัติ NET-EXT-001/2569', approvedAt: d(0),
         createdBy: 'u1', createdAt: t(0), updatedAt: t(0), party: 'project',
       },
+      {
+        id: 'ce_demo_it_1', projectId: 'p_demo_it', extensionNo: 1,
+        fromDate: d(80), toDate: d(95), startMilestoneId: 'm_demo_it_3',
+        reason: 'ผู้รับเหมาขอเลื่อน — รอวัสดุโครงสร้างเพิ่มเติม',
+        approvalRef: 'บันทึกอนุมัติ CON-EXT-001/2569', approvedAt: d(-3),
+        createdBy: 'u1', createdAt: t(-3), updatedAt: t(-3), party: 'contractor',
+      },
+      {
+        id: 'ce_demo_it_2', projectId: 'p_demo_it', extensionNo: 2,
+        fromDate: d(120), toDate: d(140), startMilestoneId: 'm_demo_it_5',
+        reason: 'ลูกค้าขอเลื่อนวันส่งมอบ — รอตรวจ PEA',
+        approvalRef: 'บันทึกอนุมัติ CUS-EXT-001/2569', approvedAt: d(-2),
+        createdBy: 'u1', createdAt: t(-2), updatedAt: t(-2), party: 'customer',
+      },
+      {
+        id: 'ce_demo_it_3', projectId: 'p_demo_it', extensionNo: 3,
+        fromDate: d(100), toDate: d(110), startMilestoneId: 'm_demo_it_4',
+        reason: 'ขยายกรอบโครงการรวม — รอผลทดสอบระบบกลาง',
+        approvalRef: 'บันทึกอนุมัติ PRJ-EXT-001/2569', approvedAt: d(-1),
+        createdBy: 'u1', createdAt: t(-1), updatedAt: t(-1), party: 'project',
+      },
     ],
     tasks: [
       { id: 1, projectId: 'p1', title: 'ออกแบบหน้า Login ใหม่', description: 'ใช้โทนสีองค์กร — สถานะเสร็จสิ้น', createdBy: 'u1', assignedTo: 'u2', status: 'Completed', type: 'Assigned', dueDate: t(-2), isRecurring: false, createdAt: t(-7), completedAt: t(-2) },
@@ -192,6 +248,12 @@ function buildDemoSeed() {
       { id: 14, projectId: null, title: 'ประชุมวางแผนงบ Q4', description: 'ปฏิทินสัปดาห์หน้า', createdBy: 'u7', assignedTo: 'u7', status: 'Pending', type: 'Self', dueDate: t(8), isRecurring: false, createdAt: t(-1) },
       { id: 15, projectId: 'p2', title: 'ติดป้ายอุปกรณ์ Rack', description: 'ปฏิทินวันนี้', createdBy: 'u1', assignedTo: 'u3', status: 'Pending', type: 'Assigned', dueDate: t(0), isRecurring: false, createdAt: t(-1) },
       { id: 16, projectId: 'p3', title: 'สำรวจ AP ชั้น 3', description: 'ปฏิทินอีก 10 วัน', createdBy: 'u1', assignedTo: 'u2', status: 'Pending', type: 'Assigned', dueDate: t(10), isRecurring: false, createdAt: t(-1) },
+      { id: 101, projectId: 'p_demo_it', title: 'ตรวจสอบหลังคาและโครงสร้าง', description: 'สถานะเสร็จสิ้น — ตัวอย่างงาน Completed', createdBy: 'u1', assignedTo: 'u4', status: 'Completed', type: 'Assigned', dueDate: t(-5), isRecurring: false, createdAt: t(-20), completedAt: t(-5) },
+      { id: 102, projectId: 'p_demo_it', title: 'ประสานงานผู้รับเหมาติดตั้งแผง', description: 'กำลังทำ + มีคอมเมนต์และประวัติ', createdBy: 'u1', assignedTo: 'u2', status: 'In Progress', type: 'Assigned', dueDate: t(10), isRecurring: false, createdAt: t(-8) },
+      { id: 103, projectId: 'p_demo_it', title: 'ตรวจรับงานเดินสายไฟ', description: 'รอตรวจโดยหัวหน้า — สถานะ Review', createdBy: 'u1', assignedTo: 'u3', status: 'Review', type: 'Assigned', dueDate: t(0), isRecurring: false, createdAt: t(-4) },
+      { id: 104, projectId: 'p_demo_it', title: 'จัดทำเอกสารส่งมอบลูกค้า', description: 'งานใหม่รอรับ — สถานะ Pending', createdBy: 'u1', assignedTo: 'u3', status: 'Pending', type: 'Assigned', dueDate: t(5), isRecurring: false, createdAt: t(-1) },
+      { id: 105, projectId: 'p_demo_it', title: 'อัปเดตแผน S-Curve รายสัปดาห์', description: 'งาน Self + ทำซ้ำ — ตัวอย่างงานส่วนตัว', createdBy: 'u1', assignedTo: 'u1', status: 'In Progress', type: 'Self', dueDate: t(3), isRecurring: true, createdAt: t(-2) },
+      { id: 106, projectId: 'p_demo_it', title: 'ลงนามสัญญาลูกค้า', description: 'เสร็จแล้ว — ตัวอย่างสัญญาฝ่ายลูกค้า', createdBy: 'u1', assignedTo: 'u2', status: 'Completed', type: 'Assigned', dueDate: t(-15), isRecurring: false, createdAt: t(-22), completedAt: t(-15) },
     ],
     taskLogs: [
       { id: 'l1', taskId: 4, timestamp: t(-4), actionBy: 'u1', actionType: 'Created', detail: 'มอบหมายงานให้ สมศักดิ์' },
@@ -208,6 +270,15 @@ function buildDemoSeed() {
       { id: 'l12', taskId: 2, timestamp: t(0, -4), actionBy: 'u2', actionType: 'Status Changed', detail: 'เปลี่ยนสถานะเป็น "กำลังทำ"' },
       { id: 'l13', taskId: 3, timestamp: t(-3), actionBy: 'u3', actionType: 'Status Changed', detail: 'เปลี่ยนสถานะเป็น "เสร็จสิ้น" · วันเสร็จ 26 ก.ค. 2569' },
       { id: 'l14', taskId: 8, timestamp: t(0, -1), actionBy: 'u1', actionType: 'Created', detail: 'มอบหมายงานเขียนคู่มือ' },
+      { id: 'l_demo_it_1', taskId: 101, timestamp: t(-20), actionBy: 'u1', actionType: 'Created', detail: 'มอบหมายงานให้ สมศักดิ์' },
+      { id: 'l_demo_it_2', taskId: 101, timestamp: t(-5), actionBy: 'u4', actionType: 'Status Changed', detail: 'เปลี่ยนสถานะเป็น "เสร็จสิ้น"' },
+      { id: 'l_demo_it_3', taskId: 102, timestamp: t(-8), actionBy: 'u1', actionType: 'Created', detail: 'มอบหมายงานให้ สมชาย' },
+      { id: 'l_demo_it_4', taskId: 102, timestamp: t(-2), actionBy: 'u2', actionType: 'Status Changed', detail: 'เปลี่ยนสถานะเป็น "กำลังทำ"' },
+      { id: 'l_demo_it_5', taskId: 103, timestamp: t(-4), actionBy: 'u1', actionType: 'Created', detail: 'มอบหมายงานให้ สมหญิง' },
+      { id: 'l_demo_it_6', taskId: 103, timestamp: t(0, -3), actionBy: 'u3', actionType: 'Status Changed', detail: 'เปลี่ยนสถานะเป็น "รอตรวจ"' },
+      { id: 'l_demo_it_7', taskId: 104, timestamp: t(-1), actionBy: 'u1', actionType: 'Created', detail: 'มอบหมายงานจัดทำเอกสารส่งมอบ' },
+      { id: 'l_demo_it_8', taskId: 106, timestamp: t(-22), actionBy: 'u1', actionType: 'Created', detail: 'มอบหมายงานลงนามสัญญา' },
+      { id: 'l_demo_it_9', taskId: 106, timestamp: t(-15), actionBy: 'u2', actionType: 'Status Changed', detail: 'เปลี่ยนสถานะเป็น "เสร็จสิ้น"' },
     ],
     comments: [
       { id: 'c1', taskId: 2, timestamp: t(0, -18), authorId: 'u1', text: 'ติดปัญหาตรงไหนเรื่อง API ทักมาได้เลยนะ' },
@@ -215,6 +286,10 @@ function buildDemoSeed() {
       { id: 'c3', taskId: 4, timestamp: t(0, -11), authorId: 'u1', text: '@สมศักดิ์ รบกวนแก้ด่วนนะ ผอ. จะใช้พรุ่งนี้' },
       { id: 'c4', taskId: 9, timestamp: t(-1), authorId: 'u5', text: 'ใช้เทมเพลตใหม่ในโฟลเดอร์แชร์ได้เลย' },
       { id: 'c5', taskId: 12, timestamp: t(-2), authorId: 'u8', text: 'รอตัวเลขจาก IT อีกชุดครับ' },
+      { id: 'c_demo_it_1', taskId: 102, timestamp: t(0, -20), authorId: 'u1', text: 'ผู้รับเหมายืนยันเริ่มติดตั้งสัปดาห์หน้า รบกวนติดตามใบส่งของ' },
+      { id: 'c_demo_it_2', taskId: 102, timestamp: t(0, -16), authorId: 'u2', text: 'รับทราบครับ จะประสานคลังวัสดุให้' },
+      { id: 'c_demo_it_3', taskId: 103, timestamp: t(0, -8), authorId: 'u3', text: 'เดินสายเสร็จแล้ว รอหัวหน้าตรวจรับ' },
+      { id: 'c_demo_it_4', taskId: 104, timestamp: t(-1), authorId: 'u1', text: 'ใช้เทมเพลตส่งมอบในโฟลเดอร์แชร์ IT/Solar' },
     ],
     stickyNotes: [
       { id: 'sn1', userId: 'u1', title: 'ประชุมทีม IT', body: 'เตรียมสไลด์รายงานประจำเดือน', color: 'yellow', emoji: '📌', x: 48, y: 56, width: 240, height: 220, zIndex: 1, createdAt: t(-1), updatedAt: t(-1), noteType: 'text', items: [], labels: ['งาน'], pinned: true, archived: false, trashed: false, reminderAt: t(1), imageUrl: '' },

@@ -290,17 +290,14 @@ function getBootstrap(opt) {
       }
 
     var ss = openDatabase_(false);
-    var props = PropertiesService.getScriptProperties();
-    if ((props.getProperty('SCHEMA_VERSION') || '') !== SCHEMA_VERSION) {
-      var migrateLock = LockService.getScriptLock();
-      try {
-        migrateLock.waitLock(8000);
-        maybeMigrateAndSeed_(ss);
-      } catch (lockErr) {
-        throw new Error('ระบบกำลังเตรียมฐานข้อมูล กรุณารอสักครู่แล้วลองใหม่');
-      } finally {
-        try { migrateLock.releaseLock(); } catch (e) {}
-      }
+    var migrateLock = LockService.getScriptLock();
+    try {
+      migrateLock.waitLock(8000);
+      maybeMigrateAndSeed_(ss);
+    } catch (lockErr) {
+      throw new Error('ระบบกำลังเตรียมฐานข้อมูล กรุณารอสักครู่แล้วลองใหม่');
+    } finally {
+      try { migrateLock.releaseLock(); } catch (e) {}
     }
 
     // Read all sheets in one pass: get all sheet objects up front to avoid
@@ -2425,6 +2422,131 @@ function ensureDemoShowcase_() {
     if (!stickyIds[String(demoStickies[si][0])]) { newStickies.push(demoStickies[si]); stickyIds[String(demoStickies[si][0])] = true; }
   }
   if (newStickies.length) { var snSheet = getSheet_(STICKY_NOTES_SHEET); writeRows_(snSheet, snSheet.getLastRow() + 1, newStickies); added.stickies += newStickies.length; }
+
+  // โปรเจกตสาธิตครบทุกฟังก์ชัน — แผนก IT (สัญญา 2 ฝ่าย, แผนงาน, S-Curve, ขยายสัญญา, งานบอร์ด)
+  if (!projIds['p_demo_it']) {
+    appendObject_(PROJECTS_SHEET, PROJECT_HEADERS, {
+      id: 'p_demo_it',
+      name: '[ตัวอย่าง IT] ติดตั้งโซลาร์เซลล์ — ครบทุกฟังก์ชัน',
+      description: 'โปรเจกตสาธิตสำหรับแผนก IT — สัญญาลูกค้า/ผู้รับเหมา, ทีมงาน, ที่ตั้ง, kWp, แผนงาน, S-Curve, ขยายสัญญา 3 ฝ่าย, งานครบทุกสถานะ',
+      createdBy: 'u1',
+      department: 'IT',
+      createdAt: iso(-30),
+      startDate: d(-25),
+      endDate: d(110),
+      customerName: 'บริษัท เอ็นเนอร์จี้ พลัส จำกัด',
+      customerContractNo: 'CUS-PV-DEMO-2026-001',
+      customerContractValue: 18500000,
+      customerStartDate: d(-25),
+      customerEndDate: d(140),
+      customerContact: '02-999-8888 คุณสุดา',
+      contractorName: 'บริษัท ซันไลท์ โซลาร์ จำกัด',
+      contractorContractNo: 'CON-PV-DEMO-2026-001',
+      contractorContractValue: 14200000,
+      contractorStartDate: d(-20),
+      contractorEndDate: d(95),
+      contractorContact: '089-777-6655 คุณประเสริฐ',
+      projectTeam: serializeProjectTeam_([
+        { name: 'คุณบอส (หัวหน้า IT)', position: 'ผู้จัดการโครงการ' },
+        { name: 'สมชาย (พนักงาน IT)', position: 'วิศวกรประสานงาน' },
+        { name: 'สมหญิง (พนักงาน IT)', position: 'เอกสารและสัญญา' },
+        { name: 'สมศักดิ์ (พนักงาน IT)', position: 'ติดตามงานภาคสนาม' }
+      ]),
+      siteAddress: '123/4 ถ.พหลโยธิน แขวงลาดยาว เขตจตุจักร กรุงเทพฯ 10900',
+      systemSizeKwp: 350
+    });
+    projIds['p_demo_it'] = true;
+    added.projects += 1;
+  }
+
+  var itMs = [
+    ['m_demo_it_1', 'p_demo_it', 'สำรวจไซต์ & ออกแบบระบบ', 'Site survey, ออกแบบแผง/อินเวอร์เตอร์, คำนวณ kWp', d(-25), d(-10), 15, 1, 'TRUE', iso(-9)],
+    ['m_demo_it_2', 'p_demo_it', 'จัดหาวัสดุ & ขนส่ง', 'แผง อินเวอร์เตอร์ โครงสร้าง — รอขยายสัญญาผู้รับเหมา', d(-10), d(15), 20, 2, 'FALSE', ''],
+    ['m_demo_it_3', 'p_demo_it', 'ติดตั้งโครงสร้างและแผง', 'งานก่อสร้างบนหลังคา — ขั้นตอนหลัก S-Curve', d(15), d(50), 35, 3, 'FALSE', ''],
+    ['m_demo_it_4', 'p_demo_it', 'ระบบไฟฟ้า & ทดสอบ', 'เดินสาย ต่ออินเวอร์เตอร์ Commissioning', d(50), d(75), 20, 4, 'FALSE', ''],
+    ['m_demo_it_5', 'p_demo_it', 'ส่งมอบ & ติดตามหลังขาย', 'Handover ลูกค้า + เอกสารรับประกัน', d(75), d(100), 10, 5, 'FALSE', '']
+  ];
+  for (var imi = 0; imi < itMs.length; imi++) {
+    if (!msIds[String(itMs[imi][0])]) {
+      var itMsSheet = getSheet_(MILESTONES_SHEET);
+      writeRows_(itMsSheet, itMsSheet.getLastRow() + 1, [itMs[imi]]);
+      msIds[String(itMs[imi][0])] = true;
+      added.milestones += 1;
+    }
+  }
+
+  var itExtensions = [
+    ['ce_demo_it_1', 'p_demo_it', 1, d(80), d(95), 'm_demo_it_3', 'ผู้รับเหมาขอเลื่อน — รอวัสดุโครงสร้างเพิ่มเติม', 'บันทึกอนุมัติ CON-EXT-001/2569', d(-3), 'u1', iso(-3), iso(-3), 'contractor'],
+    ['ce_demo_it_2', 'p_demo_it', 2, d(120), d(140), 'm_demo_it_5', 'ลูกค้าขอเลื่อนวันส่งมอบ — รอตรวจ PEA', 'บันทึกอนุมัติ CUS-EXT-001/2569', d(-2), 'u1', iso(-2), iso(-2), 'customer'],
+    ['ce_demo_it_3', 'p_demo_it', 3, d(100), d(110), 'm_demo_it_4', 'ขยายกรอบโครงการรวม — รอผลทดสอบระบบกลาง', 'บันทึกอนุมัติ PRJ-EXT-001/2569', d(-1), 'u1', iso(-1), iso(-1), 'project']
+  ];
+  for (var iei = 0; iei < itExtensions.length; iei++) {
+    if (!ceIds[String(itExtensions[iei][0])]) {
+      var itCeSheet = getSheet_(CONTRACT_EXTENSIONS_SHEET);
+      writeRows_(itCeSheet, itCeSheet.getLastRow() + 1, [itExtensions[iei]]);
+      ceIds[String(itExtensions[iei][0])] = true;
+      added.contractExtensions += 1;
+    }
+  }
+  if (projIds['p_demo_it']) {
+    updateRowById_(PROJECTS_SHEET, 'p_demo_it', {
+      endDate: d(110),
+      customerEndDate: d(140),
+      contractorEndDate: d(95)
+    });
+  }
+
+  var itTasks = [
+    [101, 'p_demo_it', 'ตรวจสอบหลังคาและโครงสร้าง', 'สถานะเสร็จสิ้น — ตัวอย่างงาน Completed', 'u1', 'u4', 'Completed', 'Assigned', iso(-5), 'FALSE', iso(-20), iso(-5)],
+    [102, 'p_demo_it', 'ประสานงานผู้รับเหมาติดตั้งแผง', 'กำลังทำ + มีคอมเมนต์และประวัติ', 'u1', 'u2', 'In Progress', 'Assigned', iso(10), 'FALSE', iso(-8), ''],
+    [103, 'p_demo_it', 'ตรวจรับงานเดินสายไฟ', 'รอตรวจโดยหัวหน้า — สถานะ Review', 'u1', 'u3', 'Review', 'Assigned', iso(0), 'FALSE', iso(-4), ''],
+    [104, 'p_demo_it', 'จัดทำเอกสารส่งมอบลูกค้า', 'งานใหม่รอรับ — สถานะ Pending', 'u1', 'u3', 'Pending', 'Assigned', iso(5), 'FALSE', iso(-1), ''],
+    [105, 'p_demo_it', 'อัปเดตแผน S-Curve รายสัปดาห์', 'งาน Self + ทำซ้ำ — ตัวอย่างงานส่วนตัว', 'u1', 'u1', 'In Progress', 'Self', iso(3), 'TRUE', iso(-2), ''],
+    [106, 'p_demo_it', 'ลงนามสัญญาลูกค้า', 'เสร็จแล้ว — ตัวอย่างสัญญาฝ่ายลูกค้า', 'u1', 'u2', 'Completed', 'Assigned', iso(-15), 'FALSE', iso(-22), iso(-15)]
+  ];
+  for (var iti = 0; iti < itTasks.length; iti++) {
+    if (!taskIds[String(itTasks[iti][0])]) {
+      var itTaskSheet = getSheet_(TASKS_SHEET);
+      writeRows_(itTaskSheet, itTaskSheet.getLastRow() + 1, [itTasks[iti]]);
+      taskIds[String(itTasks[iti][0])] = true;
+      added.tasks += 1;
+    }
+  }
+
+  var itLogs = [
+    ['l_demo_it_1', 101, iso(-20), 'u1', 'Created', 'มอบหมายงานให้ สมศักดิ์'],
+    ['l_demo_it_2', 101, iso(-5), 'u4', 'Status Changed', 'เปลี่ยนสถานะเป็น "เสร็จสิ้น"'],
+    ['l_demo_it_3', 102, iso(-8), 'u1', 'Created', 'มอบหมายงานให้ สมชาย'],
+    ['l_demo_it_4', 102, iso(-2), 'u2', 'Status Changed', 'เปลี่ยนสถานะเป็น "กำลังทำ"'],
+    ['l_demo_it_5', 103, iso(-4), 'u1', 'Created', 'มอบหมายงานให้ สมหญิง'],
+    ['l_demo_it_6', 103, iso(0, -3), 'u3', 'Status Changed', 'เปลี่ยนสถานะเป็น "รอตรวจ"'],
+    ['l_demo_it_7', 104, iso(-1), 'u1', 'Created', 'มอบหมายงานจัดทำเอกสารส่งมอบ'],
+    ['l_demo_it_8', 106, iso(-22), 'u1', 'Created', 'มอบหมายงานลงนามสัญญา'],
+    ['l_demo_it_9', 106, iso(-15), 'u2', 'Status Changed', 'เปลี่ยนสถานะเป็น "เสร็จสิ้น"']
+  ];
+  for (var ili = 0; ili < itLogs.length; ili++) {
+    if (!logIds[String(itLogs[ili][0])]) {
+      var itLogSheet = getSheet_(LOGS_SHEET);
+      writeRows_(itLogSheet, itLogSheet.getLastRow() + 1, [itLogs[ili]]);
+      logIds[String(itLogs[ili][0])] = true;
+      added.logs += 1;
+    }
+  }
+
+  var itComments = [
+    ['c_demo_it_1', 102, iso(0, -20), 'u1', 'ผู้รับเหมายืนยันเริ่มติดตั้งสัปดาห์หน้า รบกวนติดตามใบส่งของ'],
+    ['c_demo_it_2', 102, iso(0, -16), 'u2', 'รับทราบครับ จะประสานคลังวัสดุให้'],
+    ['c_demo_it_3', 103, iso(0, -8), 'u3', 'เดินสายเสร็จแล้ว รอหัวหน้าตรวจรับ'],
+    ['c_demo_it_4', 104, iso(-1), 'u1', 'ใช้เทมเพลตส่งมอบในโฟลเดอร์แชร์ IT/Solar']
+  ];
+  for (var ici = 0; ici < itComments.length; ici++) {
+    if (!cmIds[String(itComments[ici][0])]) {
+      var itCmSheet = getSheet_(COMMENTS_SHEET);
+      writeRows_(itCmSheet, itCmSheet.getLastRow() + 1, [itComments[ici]]);
+      cmIds[String(itComments[ici][0])] = true;
+      added.comments += 1;
+    }
+  }
 
   return {
     ok: true,
